@@ -3,7 +3,7 @@
 A sleek, client-side web application built to instantly convert MusicXML and MIDI files into Chinese Numbered Musical Notation (Jianpu / 简谱).
 
 ## Live Demo
-👉 **[Try the Web App Here](https://your-username.github.io/Music-Score-Converter/)**
+👉 **[Try the Web App Here]([https://your-username.github.io/Music-Score-Converter/](https://huichiy.github.io/Music-Score-Converter/))**
 
 *(Note to developer: Update the link above with your actual deployment URL, such as GitHub Pages, Vercel, or Netlify)*
 
@@ -29,7 +29,7 @@ A sleek, client-side web application built to instantly convert MusicXML and MID
 这是一个现代化、纯前端的网页应用，旨在将 MusicXML 和 MIDI 格式的五线谱文件快速、精准地转换为中文数字简谱。
 
 ## Live Demo / 在线体验
-👉 **[Try the Web App Here](https://your-username.github.io/Music-Score-Converter/)**
+👉 **[Try the Web App Here]([https://your-username.github.io/Music-Score-Converter/)**](https://huichiy.github.io/Music-Score-Converter/)
 
 *(Note to developer: Update the link above with your actual deployment URL, such as GitHub Pages, Vercel, or Netlify)*
 
