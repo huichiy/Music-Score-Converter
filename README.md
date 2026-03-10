@@ -5,8 +5,6 @@ A sleek, client-side web application built to instantly convert MusicXML and MID
 ## Live Demo
 👉 **[Try the Web App Here]([https://your-username.github.io/Music-Score-Converter/](https://huichiy.github.io/Music-Score-Converter/))**
 
-*(Note to developer: Update the link above with your actual deployment URL, such as GitHub Pages, Vercel, or Netlify)*
-
 ## Features
 - **Zero Install, Works Offline:** The entire application is a single `index.html` file. No server, no Python dependencies, no installations. Just open it in your browser.
 - **MusicXML & MIDI Support:** Drop in `.xml`, `.mxl`, `.mid`, or `.midi` files to parse.
@@ -29,9 +27,7 @@ A sleek, client-side web application built to instantly convert MusicXML and MID
 这是一个现代化、纯前端的网页应用，旨在将 MusicXML 和 MIDI 格式的五线谱文件快速、精准地转换为中文数字简谱。
 
 ## Live Demo / 在线体验
-👉 **[Try the Web App Here]([https://your-username.github.io/Music-Score-Converter/)**](https://huichiy.github.io/Music-Score-Converter/)
-
-*(Note to developer: Update the link above with your actual deployment URL, such as GitHub Pages, Vercel, or Netlify)*
+👉 **[Try the Web App Here]([https://your-username.github.io/Music-Score-Converter/](https://huichiy.github.io/Music-Score-Converter/))**
 
 ## 核心功能
 - **无需安装，支持离线运行：** 整个应用全部使用原生的 HTML/JS/CSS 构建在一个单独的 `index.html` 文件中。无需后端服务器或复杂的代码依赖，只需在浏览器中打开即可使用。
