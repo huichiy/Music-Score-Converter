@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jianpu Converter</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        :root {
+            --bg: #F9F9F9;
+            --surface: #FFFFFF;
+            --border: rgba(0, 0, 0, 0.2);
+            --accent: #DC2626;
+            --text: #0A0A0A;
+            --text-muted: #6B6B6B;
+            --btn-bg: #0A0A0A;
+            --btn-text: #FFFFFF;
+            --select-bg: #F0F0F0;
+        }
+
+        [data-theme="dark"] {
+            --bg: #0A0A0A;
+            --surface: #111111;
+            --border: rgba(255, 255, 255, 0.2);
+            --text: #FFFFFF;
+            --text-muted: #6B6B6B;
+            --btn-bg: #FFFFFF;
+            --btn-text: #0A0A0A;
+            --select-bg: #222222;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .theme-toggle {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            color: var(--text-muted);
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s;
+        }
+
+        .theme-toggle:hover {
+            color: var(--text);
+        }
+
+        .theme-toggle svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 520px;
+            margin: 0 auto;
+            padding-top: 140px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+        }
+
+        header {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
+        .badge {
+            background: var(--accent);
+            color: #FFFFFF;
+            font-size: 11px;
+            padding: 2px 10px;
+            border-radius: 999px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .title {
+            font-weight: 300;
+            font-size: 42px;
+            letter-spacing: -1.5px;
+            margin: 0 0 12px 0;
+            text-align: center;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin: 0 0 48px 0;
+            text-align: center;
+        }
+
+        .upload-zone {
+            width: 100%;
+            border: 1px dashed var(--border);
+            border-radius: 10px;
+            padding: 48px 32px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.2s;
+            position: relative;
+        }
+
+        .upload-zone.dragover {
+            border-color: var(--accent);
+        }
+
+        .upload-icon {
+            width: 32px;
+            height: 32px;
+            stroke: var(--text-muted);
+            fill: none;
+            stroke-width: 1.2;
+            margin-bottom: 12px;
+        }
+
+        .upload-text {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .upload-or {
+            font-size: 12px;
+            color: var(--text-muted);
+            opacity: 0.6;
+            margin-bottom: 8px;
+        }
+
+        .browse-label {
+            color: var(--text);
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: color 0.2s;
+            position: relative;
+        }
+
+        .browse-label:hover {
+            color: var(--accent);
+        }
+
+        .browse-label::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 1px;
+            bottom: -2px;
+            left: 0;
+            background-color: transparent;
+            transition: background-color 0.2s;
+        }
+
+        .browse-label:hover::after {
+            background-color: var(--accent);
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .convert-btn {
+            width: 100%;
+            margin-top: 16px;
+            background: var(--btn-bg);
+            color: var(--btn-text);
+            font-size: 14px;
+            font-weight: 500;
+            padding: 12px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .convert-btn:hover {
+            opacity: 0.85;
+        }
+
+        .convert-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .output-zone {
+            width: 100%;
+            margin-top: 32px;
+            padding: 24px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            line-height: 2.2;
+            white-space: pre-wrap;
+            display: none;
+            color: var(--text);
+        }
+
+        .controls-row {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 16px;
+            display: none;
+        }
+
+        .part-selector {
+            background: var(--select-bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .download-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .download-btn {
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .download-btn:hover {
+            border-color: var(--text);
+            background: var(--select-bg);
+        }
+
+        .footer {
+            margin-top: auto;
+            padding-bottom: 40px;
+            font-size: 12px;
+            color: var(--text-muted);
+            text-align: center;
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+        <!-- Sun icon default -->
+        <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <!-- Will switch via JS -->
+        </svg>
+    </button>
+
+    <div class="container">
+        <header>
+            <span class="badge">简谱</span>
+            <h1 class="title">Jianpu Converter</h1>
+            <p class="subtitle">Convert MusicXML scores to Jianpu numbered notation</p>
+        </header>
+
+        <div class="upload-zone" id="dropzone">
+            <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <div class="upload-text" id="fileNameDisplay">Drop your .xml or .mxl file here</div>
+            <div class="upload-or">or</div>
+            <label class="browse-label">
+                Browse files
+                <input type="file" id="fileInput" accept=".xml,.mxl">
+            </label>
+        </div>
+
+        <button class="convert-btn" id="convertBtn" disabled>Convert to Jianpu</button>
+
+        <div class="output-zone" id="output"></div>
+
+        <div class="controls-row" id="controlsRow">
+            <select class="part-selector" id="partSelector">
+                <option value="0">Part 1</option>
+            </select>
+
+            <div class="download-group">
+                <button class="download-btn" id="dlTxt">.TXT</button>
+                <button class="download-btn" id="dlPdf">.PDF</button>
+                <button class="download-btn" id="dlPng">.PNG</button>
+                <button class="download-btn" id="dlJpeg">.JPEG</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">简谱 Jianpu Converter · Built for Chinese orchestra musicians</div>
+
+    <script>
+        // --- Theme Toggle ---
+        const themeToggle = document.getElementById('themeToggle');
+        const themeIcon = document.getElementById('themeIcon');
+        const htmlDoc = document.documentElement;
+
+        const moonPath = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
+        const sunPath = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
+
+        function updateIcon(theme) {
+            themeIcon.innerHTML = theme === 'dark' ? sunPath : moonPath;
+        }
+
+        updateIcon('dark');
+
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = htmlDoc.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            htmlDoc.setAttribute('data-theme', newTheme);
+            updateIcon(newTheme);
+        });
+
+        // --- File Upload ---
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const convertBtn = document.getElementById('convertBtn');
+        const output = document.getElementById('output');
+        const controlsRow = document.getElementById('controlsRow');
+        const partSelector = document.getElementById('partSelector');
+
+        let currentFile = null;
+        let parsedXmlDoc = null;
+
+        function handleFile(file) {
+            if (!file) return;
+            currentFile = file;
+            fileNameDisplay.textContent = file.name;
+            fileNameDisplay.style.color = "var(--text)";
+            convertBtn.disabled = false;
+            output.style.display = 'none';
+            controlsRow.style.display = 'none';
+            parsedXmlDoc = null;
+        }
+
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('dragover');
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            handleFile(e.dataTransfer.files[0]);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFile(e.target.files[0]);
+        });
+
+        // --- Core Jianpu Logic ---
+        function pitchToSemitones(step, alter, octave) {
+            const stepMap = { 'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11 };
+            return stepMap[step] + alter + (octave * 12);
+        }
+
+        function parseXMLToJianpu(xmlDoc) {
+            // Find key signature
+            let fifths = 0;
+            const fifthsNodes = xmlDoc.getElementsByTagName("fifths");
+            if (fifthsNodes.length > 0) {
+                fifths = parseInt(fifthsNodes[0].textContent);
+            }
+
+            const keyMap = {
+                "-7": "Cb", "-6": "Gb", "-5": "Db", "-4": "Ab", "-3": "Eb", "-2": "Bb", "-1": "F",
+                "0": "C", "1": "G", "2": "D", "3": "A", "4": "E", "5": "B", "6": "F#", "7": "C#"
+            };
+            const keyStr = keyMap[fifths.toString()] || "C";
+
+            let baseTonicStep = keyStr[0];
+            let baseTonicAlter = keyStr.includes('#') ? 1 : (keyStr.includes('b') ? -1 : 0);
+            let baseTonicSemi = pitchToSemitones(baseTonicStep, baseTonicAlter, 4);
+
+            const scaleDegrees = [0, 2, 4, 5, 7, 9, 11];
+            const stepMapDiatonic = { 'C': 0, 'D': 1, 'E': 2, 'F': 3, 'G': 4, 'A': 5, 'B': 6 };
+
+            let jianpuLines = [];
+
+            // Assume single part, get measures
+            const measures = xmlDoc.getElementsByTagName("measure");
+
+            for (let i = 0; i < measures.length; i++) {
+                let measureNotes = [];
+                const notes = measures[i].getElementsByTagName("note");
+
+                for (let j = 0; j < notes.length; j++) {
+                    const note = notes[j];
+
+                    // Skip chords/harmony for simple melody line
+                    if (note.getElementsByTagName("chord").length > 0 || note.getElementsByTagName("grace").length > 0) {
+                        continue;
+                    }
+
+                    if (note.getElementsByTagName("rest").length > 0) {
+                        measureNotes.push("0");
+                        continue;
+                    }
+
+                    const pitchNode = note.getElementsByTagName("pitch")[0];
+                    if (!pitchNode) continue;
+
+                    const step = pitchNode.getElementsByTagName("step")[0].textContent;
+                    let alter = 0;
+                    const alterNode = pitchNode.getElementsByTagName("alter")[0];
+                    if (alterNode) alter = parseInt(alterNode.textContent);
+                    const octave = parseInt(pitchNode.getElementsByTagName("octave")[0].textContent);
+
+                    let noteSemi = pitchToSemitones(step, alter, octave);
+
+                    let tonicDiatonicAbs = stepMapDiatonic[baseTonicStep] + 4 * 7;
+                    let noteDiatonicAbs = stepMapDiatonic[step] + octave * 7;
+
+                    let diatonicDiff = noteDiatonicAbs - tonicDiatonicAbs;
+                    let degree = (diatonicDiff % 7);
+                    if (degree < 0) degree += 7;
+
+                    // The bug was diatonicDiff/7 division truncation in JS. Using Math.floor resolves negatives properly.
+                    let shift = Math.floor(diatonicDiff / 7);
+
+                    let intendedSemi = baseTonicSemi + Math.floor(diatonicDiff / 7) * 12 + scaleDegrees[degree];
+                    let acc = "";
+                    if (noteSemi > intendedSemi) acc = "#";
+                    if (noteSemi < intendedSemi) acc = "b";
+
+                    let noteStr = acc + (degree + 1).toString();
+                    if (shift > 0) noteStr += "'".repeat(shift);
+                    if (shift < 0) noteStr += ".".repeat(Math.abs(shift));
+
+                    measureNotes.push(noteStr);
+                }
+
+                if (measureNotes.length > 0) {
+                    jianpuLines.push(measureNotes.join(" "));
+                }
+            }
+
+            if (jianpuLines.length === 0) return "No compatible notes found.";
+
+            let chunks = [];
+            for (let i = 0; i < jianpuLines.length; i += 4) {
+                chunks.push(jianpuLines.slice(i, i + 4).join(" | "));
+            }
+
+            return `Key: 1=${keyStr}\n\n` + chunks.join(" |\n") + " |";
+        }
+
+        convertBtn.addEventListener('click', async () => {
+            if (!currentFile) return;
+
+            convertBtn.textContent = 'Converting...';
+            convertBtn.disabled = true;
+
+            try {
+                let xmlText = "";
+
+                if (currentFile.name.endsWith('.mxl')) {
+                    const arrayBuffer = await currentFile.arrayBuffer();
+                    const zip = await JSZip.loadAsync(arrayBuffer);
+
+                    // MXL structure usually contains a META-INF/container.xml 
+                    // which points to the real file. We'll find the first .xml
+                    let targetFile = null;
+                    for (let filename in zip.files) {
+                        if (filename.endsWith('.xml') && filename !== 'META-INF/container.xml') {
+                            targetFile = zip.files[filename];
+                            break;
+                        }
+                    }
+
+                    if (!targetFile) throw new Error("No XML found in MXL container");
+                    xmlText = await targetFile.async("text");
+                } else {
+                    xmlText = await currentFile.text();
+                }
+
+                const parser = new DOMParser();
+                parsedXmlDoc = parser.parseFromString(xmlText, "text/xml");
+
+                // Populate Part Selector
+                const parts = parsedXmlDoc.getElementsByTagName("part");
+                partSelector.innerHTML = '';
+                for (let i = 0; i < parts.length; i++) {
+                    const option = document.createElement('option');
+                    option.value = i;
+                    const id = parts[i].getAttribute("id");
+
+                    // Try to find part-name in part-list
+                    let partName = `Part ${i + 1}`;
+                    const partList = parsedXmlDoc.getElementsByTagName("part-list")[0];
+                    if (partList) {
+                        const scoreParts = partList.getElementsByTagName("score-part");
+                        for (let sp of scoreParts) {
+                            if (sp.getAttribute("id") === id) {
+                                const nameNode = sp.getElementsByTagName("part-name")[0];
+                                if (nameNode) partName = nameNode.textContent;
+                                break;
+                            }
+                        }
+                    }
+                    option.textContent = partName;
+                    partSelector.appendChild(option);
+                }
+
+                function renderSelectedPart() {
+                    if (!parsedXmlDoc) return;
+
+                    // Extract only the selected part's XML by cloning document but removing other parts
+                    const selectedIdx = parseInt(partSelector.value);
+                    const partsList = parsedXmlDoc.getElementsByTagName("part");
+                    if (partsList.length <= selectedIdx) return;
+
+                    // Create a dummy doc containing only the selected part for the parser
+                    const dummyDoc = document.implementation.createDocument(null, "score-partwise");
+                    dummyDoc.documentElement.appendChild(parsedXmlDoc.getElementsByTagName("part-list")[0].cloneNode(true));
+                    dummyDoc.documentElement.appendChild(partsList[selectedIdx].cloneNode(true));
+
+                    const result = parseXMLToJianpu(dummyDoc);
+                    output.textContent = result;
+                    output.style.display = 'block';
+                    controlsRow.style.display = 'flex';
+                }
+
+                partSelector.onchange = renderSelectedPart;
+
+                renderSelectedPart();
+
+                convertBtn.textContent = 'Convert to Jianpu';
+                convertBtn.disabled = false;
+
+            } catch (err) {
+                alert('Error processing file: ' + err.message);
+                convertBtn.textContent = 'Convert to Jianpu';
+                convertBtn.disabled = false;
+            }
+        });
+
+        // --- Download Triggers ---
+        function triggerDownload(content, filename, type) {
+            const blob = new Blob([content], { type: type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        document.getElementById('dlTxt').addEventListener('click', () => {
+            triggerDownload(output.innerText, 'jianpu_score.txt', 'text/plain');
+        });
+
+        function downloadAsImage(type, extension) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const text = output.innerText;
+            const lines = text.split('\n');
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+
+            ctx.font = '14px Inter, sans-serif';
+            let maxWidth = 0;
+            for (let line of lines) {
+                maxWidth = Math.max(maxWidth, ctx.measureText(line).width);
+            }
+
+            canvas.width = Math.max(800, maxWidth + 80);
+            canvas.height = lines.length * 30 + 80;
+
+            // Background
+            ctx.fillStyle = isDark ? '#111111' : '#FFFFFF';
+            if (type === 'image/jpeg') {
+                ctx.fillRect(0, 0, canvas.width, canvas.height); // JPG needs solid background
+            } else {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            // Text - Inter 
+            ctx.fillStyle = isDark ? '#FFFFFF' : '#111111';
+            ctx.font = '14px Inter, sans-serif';
+
+            let y = 50;
+            for (let line of lines) {
+                ctx.fillText(line, 40, y);
+                y += 30; // 2.2 line height approx for 14px
+            }
+
+            const link = document.createElement('a');
+            link.download = `jianpu_score.${extension}`;
+            link.href = canvas.toDataURL(type);
+            link.click();
+        }
+
+        document.getElementById('dlPng').addEventListener('click', () => downloadAsImage('image/png', 'png'));
+        document.getElementById('dlJpeg').addEventListener('click', () => downloadAsImage('image/jpeg', 'jpg'));
+
+        document.getElementById('dlPdf').addEventListener('click', () => {
+            const printWindow = window.open('', '_blank');
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            printWindow.document.write(`
+                 <html><head><title>Jianpu Score</title>
+                 <style>
+                     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400&display=swap');
+                     body { 
+                         font-family: 'Inter', sans-serif; 
+                         white-space: pre-wrap; 
+                         padding: 60px; 
+                         line-height: 2.2; 
+                         font-size: 14px; 
+                         color: ${isDark ? '#FFFFFF' : '#111111'};
+                         background-color: ${isDark ? '#111111' : '#FFFFFF'};
+                     }
+                 </style>
+                 </head><body>${output.innerText}</body></html>
+             `);
+            printWindow.document.close();
+            setTimeout(() => {
+                printWindow.print();
+                // printWindow.close(); // optional
+            }, 500);
+        });
+
+    </script>
+</body>
+
+</html>
