@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jianpu Converter</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -92,8 +93,10 @@
         .badge {
             background: var(--accent);
             color: #FFFFFF;
-            font-size: 11px;
-            padding: 2px 10px;
+            font-family: 'Ma Shan Zheng', cursive;
+            font-size: 14px;
+            letter-spacing: 2px;
+            padding: 3px 14px;
             border-radius: 999px;
             margin-bottom: 20px;
             font-weight: 500;
@@ -196,15 +199,17 @@
             border-radius: 6px;
             border: none;
             cursor: pointer;
-            transition: opacity 0.2s;
+            transition: opacity 0.2s, background 0.2s, color 0.2s, border 0.2s;
         }
 
-        .convert-btn:hover {
+        .convert-btn:hover:not(:disabled) {
             opacity: 0.85;
         }
 
         .convert-btn:disabled {
-            opacity: 0.5;
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
             cursor: not-allowed;
         }
 
@@ -225,11 +230,11 @@
 
         .controls-row {
             width: 100%;
-            display: flex;
+            display: none;
             justify-content: space-between;
             align-items: center;
-            margin-top: 16px;
-            display: none;
+            margin-top: 24px;
+            margin-bottom: 8px;
         }
 
         .part-selector {
@@ -264,6 +269,29 @@
         .download-btn:hover {
             border-color: var(--text);
             background: var(--select-bg);
+        }
+
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+
+            #output,
+            #output * {
+                visibility: visible;
+                color: #000 !important;
+                background: #fff !important;
+                border: none !important;
+            }
+
+            #output {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+            }
         }
 
         .footer {
@@ -310,8 +338,6 @@
 
         <button class="convert-btn" id="convertBtn" disabled>Convert to Jianpu</button>
 
-        <div class="output-zone" id="output"></div>
-
         <div class="controls-row" id="controlsRow">
             <select class="part-selector" id="partSelector">
                 <option value="0">Part 1</option>
@@ -324,6 +350,8 @@
                 <button class="download-btn" id="dlJpeg">.JPEG</button>
             </div>
         </div>
+
+        <div class="output-zone" id="output"></div>
     </div>
 
     <div class="footer">简谱 Jianpu Converter · Built for Chinese orchestra musicians</div>
@@ -578,6 +606,13 @@
         });
 
         // --- Download Triggers ---
+        function setBtnFeedback(btn, originalText) {
+            btn.textContent = 'Done ✓';
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 1500);
+        }
+
         function triggerDownload(content, filename, type) {
             const blob = new Blob([content], { type: type });
             const url = URL.createObjectURL(blob);
@@ -590,24 +625,28 @@
             URL.revokeObjectURL(url);
         }
 
-        document.getElementById('dlTxt').addEventListener('click', () => {
+        document.getElementById('dlTxt').addEventListener('click', function () {
             triggerDownload(output.innerText, 'jianpu_score.txt', 'text/plain');
+            setBtnFeedback(this, '.TXT');
         });
 
-        function downloadAsImage(type, extension) {
+        function downloadAsImage(type, extension, btn) {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             const text = output.innerText;
             const lines = text.split('\n');
             const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
 
-            ctx.font = '14px Inter, sans-serif';
+            // Explicitly use monospace fallback for precise alignment
+            const fontStyle = "14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+            ctx.font = fontStyle;
+
             let maxWidth = 0;
             for (let line of lines) {
                 maxWidth = Math.max(maxWidth, ctx.measureText(line).width);
             }
 
-            canvas.width = Math.max(800, maxWidth + 80);
+            canvas.width = Math.max(600, maxWidth + 80);
             canvas.height = lines.length * 30 + 80;
 
             // Background
@@ -619,49 +658,34 @@
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
 
-            // Text - Inter 
+            // Text 
             ctx.fillStyle = isDark ? '#FFFFFF' : '#111111';
-            ctx.font = '14px Inter, sans-serif';
+            ctx.font = fontStyle;
 
             let y = 50;
             for (let line of lines) {
                 ctx.fillText(line, 40, y);
-                y += 30; // 2.2 line height approx for 14px
+                y += 30;
             }
 
             const link = document.createElement('a');
             link.download = `jianpu_score.${extension}`;
             link.href = canvas.toDataURL(type);
             link.click();
+            setBtnFeedback(btn, type === 'image/png' ? '.PNG' : '.JPEG');
         }
 
-        document.getElementById('dlPng').addEventListener('click', () => downloadAsImage('image/png', 'png'));
-        document.getElementById('dlJpeg').addEventListener('click', () => downloadAsImage('image/jpeg', 'jpg'));
+        document.getElementById('dlPng').addEventListener('click', function () {
+            downloadAsImage('image/png', 'png', this);
+        });
 
-        document.getElementById('dlPdf').addEventListener('click', () => {
-            const printWindow = window.open('', '_blank');
-            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-            printWindow.document.write(`
-                 <html><head><title>Jianpu Score</title>
-                 <style>
-                     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400&display=swap');
-                     body { 
-                         font-family: 'Inter', sans-serif; 
-                         white-space: pre-wrap; 
-                         padding: 60px; 
-                         line-height: 2.2; 
-                         font-size: 14px; 
-                         color: ${isDark ? '#FFFFFF' : '#111111'};
-                         background-color: ${isDark ? '#111111' : '#FFFFFF'};
-                     }
-                 </style>
-                 </head><body>${output.innerText}</body></html>
-             `);
-            printWindow.document.close();
-            setTimeout(() => {
-                printWindow.print();
-                // printWindow.close(); // optional
-            }, 500);
+        document.getElementById('dlJpeg').addEventListener('click', function () {
+            downloadAsImage('image/jpeg', 'jpg', this);
+        });
+
+        document.getElementById('dlPdf').addEventListener('click', function () {
+            window.print();
+            setBtnFeedback(this, '.PDF');
         });
 
     </script>
