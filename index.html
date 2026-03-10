@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
     <style>
         :root {
             --bg: #F9F9F9;
@@ -228,6 +229,19 @@
             color: var(--text);
         }
 
+        .error-message {
+            width: 100%;
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 6px;
+            background: rgba(220, 38, 38, 0.1);
+            color: var(--accent);
+            border: 1px solid rgba(220, 38, 38, 0.2);
+            font-size: 13px;
+            text-align: center;
+            display: none;
+        }
+
         .controls-row {
             width: 100%;
             display: none;
@@ -247,6 +261,22 @@
             font-size: 13px;
             outline: none;
             cursor: pointer;
+        }
+
+        .auto-detect-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            margin-left: 2px;
+            display: none;
+            position: absolute;
+            top: 100%;
+        }
+
+        .part-selector-container {
+            display: flex;
+            flex-direction: column;
+            position: relative;
         }
 
         .download-group {
@@ -328,20 +358,24 @@
                 <polyline points="17 8 12 3 7 8"></polyline>
                 <line x1="12" y1="3" x2="12" y2="15"></line>
             </svg>
-            <div class="upload-text" id="fileNameDisplay">Drop your .xml or .mxl file here</div>
+            <div class="upload-text" id="fileNameDisplay">Drop your .xml, .mxl, or .mid file here</div>
             <div class="upload-or">or</div>
             <label class="browse-label">
                 Browse files
-                <input type="file" id="fileInput" accept=".xml,.mxl">
+                <input type="file" id="fileInput" accept=".xml,.mxl,.mid,.midi">
             </label>
         </div>
 
         <button class="convert-btn" id="convertBtn" disabled>Convert to Jianpu</button>
+        <div class="error-message" id="errorMsg"></div>
 
         <div class="controls-row" id="controlsRow">
-            <select class="part-selector" id="partSelector">
-                <option value="0">Part 1</option>
-            </select>
+            <div class="part-selector-container">
+                <select class="part-selector" id="partSelector">
+                    <option value="0">Part 1</option>
+                </select>
+                <div class="auto-detect-label" id="autoDetectLabel">Auto-detected melody line</div>
+            </div>
 
             <div class="download-group">
                 <button class="download-btn" id="dlTxt">.TXT</button>
@@ -386,9 +420,18 @@
         const output = document.getElementById('output');
         const controlsRow = document.getElementById('controlsRow');
         const partSelector = document.getElementById('partSelector');
+        const autoDetectLabel = document.getElementById('autoDetectLabel');
+        const errorMsg = document.getElementById('errorMsg');
 
         let currentFile = null;
         let parsedXmlDoc = null;
+
+        function showError(msg) {
+            errorMsg.textContent = msg;
+            errorMsg.style.display = 'block';
+            convertBtn.textContent = 'Convert to Jianpu';
+            convertBtn.disabled = false;
+        }
 
         function handleFile(file) {
             if (!file) return;
@@ -398,6 +441,9 @@
             convertBtn.disabled = false;
             output.style.display = 'none';
             controlsRow.style.display = 'none';
+            partSelector.parentElement.style.display = '';
+            autoDetectLabel.style.display = 'none';
+            errorMsg.style.display = 'none';
             parsedXmlDoc = null;
         }
 
@@ -432,6 +478,14 @@
                 fifths = parseInt(fifthsNodes[0].textContent);
             }
 
+            // Find time signature
+            let beats = "4";
+            let beatType = "4";
+            const beatsNodes = xmlDoc.getElementsByTagName("beats");
+            if (beatsNodes.length > 0) beats = beatsNodes[0].textContent;
+            const beatTypeNodes = xmlDoc.getElementsByTagName("beat-type");
+            if (beatTypeNodes.length > 0) beatType = beatTypeNodes[0].textContent;
+
             const keyMap = {
                 "-7": "Cb", "-6": "Gb", "-5": "Db", "-4": "Ab", "-3": "Eb", "-2": "Bb", "-1": "F",
                 "0": "C", "1": "G", "2": "D", "3": "A", "4": "E", "5": "B", "6": "F#", "7": "C#"
@@ -462,40 +516,80 @@
                         continue;
                     }
 
-                    if (note.getElementsByTagName("rest").length > 0) {
-                        measureNotes.push("0");
-                        continue;
+                    let noteValue = "0"; // Default rest
+                    let isRest = note.getElementsByTagName("rest").length > 0;
+
+                    if (!isRest) {
+                        const pitchNode = note.getElementsByTagName("pitch")[0];
+                        if (pitchNode) {
+                            const step = pitchNode.getElementsByTagName("step")[0].textContent;
+                            let alter = 0;
+                            const alterNode = pitchNode.getElementsByTagName("alter")[0];
+                            if (alterNode) alter = parseInt(alterNode.textContent);
+                            const octave = parseInt(pitchNode.getElementsByTagName("octave")[0].textContent);
+
+                            let noteSemi = pitchToSemitones(step, alter, octave);
+
+                            let tonicDiatonicAbs = stepMapDiatonic[baseTonicStep] + 4 * 7;
+                            let noteDiatonicAbs = stepMapDiatonic[step] + octave * 7;
+
+                            let diatonicDiff = noteDiatonicAbs - tonicDiatonicAbs;
+                            let degree = (diatonicDiff % 7);
+                            if (degree < 0) degree += 7;
+
+                            let shift = Math.floor(diatonicDiff / 7);
+
+                            let intendedSemi = baseTonicSemi + Math.floor(diatonicDiff / 7) * 12 + scaleDegrees[degree];
+                            let acc = "";
+                            if (noteSemi > intendedSemi) acc = "#";
+                            if (noteSemi < intendedSemi) acc = "b";
+
+                            noteValue = acc + (degree + 1).toString();
+                            if (shift > 0) noteValue += "'".repeat(shift);
+                            if (shift < 0) noteValue += ".".repeat(Math.abs(shift));
+                        }
                     }
 
-                    const pitchNode = note.getElementsByTagName("pitch")[0];
-                    if (!pitchNode) continue;
+                    // Handling Duration / Rhythm Type
+                    let noteType = "quarter";
+                    const typeNode = note.getElementsByTagName("type")[0];
+                    if (typeNode) noteType = typeNode.textContent;
 
-                    const step = pitchNode.getElementsByTagName("step")[0].textContent;
-                    let alter = 0;
-                    const alterNode = pitchNode.getElementsByTagName("alter")[0];
-                    if (alterNode) alter = parseInt(alterNode.textContent);
-                    const octave = parseInt(pitchNode.getElementsByTagName("octave")[0].textContent);
+                    // Handling Dots
+                    const hasDot = note.getElementsByTagName("dot").length > 0;
+                    let dotStr = hasDot ? "." : "";
 
-                    let noteSemi = pitchToSemitones(step, alter, octave);
+                    // Handling Ties
+                    const tieNode = note.getElementsByTagName("tie")[0];
+                    let isTieStop = (tieNode && tieNode.getAttribute("type") === "stop");
 
-                    let tonicDiatonicAbs = stepMapDiatonic[baseTonicStep] + 4 * 7;
-                    let noteDiatonicAbs = stepMapDiatonic[step] + octave * 7;
+                    let noteStr = noteValue;
 
-                    let diatonicDiff = noteDiatonicAbs - tonicDiatonicAbs;
-                    let degree = (diatonicDiff % 7);
-                    if (degree < 0) degree += 7;
-
-                    // The bug was diatonicDiff/7 division truncation in JS. Using Math.floor resolves negatives properly.
-                    let shift = Math.floor(diatonicDiff / 7);
-
-                    let intendedSemi = baseTonicSemi + Math.floor(diatonicDiff / 7) * 12 + scaleDegrees[degree];
-                    let acc = "";
-                    if (noteSemi > intendedSemi) acc = "#";
-                    if (noteSemi < intendedSemi) acc = "b";
-
-                    let noteStr = acc + (degree + 1).toString();
-                    if (shift > 0) noteStr += "'".repeat(shift);
-                    if (shift < 0) noteStr += ".".repeat(Math.abs(shift));
+                    if (isTieStop) {
+                        // If it's a tied continuation, we just print the dashes based on duration but usually just one '-' per beat representation
+                        if (noteType === "whole") noteStr = "- - - -";
+                        else if (noteType === "half") noteStr = "- -";
+                        else if (noteType === "quarter") noteStr = "-";
+                        else if (noteType === "eighth") noteStr = "-_";
+                        else if (noteType === "16th") noteStr = "-__";
+                    } else {
+                        if (noteType === "whole") {
+                            noteStr = noteValue + " - - -" + dotStr;
+                        } else if (noteType === "half") {
+                            noteStr = noteValue + dotStr + " -";
+                        } else if (noteType === "quarter") {
+                            noteStr = noteValue + dotStr;
+                        } else if (noteType === "eighth") {
+                            noteStr = noteValue + dotStr + "_";
+                        } else if (noteType === "16th") {
+                            noteStr = noteValue + dotStr + "__";
+                        } else if (noteType === "32nd") {
+                            noteStr = noteValue + dotStr + "___";
+                        } else {
+                            // Default fallback
+                            noteStr = noteValue + dotStr;
+                        }
+                    }
 
                     measureNotes.push(noteStr);
                 }
@@ -508,23 +602,195 @@
             if (jianpuLines.length === 0) return "No compatible notes found.";
 
             let chunks = [];
+            // Group 4 measures per line
             for (let i = 0; i < jianpuLines.length; i += 4) {
                 chunks.push(jianpuLines.slice(i, i + 4).join(" | "));
             }
 
-            return `Key: 1=${keyStr}\n\n` + chunks.join(" |\n") + " |";
+            return `Key: 1=${keyStr}   Time: ${beats}/${beatType}\n\n` + chunks.join(" |\n") + " |";
         }
+
+        function renderSelectedPart() {
+            if (!parsedXmlDoc) return;
+
+            const selectedIdx = parseInt(partSelector.value);
+            const partsList = parsedXmlDoc.getElementsByTagName("part");
+            if (partsList.length <= selectedIdx) return;
+
+            const dummyDoc = document.implementation.createDocument(null, "score-partwise");
+            dummyDoc.documentElement.appendChild(parsedXmlDoc.getElementsByTagName("part-list")[0].cloneNode(true));
+            dummyDoc.documentElement.appendChild(partsList[selectedIdx].cloneNode(true));
+
+            const result = parseXMLToJianpu(dummyDoc);
+            output.textContent = result;
+            output.style.display = 'block';
+            controlsRow.style.display = 'flex';
+        }
+
+        partSelector.addEventListener('change', () => {
+            autoDetectLabel.style.display = 'none';
+            renderSelectedPart();
+        });
 
         convertBtn.addEventListener('click', async () => {
             if (!currentFile) return;
 
             convertBtn.textContent = 'Converting...';
             convertBtn.disabled = true;
+            errorMsg.style.display = 'none';
 
             try {
+                if (currentFile.name.toLowerCase().endsWith('.mid') || currentFile.name.toLowerCase().endsWith('.midi')) {
+                    const arrayBuffer = await currentFile.arrayBuffer();
+                    const midi = new Midi(arrayBuffer);
+
+                    // Key detection
+                    let keyStr = "C";
+                    if (midi.header.keySignatures && midi.header.keySignatures.length > 0) {
+                        keyStr = midi.header.keySignatures[0].key;
+                    }
+
+                    let baseTonicStep = keyStr[0];
+                    let baseTonicAlter = keyStr.includes('#') ? 1 : (keyStr.includes('b') ? -1 : 0);
+                    let baseTonicSemi = pitchToSemitones(baseTonicStep, baseTonicAlter, 4);
+
+                    const scaleDegrees = [0, 2, 4, 5, 7, 9, 11];
+                    const stepMapDiatonic = { 'C': 0, 'D': 1, 'E': 2, 'F': 3, 'G': 4, 'A': 5, 'B': 6 };
+
+                    // Find track with most notes
+                    let bestTrack = null;
+                    let maxNotes = -1;
+                    for (let track of midi.tracks) {
+                        if (track.notes.length > maxNotes) {
+                            maxNotes = track.notes.length;
+                            bestTrack = track;
+                        }
+                    }
+
+                    if (!bestTrack || bestTrack.notes.length === 0) throw new Error("No notes found in MIDI.");
+
+                    // Time signature
+                    let beats = 4;
+                    let beatType = 4;
+                    if (midi.header.timeSignatures && midi.header.timeSignatures.length > 0) {
+                        beats = midi.header.timeSignatures[0].timeSignature[0];
+                        beatType = midi.header.timeSignatures[0].timeSignature[1];
+                    }
+
+                    const ppq = midi.header.ppq;
+                    const measureTicks = beats * (4 / beatType) * ppq;
+
+                    let jianpuLines = [];
+                    let currentMeasureNotes = [];
+                    let currentMeasureIdx = 0;
+
+                    // Improved flat/sharp context mapping based on key signature
+                    const useFlats = ["F", "Bb", "Eb", "Ab", "Db", "Gb", "Cb"].includes(keyStr);
+                    const stepNames = useFlats
+                        ? ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
+                        : ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+                    for (let i = 0; i < bestTrack.notes.length; i++) {
+                        const note = bestTrack.notes[i];
+                        const noteMeasureIdx = Math.floor(note.ticks / measureTicks);
+
+                        // Pad empty measures with rests
+                        while (currentMeasureIdx < noteMeasureIdx) {
+                            if (currentMeasureNotes.length > 0) {
+                                jianpuLines.push(currentMeasureNotes.join(" "));
+                                currentMeasureNotes = [];
+                            } else {
+                                jianpuLines.push("0 - - -");
+                            }
+                            currentMeasureIdx++;
+                        }
+
+                        let noteNum = note.midi;
+                        let octave = Math.floor(noteNum / 12) - 1;
+                        let semitone = noteNum % 12;
+
+                        let stepStr = stepNames[semitone];
+                        let step = stepStr[0];
+                        let alter = 0;
+                        if (stepStr.includes('b')) {
+                            alter = -1;
+                        } else if (stepStr.includes('#')) {
+                            alter = 1;
+                        }
+
+                        let noteSemi = pitchToSemitones(step, alter, octave);
+                        let tonicDiatonicAbs = stepMapDiatonic[baseTonicStep] + 4 * 7;
+                        let noteDiatonicAbs = stepMapDiatonic[step] + octave * 7;
+
+                        let diatonicDiff = noteDiatonicAbs - tonicDiatonicAbs;
+                        let degree = (diatonicDiff % 7);
+                        if (degree < 0) degree += 7;
+
+                        let shift = Math.floor(diatonicDiff / 7);
+
+                        let intendedSemi = baseTonicSemi + Math.floor(diatonicDiff / 7) * 12 + scaleDegrees[degree];
+                        let acc = "";
+                        if (noteSemi > intendedSemi) acc = "#";
+                        if (noteSemi < intendedSemi) acc = "b";
+
+                        let noteValue = acc + (degree + 1).toString();
+                        if (shift > 0) noteValue += "'".repeat(shift);
+                        if (shift < 0) noteValue += ".".repeat(Math.abs(shift));
+
+                        // Rhythm
+                        let noteBeats = note.durationTicks / ppq;
+                        let noteType = "quarter";
+                        let dotStr = "";
+
+                        if (noteBeats >= 3.75) { noteType = "whole"; }
+                        else if (noteBeats >= 2.75) { noteType = "half"; dotStr = "."; }
+                        else if (noteBeats >= 1.75) { noteType = "half"; }
+                        else if (noteBeats >= 1.25) { noteType = "quarter"; dotStr = "."; }
+                        else if (noteBeats >= 0.75) { noteType = "quarter"; }
+                        else if (noteBeats >= 0.6) { noteType = "eighth"; dotStr = "."; }
+                        else if (noteBeats >= 0.35) { noteType = "eighth"; }
+                        else { noteType = "16th"; }
+
+                        let noteStr = noteValue;
+                        if (noteType === "whole") {
+                            noteStr = noteValue + " - - -" + dotStr;
+                        } else if (noteType === "half") {
+                            noteStr = noteValue + dotStr + " -";
+                        } else if (noteType === "quarter") {
+                            noteStr = noteValue + dotStr;
+                        } else if (noteType === "eighth") {
+                            noteStr = noteValue + dotStr + "_";
+                        } else if (noteType === "16th") {
+                            noteStr = noteValue + dotStr + "__";
+                        }
+
+                        currentMeasureNotes.push(noteStr);
+                    }
+
+                    if (currentMeasureNotes.length > 0) {
+                        jianpuLines.push(currentMeasureNotes.join(" "));
+                    }
+
+                    let chunks = [];
+                    for (let i = 0; i < jianpuLines.length; i += 4) {
+                        chunks.push(jianpuLines.slice(i, i + 4).join(" | "));
+                    }
+
+                    const result = `Key: 1=${keyStr}   Time: ${beats}/${beatType}\n\n` + chunks.join(" |\n") + " |";
+
+                    output.textContent = result;
+                    output.style.display = 'block';
+                    controlsRow.style.display = 'flex';
+                    partSelector.parentElement.style.display = 'none'; // No part selector for MIDI yet
+
+                    convertBtn.textContent = 'Convert to Jianpu';
+                    convertBtn.disabled = false;
+                    return;
+                }
+
                 let xmlText = "";
 
-                if (currentFile.name.endsWith('.mxl')) {
+                if (currentFile.name.toLowerCase().endsWith('.mxl')) {
                     const arrayBuffer = await currentFile.arrayBuffer();
                     const zip = await JSZip.loadAsync(arrayBuffer);
 
@@ -547,15 +813,34 @@
                 const parser = new DOMParser();
                 parsedXmlDoc = parser.parseFromString(xmlText, "text/xml");
 
-                // Populate Part Selector
+                // --- Auto Melody Detection Heuristic ---
                 const parts = parsedXmlDoc.getElementsByTagName("part");
+
+                const keywords = [
+                    // Chinese
+                    "笛", "flute", "dizi", "箫", "xiao", "唢呐", "suona", "管子", "guanzi", "笙", "sheng", "巴乌", "bawu",
+                    "二胡", "erhu", "高胡", "gaohu", "中胡", "zhonghu", "板胡", "banhu", "京胡", "jinghu",
+                    // Western
+                    "violin", "soprano", "melody", "oboe", "clarinet", "trumpet", "horn",
+                    // Labels
+                    "solo", "主旋律", "lead", "主音", "旋律"
+                ];
+
+                const penaltyKeywords = [
+                    "大阮", "daruan", "中阮", "zhongruan", "革胡", "gehu", "大提琴", "cello",
+                    "低音", "bass", "打击", "percussion", "扬琴", "yangqin", "伴奏", "acc", "accompaniment"
+                ];
+
+                let bestPartIndex = 0;
+                let highestScore = -Infinity;
+
                 partSelector.innerHTML = '';
+
                 for (let i = 0; i < parts.length; i++) {
                     const option = document.createElement('option');
                     option.value = i;
                     const id = parts[i].getAttribute("id");
 
-                    // Try to find part-name in part-list
                     let partName = `Part ${i + 1}`;
                     const partList = parsedXmlDoc.getElementsByTagName("part-list")[0];
                     if (partList) {
@@ -570,28 +855,65 @@
                     }
                     option.textContent = partName;
                     partSelector.appendChild(option);
+
+                    // Scoring
+                    let score = 0;
+
+                    // 1. Keyword check (heavy weight)
+                    let nameLower = partName.toLowerCase();
+                    for (let kw of keywords) {
+                        if (nameLower.includes(kw.toLowerCase())) {
+                            score += 1000;
+                            break;
+                        }
+                    }
+
+                    for (let kw of penaltyKeywords) {
+                        if (nameLower.includes(kw.toLowerCase())) {
+                            score -= 2000;
+                            break;
+                        }
+                    }
+
+                    // 2. Note density & avg pitch
+                    const notes = parts[i].getElementsByTagName("note");
+                    let totalPitches = 0;
+                    let pitchSum = 0;
+
+                    for (let j = 0; j < notes.length; j++) {
+                        const pitchNode = notes[j].getElementsByTagName("pitch")[0];
+                        if (pitchNode) {
+                            totalPitches++;
+                            const stepStr = pitchNode.getElementsByTagName("step")[0].textContent;
+                            let alter = 0;
+                            const alterNode = pitchNode.getElementsByTagName("alter")[0];
+                            if (alterNode) alter = parseInt(alterNode.textContent);
+                            const octave = parseInt(pitchNode.getElementsByTagName("octave")[0].textContent);
+
+                            const stepMap = { 'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11 };
+                            let semitone = stepMap[stepStr] + alter + (octave * 12);
+                            pitchSum += semitone;
+                        }
+                    }
+
+                    score += totalPitches; // Weight by note density
+                    if (totalPitches > 0) {
+                        score += (pitchSum / totalPitches) * 2; // Tweak pitch weight
+                    }
+
+                    if (score > highestScore) {
+                        highestScore = score;
+                        bestPartIndex = i;
+                    }
                 }
 
-                function renderSelectedPart() {
-                    if (!parsedXmlDoc) return;
-
-                    // Extract only the selected part's XML by cloning document but removing other parts
-                    const selectedIdx = parseInt(partSelector.value);
-                    const partsList = parsedXmlDoc.getElementsByTagName("part");
-                    if (partsList.length <= selectedIdx) return;
-
-                    // Create a dummy doc containing only the selected part for the parser
-                    const dummyDoc = document.implementation.createDocument(null, "score-partwise");
-                    dummyDoc.documentElement.appendChild(parsedXmlDoc.getElementsByTagName("part-list")[0].cloneNode(true));
-                    dummyDoc.documentElement.appendChild(partsList[selectedIdx].cloneNode(true));
-
-                    const result = parseXMLToJianpu(dummyDoc);
-                    output.textContent = result;
-                    output.style.display = 'block';
-                    controlsRow.style.display = 'flex';
+                // Apply auto detection
+                if (parts.length > 1) {
+                    partSelector.value = bestPartIndex;
+                    autoDetectLabel.style.display = 'block';
+                } else {
+                    autoDetectLabel.style.display = 'none';
                 }
-
-                partSelector.onchange = renderSelectedPart;
 
                 renderSelectedPart();
 
@@ -599,9 +921,7 @@
                 convertBtn.disabled = false;
 
             } catch (err) {
-                alert('Error processing file: ' + err.message);
-                convertBtn.textContent = 'Convert to Jianpu';
-                convertBtn.disabled = false;
+                showError('Error processing file: ' + err.message);
             }
         });
 
