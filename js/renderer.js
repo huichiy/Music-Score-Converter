@@ -85,9 +85,10 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled") {
             }
 
             if (extraBeats > 0) {
+                const dashStep = noteWidth / (extraBeats + 1);
                 for (let b = 1; b <= extraBeats; b++) {
                     let extChar = note.rest ? "0" : "-";
-                    svgElements.push(`<text x="${currentX + numXOffset + b * 40}" y="${currentY}" font-family="Inter" font-size="18" fill="${svgColor}">${extChar}</text>`);
+                    svgElements.push(`<text x="${currentX + numXOffset + b * dashStep}" y="${currentY}" font-family="Inter" font-size="18" fill="${svgColor}">${extChar}</text>`);
                 }
             }
 
