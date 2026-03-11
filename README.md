@@ -5,6 +5,8 @@
 
 **[🎼 Try the Live Demo](https://huichiy.github.io/Music-Score-Converter/)**
 
+![Demo Screenshot](docs/demo.png)
+
 ---
 
 ## Motivation
@@ -115,10 +117,18 @@ Visit **[huichiy.github.io/Music-Score-Converter](https://huichiy.github.io/Musi
 ```bash
 git clone https://github.com/huichiy/Music-Score-Converter.git
 cd Music-Score-Converter
-open index.html   # or just drag index.html into your browser
 ```
 
-No install steps. No `npm install`. No server required.
+> **Note:** Because the app loads separate JS files, you must serve it via a local HTTP server rather than opening `index.html` directly via `file://`.
+>
+> ```bash
+> # Python (recommended)
+> python3 -m http.server 8000
+>
+> # Node.js alternative
+> npx serve .
+> ```
+> Then visit `http://localhost:8000`
 
 ---
 
@@ -149,6 +159,8 @@ No install steps. No `npm install`. No server required.
 ## 中文说明
 
 **[🎼 在线体验](https://huichiy.github.io/Music-Score-Converter/)**
+
+![Demo Screenshot](docs/demo.png)
 
 ---
 
