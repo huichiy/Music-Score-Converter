@@ -57,7 +57,7 @@ function downloadAsImage(type, extension, btn) {
 }
 
 document.getElementById('dlTxt').addEventListener('click', function () {
-    triggerDownload(window.jianpuTextResult || 'No text processed.', 'jianpu_score.txt', 'text/plain');
+    triggerDownload(state.jianpuText || 'No text processed.', 'jianpu_score.txt', 'text/plain');
     setBtnFeedback(this, '.TXT');
 });
 

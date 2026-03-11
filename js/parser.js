@@ -3,6 +3,13 @@ function pitchToSemitones(step, alter, octave) {
     return stepMap[step] + alter + (octave * 12);
 }
 
+// --- Shared pitch-conversion constants (single source of truth for all scripts) ---
+const scaleDegrees = [0, 2, 4, 5, 7, 9, 11];   // semitone offsets for scale degrees 1–7
+const stepMapDiatonic = { 'C': 0, 'D': 1, 'E': 2, 'F': 3, 'G': 4, 'A': 5, 'B': 6 };
+
+// --- Shared session state (written by app.js, read by downloader.js and theme toggle) ---
+const state = {};
+
 function parseXMLToJianpu(xmlDoc) {
     // Find key signature
     let fifths = 0;
@@ -28,9 +35,6 @@ function parseXMLToJianpu(xmlDoc) {
     let baseTonicStep = keyStr[0];
     let baseTonicAlter = keyStr.includes('#') ? 1 : (keyStr.includes('b') ? -1 : 0);
     let baseTonicSemi = pitchToSemitones(baseTonicStep, baseTonicAlter, 4);
-
-    const scaleDegrees = [0, 2, 4, 5, 7, 9, 11];
-    const stepMapDiatonic = { 'C': 0, 'D': 1, 'E': 2, 'F': 3, 'G': 4, 'A': 5, 'B': 6 };
 
     let jianpuLines = [];
 
@@ -170,9 +174,6 @@ function parseXMLToNoteObjects(xmlDoc) {
     let baseTonicStep = keyStr[0];
     let baseTonicAlter = keyStr.includes('#') ? 1 : (keyStr.includes('b') ? -1 : 0);
     let baseTonicSemi = pitchToSemitones(baseTonicStep, baseTonicAlter, 4);
-
-    const scaleDegrees = [0, 2, 4, 5, 7, 9, 11];
-    const stepMapDiatonic = { 'C': 0, 'D': 1, 'E': 2, 'F': 3, 'G': 4, 'A': 5, 'B': 6 };
 
     let jianpuMeasures = [];
 

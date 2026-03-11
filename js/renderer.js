@@ -2,7 +2,7 @@ function escapeSVG(str) {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled") {
+function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", containerWidth = 540) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const svgColor = isDark ? '#FFFFFF' : '#0A0A0A';
     const widthMap = {
@@ -14,7 +14,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled") {
         "32nd": 14
     };
 
-    const maxWidth = 500;
+    const maxWidth = Math.max(300, containerWidth - 40);
     const lineHeight = 80;
     const paddingTop = 80;
     const startX = 20;

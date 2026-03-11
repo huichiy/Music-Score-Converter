@@ -10,6 +10,7 @@ const convertBtn = document.getElementById('convertBtn');
 const output = document.getElementById('output');
 const controlsRow = document.getElementById('controlsRow');
 const partSelector = document.getElementById('partSelector');
+const partSelectorContainer = document.getElementById('partSelectorContainer');
 const autoDetectLabel = document.getElementById('autoDetectLabel');
 const errorMsg = document.getElementById('errorMsg');
 
@@ -33,9 +34,9 @@ themeToggle.addEventListener('click', () => {
     updateIcon(newTheme);
     if (output.style.display !== 'none') {
         if (parsedXmlDoc) renderSelectedPart();
-        else if (window.lastMidiRender) {
-            const r = window.lastMidiRender;
-            output.innerHTML = renderJianpuSVG(r.measures, r.keyStr, r.timeStr, r.titleStr);
+        else if (state.lastMidiRender) {
+            const r = state.lastMidiRender;
+            output.innerHTML = renderJianpuSVG(r.measures, r.keyStr, r.timeStr, r.titleStr, output.clientWidth);
         }
     }
 });
@@ -56,11 +57,11 @@ function handleFile(file) {
     convertBtn.disabled = false;
     output.style.display = 'none';
     controlsRow.style.display = 'none';
-    partSelector.parentElement.style.display = '';
+    partSelectorContainer.style.display = '';
     autoDetectLabel.style.display = 'none';
     errorMsg.style.display = 'none';
     parsedXmlDoc = null;
-    window.lastMidiRender = null;
+    state.lastMidiRender = null;
 }
 
 dropzone.addEventListener('dragover', (e) => {
@@ -131,11 +132,11 @@ function renderSelectedPart() {
     const keyStr = keyMap[fifths.toString()] || "C";
 
     const result = parseXMLToJianpu(dummyDoc);
-    window.jianpuTextResult = result;
+    state.jianpuText = result;
 
     let svgMeasures = parseXMLToNoteObjects(dummyDoc);
     svgMeasures = stripRestMeasures(svgMeasures);
-    const svgResult = renderJianpuSVG(svgMeasures, keyStr, `${beats}/${beatType}`, titleStr);
+    const svgResult = renderJianpuSVG(svgMeasures, keyStr, `${beats}/${beatType}`, titleStr, output.clientWidth);
 
     output.innerHTML = svgResult;
     output.style.display = 'block';
@@ -149,6 +150,13 @@ partSelector.addEventListener('change', () => {
 
 convertBtn.addEventListener('click', async () => {
     if (!currentFile) return;
+
+    // Guard against browser hang on very large files
+    const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+    if (currentFile.size > MAX_FILE_SIZE) {
+        showError('File is too large (max 20 MB). Please use a smaller file.');
+        return;
+    }
 
     convertBtn.textContent = 'Converting...';
     convertBtn.disabled = true;
@@ -169,8 +177,6 @@ convertBtn.addEventListener('click', async () => {
             let baseTonicAlter = keyStr.includes('#') ? 1 : (keyStr.includes('b') ? -1 : 0);
             let baseTonicSemi = pitchToSemitones(baseTonicStep, baseTonicAlter, 4);
 
-            const scaleDegrees = [0, 2, 4, 5, 7, 9, 11];
-            const stepMapDiatonic = { 'C': 0, 'D': 1, 'E': 2, 'F': 3, 'G': 4, 'A': 5, 'B': 6 };
 
             // Find track with most notes
             let bestTrack = null;
@@ -321,22 +327,22 @@ convertBtn.addEventListener('click', async () => {
             }
 
             const result = `Key: 1=${keyStr}   Time: ${beats}/${beatType}\n\n` + chunks.join(" |\n") + " |";
-            window.jianpuTextResult = result;
+            state.jianpuText = result;
 
             let titleStr = midi.header.name || currentFile.name.replace(/\.[^/.]+$/, "");
             jianpuMeasures = stripRestMeasures(jianpuMeasures);
-            window.lastMidiRender = {
+            state.lastMidiRender = {
                 measures: jianpuMeasures,
                 keyStr: keyStr,
                 timeStr: `${beats}/${beatType}`,
                 titleStr: titleStr
             };
-            const svgResult = renderJianpuSVG(jianpuMeasures, keyStr, `${beats}/${beatType}`, titleStr);
+            const svgResult = renderJianpuSVG(jianpuMeasures, keyStr, `${beats}/${beatType}`, titleStr, output.clientWidth);
 
             output.innerHTML = svgResult;
             output.style.display = 'block';
             controlsRow.style.display = 'flex'; // show the download buttons container
-            partSelector.parentElement.style.display = 'none'; // fully hide the part-selector container div
+            partSelectorContainer.style.display = 'none'; // fully hide the part-selector container div
 
             convertBtn.textContent = 'Convert to Jianpu';
             convertBtn.disabled = false;
@@ -480,10 +486,10 @@ convertBtn.addEventListener('click', async () => {
         if (parts.length > 1) {
             partSelector.value = bestPartIndex;
             autoDetectLabel.style.display = 'block';
-            partSelector.parentElement.style.display = 'block';
+            partSelectorContainer.style.display = 'block';
         } else {
             autoDetectLabel.style.display = 'none';
-            partSelector.parentElement.style.display = 'none';
+            partSelectorContainer.style.display = 'none';
         }
 
         renderSelectedPart();
