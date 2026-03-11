@@ -121,9 +121,15 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled") {
             }
 
             // Octave dots (below)
-            if (!note.rest && !note.tie && note.octave === -1) {
-                let dotY = currentY + 6 + linesCnt * 4;
-                svgElements.push(`<circle cx="${cx}" cy="${dotY}" r="1.5" fill="${svgColor}"/>`);
+            if (!note.rest && !note.tie) {
+                if (note.octave === -1) {
+                    let dotY = currentY + 6 + linesCnt * 4;
+                    svgElements.push(`<circle cx="${cx}" cy="${dotY}" r="1.5" fill="${svgColor}"/>`);
+                } else if (note.octave === -2) {
+                    let dotY = currentY + 6 + linesCnt * 4;
+                    svgElements.push(`<circle cx="${cx}" cy="${dotY}" r="1.5" fill="${svgColor}"/>`);
+                    svgElements.push(`<circle cx="${cx}" cy="${dotY + 6}" r="1.5" fill="${svgColor}"/>`);
+                }
             }
 
             currentX += noteWidth;

@@ -103,16 +103,30 @@ function renderSelectedPart() {
         titleStr = currentFile.name.replace(/\.[^/.]+$/, "");
     }
 
-    // Extract time and key for SVG parameters
+    // Extract time and key for SVG parameters — read from the selected part's dummyDoc
+    // so that parts with different attributes (e.g. transposing instruments) are handled correctly.
+    // Fall back to the global document if the part doesn't declare its own attributes.
     let beats = "4"; let beatType = "4";
-    const beatsNodes = parsedXmlDoc.getElementsByTagName("beats");
+    const beatsNodes = dummyDoc.getElementsByTagName("beats");
     if (beatsNodes.length > 0) beats = beatsNodes[0].textContent;
-    const beatTypeNodes = parsedXmlDoc.getElementsByTagName("beat-type");
+    else {
+        const fallbackBeats = parsedXmlDoc.getElementsByTagName("beats");
+        if (fallbackBeats.length > 0) beats = fallbackBeats[0].textContent;
+    }
+    const beatTypeNodes = dummyDoc.getElementsByTagName("beat-type");
     if (beatTypeNodes.length > 0) beatType = beatTypeNodes[0].textContent;
+    else {
+        const fallbackBeatType = parsedXmlDoc.getElementsByTagName("beat-type");
+        if (fallbackBeatType.length > 0) beatType = fallbackBeatType[0].textContent;
+    }
 
     let fifths = 0;
-    const fifthsNodes = parsedXmlDoc.getElementsByTagName("fifths");
+    const fifthsNodes = dummyDoc.getElementsByTagName("fifths");
     if (fifthsNodes.length > 0) fifths = parseInt(fifthsNodes[0].textContent);
+    else {
+        const fallbackFifths = parsedXmlDoc.getElementsByTagName("fifths");
+        if (fallbackFifths.length > 0) fifths = parseInt(fallbackFifths[0].textContent);
+    }
     const keyMap = { "-7": "Cb", "-6": "Gb", "-5": "Db", "-4": "Ab", "-3": "Eb", "-2": "Bb", "-1": "F", "0": "C", "1": "G", "2": "D", "3": "A", "4": "E", "5": "B", "6": "F#", "7": "C#" };
     const keyStr = keyMap[fifths.toString()] || "C";
 
@@ -170,6 +184,16 @@ convertBtn.addEventListener('click', async () => {
 
             if (!bestTrack || bestTrack.notes.length === 0) throw new Error("No notes found in MIDI.");
 
+            // Deduplicate simultaneous notes (chords) — keep only the highest-pitched note
+            // per unique tick position. The highest pitch is the standard melody convention.
+            const tickMap = new Map();
+            for (const n of bestTrack.notes) {
+                if (!tickMap.has(n.ticks) || n.midi > tickMap.get(n.ticks).midi) {
+                    tickMap.set(n.ticks, n);
+                }
+            }
+            const melodyNotes = [...tickMap.values()].sort((a, b) => a.ticks - b.ticks);
+
             // Time signature
             let beats = 4;
             let beatType = 4;
@@ -193,8 +217,8 @@ convertBtn.addEventListener('click', async () => {
                 ? ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
                 : ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-            for (let i = 0; i < bestTrack.notes.length; i++) {
-                const note = bestTrack.notes[i];
+            for (let i = 0; i < melodyNotes.length; i++) {
+                const note = melodyNotes[i];
                 const noteMeasureIdx = Math.floor(note.ticks / measureTicks);
 
                 // Pad empty measures with rests
@@ -432,7 +456,7 @@ convertBtn.addEventListener('click', async () => {
                     const stepStr = pitchNode.getElementsByTagName("step")[0].textContent;
                     let alter = 0;
                     const alterNode = pitchNode.getElementsByTagName("alter")[0];
-                    if (alterNode) alter = parseInt(alterNode.textContent);
+                    if (alterNode) alter = parseFloat(alterNode.textContent);
                     const octave = parseInt(pitchNode.getElementsByTagName("octave")[0].textContent);
 
                     const stepMap = { 'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11 };

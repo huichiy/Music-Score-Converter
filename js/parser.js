@@ -59,7 +59,7 @@ function parseXMLToJianpu(xmlDoc) {
                     const step = pitchNode.getElementsByTagName("step")[0].textContent;
                     let alter = 0;
                     const alterNode = pitchNode.getElementsByTagName("alter")[0];
-                    if (alterNode) alter = parseInt(alterNode.textContent);
+                    if (alterNode) alter = parseFloat(alterNode.textContent);
                     const octave = parseInt(pitchNode.getElementsByTagName("octave")[0].textContent);
 
                     let noteSemi = pitchToSemitones(step, alter, octave);
@@ -253,7 +253,7 @@ function parseXMLToNoteObjects(xmlDoc) {
                     const step = pitchNode.getElementsByTagName("step")[0].textContent;
                     let alter = 0;
                     const alterNode = pitchNode.getElementsByTagName("alter")[0];
-                    if (alterNode) alter = parseInt(alterNode.textContent);
+                    if (alterNode) alter = parseFloat(alterNode.textContent);
                     const octave = parseInt(pitchNode.getElementsByTagName("octave")[0].textContent);
 
                     let noteSemi = pitchToSemitones(step, alter, octave);
