@@ -8,6 +8,7 @@ const fileInput = document.getElementById('fileInput');
 const fileNameDisplay = document.getElementById('fileNameDisplay');
 const convertBtn = document.getElementById('convertBtn');
 const output = document.getElementById('output');
+const appContainer = document.querySelector('.container');
 const controlsRow = document.getElementById('controlsRow');
 const partSelector = document.getElementById('partSelector');
 const partSelectorContainer = document.getElementById('partSelectorContainer');
@@ -136,7 +137,7 @@ function renderSelectedPart() {
 
     let svgMeasures = parseXMLToNoteObjects(dummyDoc);
     svgMeasures = stripRestMeasures(svgMeasures);
-    const svgResult = renderJianpuSVG(svgMeasures, keyStr, `${beats}/${beatType}`, titleStr, output.clientWidth);
+    const svgResult = renderJianpuSVG(svgMeasures, keyStr, `${beats}/${beatType}`, titleStr, appContainer.clientWidth);
 
     output.innerHTML = svgResult;
     output.style.display = 'block';
@@ -337,7 +338,7 @@ convertBtn.addEventListener('click', async () => {
                 timeStr: `${beats}/${beatType}`,
                 titleStr: titleStr
             };
-            const svgResult = renderJianpuSVG(jianpuMeasures, keyStr, `${beats}/${beatType}`, titleStr, output.clientWidth);
+            const svgResult = renderJianpuSVG(jianpuMeasures, keyStr, `${beats}/${beatType}`, titleStr, appContainer.clientWidth);
 
             output.innerHTML = svgResult;
             output.style.display = 'block';
