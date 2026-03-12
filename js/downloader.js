@@ -97,6 +97,8 @@ function printAsPDF(btn) {
                 const dataURL = canvas.toDataURL('image/png');
                 URL.revokeObjectURL(url);
 
+                setBtnFeedback(btn, '.PDF');
+
                 // Open a minimal print window containing only the score image
                 const printWin = window.open('', '_blank');
                 if (!printWin) {
@@ -114,12 +116,12 @@ function printAsPDF(btn) {
 </head><body>
 <img src="${dataURL}"/>
 <script>
-  window.onload = function () { window.print(); window.close(); };
+  window.onload = function () { window.print(); };
 <\/script>
 </body></html>`);
                 printWin.document.close();
 
-                setBtnFeedback(btn, '.PDF');
+
             });
         };
 
