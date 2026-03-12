@@ -70,7 +70,63 @@ document.getElementById('dlJpeg').addEventListener('click', function () {
     downloadAsImage('image/jpeg', 'jpg', this);
 });
 
+function printAsPDF(btn) {
+    document.fonts.ready.then(() => {
+        const svgElement = output.querySelector('svg');
+        if (!svgElement) return;
+
+        const svgData = new XMLSerializer().serializeToString(svgElement);
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        const img = new Image();
+        const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+
+        img.onload = function () {
+            document.fonts.ready.then(() => {
+                canvas.width = svgElement.width.baseVal.value * 2;
+                canvas.height = svgElement.height.baseVal.value * 2;
+
+                const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+                ctx.fillStyle = '#FFFFFF'; // always white background for print
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.scale(2, 2);
+                ctx.drawImage(img, 0, 0);
+
+                const dataURL = canvas.toDataURL('image/png');
+                URL.revokeObjectURL(url);
+
+                // Open a minimal print window containing only the score image
+                const printWin = window.open('', '_blank');
+                if (!printWin) {
+                    // Popup blocked — fall back to direct print
+                    window.print();
+                    return;
+                }
+                printWin.document.write(`<!DOCTYPE html>
+<html><head><title>Jianpu Score</title>
+<style>
+  body { margin: 0; padding: 0; }
+  img  { width: 100%; display: block; }
+  @media print { @page { margin: 12mm; } }
+</style>
+</head><body>
+<img src="${dataURL}"/>
+<script>
+  window.onload = function () { window.print(); window.close(); };
+<\/script>
+</body></html>`);
+                printWin.document.close();
+
+                setBtnFeedback(btn, '.PDF');
+            });
+        };
+
+        img.src = url;
+    });
+}
+
 document.getElementById('dlPdf').addEventListener('click', function () {
-    window.print();
-    setBtnFeedback(this, '.PDF');
+    printAsPDF(this);
 });
