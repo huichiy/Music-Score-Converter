@@ -42,9 +42,9 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         const measure = measures[i];
         let measureWidth = 0;
 
-        // Pre-calculate measure width
+        // Pre-calculate measure width (base note width + 6px extra per accidental)
         for (let note of measure) {
-            measureWidth += (widthMap[note.type] || 40) * (note.dot ? 1.5 : 1);
+            measureWidth += (widthMap[note.type] || 40) * (note.dot ? 1.5 : 1) + (note.accidental ? 6 : 0);
         }
 
         // Wrap to next line if measure exceeds remaining width
