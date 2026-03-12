@@ -93,35 +93,42 @@ function printAsPDF(btn) {
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.scale(2, 2);
                 ctx.drawImage(img, 0, 0);
+                URL.revokeObjectURL(url); // done with the SVG blob
 
-                const dataURL = canvas.toDataURL('image/png');
-                URL.revokeObjectURL(url);
+                // Use toBlob + createObjectURL instead of toDataURL —
+                // dataURLs >~2MB are silently dropped across window contexts in Chrome.
+                // Object URLs live in the shared blob registry and work cross-window.
+                canvas.toBlob((blob) => {
+                    const objectURL = URL.createObjectURL(blob);
 
-                setBtnFeedback(btn, '.PDF');
+                    setBtnFeedback(btn, '.PDF');
 
-                // Open a minimal print window and build the DOM directly —
-                // document.write() with inline scripts is unreliable on about:blank in Chrome.
-                const printWin = window.open('', '_blank');
-                if (!printWin) {
-                    // Popup blocked — fall back to direct print
-                    window.print();
-                    return;
-                }
+                    // Build print window DOM directly (no document.write / inline scripts)
+                    const printWin = window.open('', '_blank');
+                    if (!printWin) {
+                        URL.revokeObjectURL(objectURL);
+                        window.print(); // popup blocked — fall back
+                        return;
+                    }
 
-                const doc = printWin.document;
-                doc.title = 'Jianpu Score';
-                doc.body.style.cssText = 'margin:0;padding:0;';
+                    const doc = printWin.document;
+                    doc.title = 'Jianpu Score';
+                    doc.body.style.cssText = 'margin:0;padding:0;';
 
-                const printImg = doc.createElement('img');
-                printImg.src = dataURL;
-                printImg.style.cssText = 'width:100%;display:block;';
-                doc.body.appendChild(printImg);
+                    const printImg = doc.createElement('img');
+                    printImg.src = objectURL;
+                    printImg.style.cssText = 'width:100%;display:block;';
+                    doc.body.appendChild(printImg);
 
-                // Allow 500ms for the image to render before opening the print dialog
-                setTimeout(() => {
-                    printWin.focus();
-                    printWin.print();
-                }, 500);
+                    // Revoke the object URL once printing is done so no memory is leaked
+                    printWin.addEventListener('afterprint', () => URL.revokeObjectURL(objectURL));
+
+                    // 500ms lets the browser paint the image before the print dialog opens
+                    setTimeout(() => {
+                        printWin.focus();
+                        printWin.print();
+                    }, 500);
+                }, 'image/png');
 
 
             });
