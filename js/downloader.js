@@ -99,27 +99,29 @@ function printAsPDF(btn) {
 
                 setBtnFeedback(btn, '.PDF');
 
-                // Open a minimal print window containing only the score image
+                // Open a minimal print window and build the DOM directly —
+                // document.write() with inline scripts is unreliable on about:blank in Chrome.
                 const printWin = window.open('', '_blank');
                 if (!printWin) {
                     // Popup blocked — fall back to direct print
                     window.print();
                     return;
                 }
-                printWin.document.write(`<!DOCTYPE html>
-<html><head><title>Jianpu Score</title>
-<style>
-  body { margin: 0; padding: 0; }
-  img  { width: 100%; display: block; }
-  @media print { @page { margin: 12mm; } }
-</style>
-</head><body>
-<img src="${dataURL}"/>
-<script>
-  window.onload = function () { window.print(); };
-<\/script>
-</body></html>`);
-                printWin.document.close();
+
+                const doc = printWin.document;
+                doc.title = 'Jianpu Score';
+                doc.body.style.cssText = 'margin:0;padding:0;';
+
+                const printImg = doc.createElement('img');
+                printImg.src = dataURL;
+                printImg.style.cssText = 'width:100%;display:block;';
+                doc.body.appendChild(printImg);
+
+                // Allow 500ms for the image to render before opening the print dialog
+                setTimeout(() => {
+                    printWin.focus();
+                    printWin.print();
+                }, 500);
 
 
             });
