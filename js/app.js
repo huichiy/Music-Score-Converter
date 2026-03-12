@@ -204,16 +204,40 @@ convertBtn.addEventListener('click', async () => {
             }
             const melodyNotes = [...tickMap.values()].sort((a, b) => a.ticks - b.ticks);
 
-            // Time signature
+            // Time signature — with validation to guard against artifact headers (e.g. 1/4)
             let beats = 4;
             let beatType = 4;
             if (midi.header.timeSignatures && midi.header.timeSignatures.length > 0) {
-                beats = midi.header.timeSignatures[0].timeSignature[0];
-                beatType = midi.header.timeSignatures[0].timeSignature[1];
+                const rawBeats = midi.header.timeSignatures[0].timeSignature[0];
+                const rawBeatType = midi.header.timeSignatures[0].timeSignature[1];
+
+                // Stage 1: structural sanity check
+                const validBeatType = [2, 4, 8, 16].includes(rawBeatType);
+                const validBeats = rawBeats >= 2 && rawBeats <= 12;
+
+                if (validBeats && validBeatType) {
+                    beats = rawBeats;
+                    beatType = rawBeatType;
+                }
+                // else: leave beats/beatType at 4/4 fallback
             }
 
             const ppq = midi.header.ppq;
-            const measureTicks = beats * (4 / beatType) * ppq;
+            let measureTicks = beats * (4 / beatType) * ppq;
+
+            // Stage 2: density heuristic — if fewer than 1.5 notes per measure on average,
+            // the time signature grid is too fine-grained (common with artifact 1/4 exports).
+            // Re-calculate assuming 4/4 instead.
+            const estimatedMeasureCount = Math.ceil(
+                (melodyNotes[melodyNotes.length - 1].ticks + 1) / measureTicks
+            );
+            const avgNotesPerMeasure = melodyNotes.length / Math.max(1, estimatedMeasureCount);
+            if (avgNotesPerMeasure < 1.5) {
+                beats = 4;
+                beatType = 4;
+                measureTicks = beats * (4 / beatType) * ppq;
+            }
+
 
             let jianpuLines = [];
             let jianpuMeasures = [];

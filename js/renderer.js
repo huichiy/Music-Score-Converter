@@ -85,7 +85,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
             }
 
             if (extraBeats > 0) {
-                const dashStep = noteWidth / (extraBeats + 1);
+                const dashStep = (noteWidth - numXOffset) / (extraBeats + 1);
                 for (let b = 1; b <= extraBeats; b++) {
                     let extChar = note.rest ? "0" : "-";
                     svgElements.push(`<text x="${currentX + numXOffset + b * dashStep}" y="${currentY}" font-family="Inter" font-size="18" fill="${svgColor}">${extChar}</text>`);
@@ -121,13 +121,13 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
                 svgElements.push(`<line x1="${x1}" y1="${currentY + l * 4}" x2="${x2}" y2="${currentY + l * 4}" stroke="${svgColor}" stroke-width="1"/>`);
             }
 
-            // Octave dots (below)
+            // Octave dots (below) — fixed baseline so dots are consistent regardless of beaming
             if (!note.rest && !note.tie) {
                 if (note.octave === -1) {
-                    let dotY = currentY + 6 + linesCnt * 4;
+                    const dotY = currentY + 10;
                     svgElements.push(`<circle cx="${cx}" cy="${dotY}" r="1.5" fill="${svgColor}"/>`);
                 } else if (note.octave === -2) {
-                    let dotY = currentY + 6 + linesCnt * 4;
+                    const dotY = currentY + 10;
                     svgElements.push(`<circle cx="${cx}" cy="${dotY}" r="1.5" fill="${svgColor}"/>`);
                     svgElements.push(`<circle cx="${cx}" cy="${dotY + 6}" r="1.5" fill="${svgColor}"/>`);
                 }
