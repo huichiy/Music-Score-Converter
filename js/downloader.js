@@ -1,3 +1,4 @@
+// Depends on: state (declared in parser.js, must load first)
 function setBtnFeedback(btn, originalText) {
     btn.textContent = 'Done ✓';
     setTimeout(() => {

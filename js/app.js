@@ -1,3 +1,6 @@
+// Depends on: state (declared in parser.js, must load first)
+if (typeof state === 'undefined') throw new Error('parser.js must be loaded before app.js');
+
 // --- DOM Refs ---
 const themeToggle = document.getElementById('themeToggle');
 const themeIcon = document.getElementById('themeIcon');
