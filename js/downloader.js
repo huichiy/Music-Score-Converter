@@ -116,18 +116,20 @@ function printAsPDF(btn) {
                     doc.body.style.cssText = 'margin:0;padding:0;';
 
                     const printImg = doc.createElement('img');
-                    printImg.src = objectURL;
                     printImg.style.cssText = 'width:100%;display:block;';
-                    doc.body.appendChild(printImg);
 
-                    // Revoke the object URL once printing is done so no memory is leaked
-                    printWin.addEventListener('afterprint', () => URL.revokeObjectURL(objectURL));
-
-                    // 500ms lets the browser paint the image before the print dialog opens
-                    setTimeout(() => {
+                    // Only open the print dialog once the image has finished loading —
+                    // setTimeout(500) is a race condition for large scores.
+                    printImg.onload = () => {
                         printWin.focus();
                         printWin.print();
-                    }, 500);
+                    };
+
+                    printImg.src = objectURL;
+                    doc.body.appendChild(printImg);
+
+                    // Revoke the object URL after printing to free memory
+                    printWin.addEventListener('afterprint', () => URL.revokeObjectURL(objectURL));
                 }, 'image/png');
 
 

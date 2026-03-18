@@ -2,6 +2,35 @@ function escapeSVG(str) {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Collapse runs of 2+ consecutive all-rest measures into a single { _multiRest: N } marker.
+function collapseRestRuns(measures) {
+    const out = [];
+    let i = 0;
+    while (i < measures.length) {
+        const allRest = Array.isArray(measures[i]) && measures[i].length > 0
+            && measures[i].every(n => n.rest);
+        if (allRest) {
+            let run = 1;
+            while (i + run < measures.length
+                && Array.isArray(measures[i + run])
+                && measures[i + run].length > 0
+                && measures[i + run].every(n => n.rest)) {
+                run++;
+            }
+            if (run >= 2) {
+                out.push({ _multiRest: run });
+            } else {
+                out.push(measures[i]); // single rest measure — keep normal
+            }
+            i += run;
+        } else {
+            out.push(measures[i]);
+            i++;
+        }
+    }
+    return out;
+}
+
 function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", containerWidth = 540) {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const svgColor = isDark ? '#FFFFFF' : '#0A0A0A';
@@ -38,8 +67,56 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         return 0;
     };
 
+    measures = collapseRestRuns(measures);
+
     for (let i = 0; i < measures.length; i++) {
         const measure = measures[i];
+
+        // --- Multi-measure rest block ---
+        if (measure._multiRest) {
+            const N = measure._multiRest;
+            const blockW = Math.min(160, maxWidth * 0.4); // cap width so it fits a line
+
+            if (currentX + blockW > maxWidth && currentX > startX) {
+                currentX = startX;
+                currentY += lineHeight;
+            }
+
+            // Measure number label
+            if (currentX === startX) {
+                svgElements.push(`<text x="${currentX}" y="${currentY - 30}" font-family="Inter" font-size="10" font-style="italic" fill="${svgColor}">${i + 1}</text>`);
+                svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
+            }
+
+            const lineY = currentY - 8;  // sit at note mid-height
+            const lx1 = currentX + 4;
+            const lx2 = currentX + blockW - 4;
+            const midX = (lx1 + lx2) / 2;
+
+            // Thick horizontal bracket body
+            svgElements.push(`<line x1="${lx1}" y1="${lineY}" x2="${lx2}" y2="${lineY}" stroke="${svgColor}" stroke-width="3"/>`);
+            // Left cap
+            svgElements.push(`<line x1="${lx1}" y1="${lineY - 5}" x2="${lx1}" y2="${lineY + 5}" stroke="${svgColor}" stroke-width="2"/>`);
+            // Right cap
+            svgElements.push(`<line x1="${lx2}" y1="${lineY - 5}" x2="${lx2}" y2="${lineY + 5}" stroke="${svgColor}" stroke-width="2"/>`);
+            // Count label centred above the bracket
+            svgElements.push(`<text x="${midX}" y="${lineY - 7}" font-family="Inter" font-size="12" font-weight="600" fill="${svgColor}" text-anchor="middle">${N}</text>`);
+
+            currentX += blockW;
+
+            // Closing barline
+            if (i === measures.length - 1) {
+                svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
+                svgElements.push(`<line x1="${currentX + 4}" y1="${currentY - 15}" x2="${currentX + 4}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="3"/>`);
+                if (currentX + 4 > maxTotalWidth) maxTotalWidth = currentX + 4;
+            } else {
+                svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
+            }
+            if (currentX > maxTotalWidth) maxTotalWidth = currentX;
+            continue;
+        }
+
+        // --- Normal measure ---
         let measureWidth = 0;
 
         // Pre-calculate measure width (base note width + 6px extra per accidental)
