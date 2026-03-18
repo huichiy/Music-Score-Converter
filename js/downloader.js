@@ -97,31 +97,34 @@ function printAsPDF(btn) {
 
                 // Use toBlob + createObjectURL instead of toDataURL —
                 // dataURLs >~2MB are silently dropped across window contexts in Chrome.
-                // Object URLs live in the shared blob registry and work cross-window.
-                canvas.toBlob((blob) => {
-                    const objectURL = URL.createObjectURL(blob);
+                // Generate data URL from the canvas
+                const dataURL = canvas.toDataURL('image/png');
+                
+                setBtnFeedback(btn, '.PDF');
 
-                    setBtnFeedback(btn, '.PDF');
+                // Create a temporary full-screen print frame right on the main page.
+                // This avoids Chrome's popup cross-origin blob restrictions completely.
+                const printFrame = document.createElement('div');
+                printFrame.id = 'jianpuPrintFrame';
+                printFrame.style.cssText = 'position:fixed;top:0;left:0;width:100%;z-index:9999;background:#fff;';
 
-                    // Open the object URL directly to bypass Chrome's cross-origin restrictions
-                    // on loading parent-created blobs into an about:blank popup DOM
-                    const printWin = window.open(objectURL, '_blank');
-                    if (!printWin) {
-                        URL.revokeObjectURL(objectURL);
-                        window.print(); // popup blocked — fall back
-                        return;
-                    }
+                const printImg = document.createElement('img');
+                printImg.src = dataURL;
+                printImg.style.cssText = 'width:100%;display:block;';
+                printFrame.appendChild(printImg);
 
-                    // Trigger the print dialog once the browser finishes loading the image natively
-                    printWin.addEventListener('load', () => {
-                        printWin.print();
-                    });
+                document.body.appendChild(printFrame);
 
-                    // Revoke the object URL after printing to free memory
-                    printWin.addEventListener('afterprint', () => {
-                        URL.revokeObjectURL(objectURL);
-                    });
-                }, 'image/png');
+                // Clean up the frame once the print dialog closes
+                const cleanup = () => {
+                    printFrame.remove();
+                    window.removeEventListener('afterprint', cleanup);
+                };
+                window.addEventListener('afterprint', cleanup);
+
+                // Trigger print on main window — the @media print CSS ensures
+                // only the printFrame is visible and positioned correctly
+                window.print();
 
 
             });
