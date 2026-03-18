@@ -36,7 +36,7 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | **Accurate Music Theory** | Handles key signatures, accidentals, flat/sharp contexts, ties across measures, dotted notes, and all standard rhythmic durations |
 | **Authentic Jianpu Output** | Renders proper 延音线 (extension dashes), 减时线 (beaming underlines), and octave dots above/below numbers |
 | **SVG Score Rendering** | Output is a fully scalable SVG with correct measure layout, barlines, and line wrapping — not plain text |
-| **Multiple Export Formats** | `.TXT` plain text, `.PDF` via print stylesheet, `.PNG` and `.JPEG` via Canvas renderer |
+| **Multiple Export Formats** | `.PNG` and `.JPEG` via Canvas renderer |
 | **Zero Dependencies** | No server, no build tools, no install. Open `index.html` in any modern browser |
 | **Light / Dark Theme** | Minimal UI inspired by Notion and Linear, with live theme switching that re-renders the SVG output |
 
@@ -102,8 +102,6 @@ A custom layout engine in `renderer.js` iterates over note objects and:
 ### 5. Export
 | Format | Method |
 |---|---|
-| `.TXT` | Plain text string serialized from the parsed note objects |
-| `.PDF` | `window.print()` with a dedicated `@media print` stylesheet |
 | `.PNG` / `.JPEG` | SVG serialized → Blob URL → drawn onto a 2× Canvas via `document.fonts.ready` to ensure font loading before rasterization |
 
 ---
@@ -140,7 +138,6 @@ cd Music-Score-Converter
 | **Mid-piece key changes not supported** | Only the first `<key>` element is read; modulation mid-score is not yet tracked |
 | **MIDI triplets approximate** | MIDI has no semantic triplet encoding; durations are snapped to nearest binary value (quarter, eighth, etc.) |
 | **MIDI key detection** | Relies on the key signature event in the MIDI header; files exported without this metadata default to C major |
-| **PDF layout** | Uses the browser's native print dialog; margin and page-break behaviour varies by browser |
 | **No multi-voice rendering** | Each part is rendered as a single linear melody; simultaneous voices are not yet supported |
 
 ---
@@ -191,7 +188,7 @@ cd Music-Score-Converter
 | **精准乐理解析** | 正确处理调号、临时升降号、跨小节延音线、附点音符及所有标准时值 |
 | **标准简谱输出** | 输出包含增时线（延音线）、减时线（连音线）与高低八度点的规范简谱 |
 | **SVG 乐谱渲染** | 输出为可缩放 SVG，包含正确的小节布局、纵线与自动换行 |
-| **多格式导出** | 支持 `.TXT` 纯文本、`.PDF`（浏览器打印）、`.PNG` 与 `.JPEG`（Canvas 渲染） |
+| **多格式导出** | 支持 `.PNG` 与 `.JPEG`（Canvas 渲染） |
 | **无需安装** | 无服务器、无构建工具、无依赖，直接用浏览器打开 `index.html` |
 | **深色/浅色主题** | 极简 UI，主题切换时 SVG 输出实时重新渲染 |
 
@@ -251,8 +248,6 @@ Music-Score-Converter/
 #### 5. 导出
 | 格式 | 方式 |
 |---|---|
-| `.TXT` | 将解析结果序列化为纯文本字符串 |
-| `.PDF` | 调用 `window.print()`，配合 `@media print` 样式表 |
 | `.PNG` / `.JPEG` | SVG 序列化为 Blob → 等待 `document.fonts.ready` 字体加载完成 → 绘制到 2× Canvas 后导出 |
 
 ---
@@ -265,7 +260,6 @@ Music-Score-Converter/
 | **不支持中途变调** | 目前仅读取第一个调号标记 |
 | **MIDI 三连音近似处理** | MIDI 无三连音语义编码，时值对齐至最近二进制时值 |
 | **MIDI 调号依赖文件头** | 无调号元数据的 MIDI 文件默认以 C 大调处理 |
-| **PDF 排版依赖浏览器** | 页边距与分页行为因浏览器而异 |
 | **暂不支持多声部渲染** | 各声部仅渲染为单一旋律线，同时多声部尚未支持 |
 
 ---
