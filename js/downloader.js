@@ -109,8 +109,14 @@ function printAsPDF(btn) {
                 printFrame.style.cssText = 'position:fixed;top:0;left:0;width:100%;z-index:9999;background:#fff;';
 
                 const printImg = document.createElement('img');
-                printImg.src = dataURL;
                 printImg.style.cssText = 'width:100%;display:block;';
+                
+                // Trigger print ONLY after the image has been fully decoded and painted
+                printImg.onload = () => {
+                    window.print();
+                };
+
+                printImg.src = dataURL;
                 printFrame.appendChild(printImg);
 
                 document.body.appendChild(printFrame);
@@ -121,10 +127,6 @@ function printAsPDF(btn) {
                     window.removeEventListener('afterprint', cleanup);
                 };
                 window.addEventListener('afterprint', cleanup);
-
-                // Trigger print on main window — the @media print CSS ensures
-                // only the printFrame is visible and positioned correctly
-                window.print();
 
 
             });
