@@ -111,9 +111,15 @@ function printAsPDF(btn) {
                 const printImg = document.createElement('img');
                 printImg.style.cssText = 'width:100%;display:block;';
                 
-                // Trigger print ONLY after the image has been fully decoded and painted
+                // Trigger print ONLY after the image has been fully decoded and painted.
+                // Two requestAnimationFrames guarantee the browser has actually composited 
+                // the new DOM elements onto the screen before capturing the print snapshot.
                 printImg.onload = () => {
-                    window.print();
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            window.print();
+                        });
+                    });
                 };
 
                 printImg.src = dataURL;
