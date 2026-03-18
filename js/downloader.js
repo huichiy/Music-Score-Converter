@@ -112,6 +112,10 @@ function printAsPDF(btn) {
                     }
 
                     const doc = printWin.document;
+                    // In some browsers, about:blank has no body until we write one
+                    doc.write('<html><head><title>Jianpu Score</title></head><body></body></html>');
+                    doc.close();
+
                     doc.title = 'Jianpu Score';
                     doc.body.style.cssText = 'margin:0;padding:0;';
 

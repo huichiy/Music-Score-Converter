@@ -139,7 +139,6 @@ function renderSelectedPart() {
     state.jianpuText = result;
 
     let svgMeasures = parseXMLToNoteObjects(dummyDoc);
-    svgMeasures = stripRestMeasures(svgMeasures);
     const svgResult = renderJianpuSVG(svgMeasures, keyStr, `${beats}/${beatType}`, titleStr, appContainer.clientWidth);
 
     output.innerHTML = svgResult;
@@ -358,7 +357,6 @@ convertBtn.addEventListener('click', async () => {
             state.jianpuText = result;
 
             let titleStr = midi.header.name || currentFile.name.replace(/\.[^/.]+$/, "");
-            jianpuMeasures = stripRestMeasures(jianpuMeasures);
             state.lastMidiRender = {
                 measures: jianpuMeasures,
                 keyStr: keyStr,
