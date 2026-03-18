@@ -68,7 +68,7 @@ Music-Score-Converter/
 └── js/
     ├── parser.js     — MusicXML & MIDI parsing, pitch-to-scale-degree conversion
     ├── renderer.js   — SVG score rendering engine
-    ├── downloader.js — Export functions (TXT, PDF, PNG, JPEG)
+    ├── downloader.js — Export functions (PNG, JPEG)
     └── app.js        — UI state, event handlers, file handling, theme toggle
 ```
 
@@ -219,7 +219,7 @@ Music-Score-Converter/
 └── js/
     ├── parser.js     — MusicXML 与 MIDI 解析、音高转音级逻辑
     ├── renderer.js   — SVG 乐谱渲染引擎
-    ├── downloader.js — 导出功能（TXT、PDF、PNG、JPEG）
+    ├── downloader.js — 导出功能（PNG、JPEG）
     └── app.js        — UI 状态、事件处理、文件读取、主题切换
 ```
 
