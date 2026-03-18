@@ -111,6 +111,12 @@ function printAsPDF(btn) {
                 const printImg = document.createElement('img');
                 printImg.style.cssText = 'width:100%;display:block;';
                 
+                // Inject an aggressive style tag to completely hide all other elements
+                // from the layout engine during print, preventing blank pages.
+                const printStyle = document.createElement('style');
+                printStyle.textContent = 'body > *:not(#jianpuPrintFrame) { display: none !important; }';
+                document.head.appendChild(printStyle);
+
                 // Trigger print ONLY after the image has been fully decoded and painted.
                 // Two requestAnimationFrames guarantee the browser has actually composited 
                 // the new DOM elements onto the screen before capturing the print snapshot.
@@ -127,9 +133,10 @@ function printAsPDF(btn) {
 
                 document.body.appendChild(printFrame);
 
-                // Clean up the frame once the print dialog closes
+                // Clean up the frame and style tag once the print dialog closes
                 const cleanup = () => {
                     printFrame.remove();
+                    printStyle.remove();
                     window.removeEventListener('afterprint', cleanup);
                 };
                 window.addEventListener('afterprint', cleanup);

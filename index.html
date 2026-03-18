@@ -305,42 +305,7 @@
             background: var(--select-bg);
         }
 
-        @media print {
-            body * {
-                visibility: hidden;
-            }
 
-            #output,
-            #output * {
-                visibility: visible;
-                color: #000 !important;
-                background: #fff !important;
-                border: none !important;
-            }
-
-            #output {
-                position: absolute;
-                left: 0;
-                top: 0;
-                width: 100%;
-                margin: 0;
-                padding: 0;
-            }
-
-            #jianpuPrintFrame,
-            #jianpuPrintFrame * {
-                visibility: visible !important;
-            }
-
-            #jianpuPrintFrame {
-                position: fixed !important;
-                top: 0;
-                left: 0;
-                width: 100%;
-                margin: 0;
-                padding: 0;
-            }
-        }
 
         .footer {
             margin-top: auto;
