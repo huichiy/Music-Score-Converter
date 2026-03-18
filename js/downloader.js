@@ -103,37 +103,24 @@ function printAsPDF(btn) {
 
                     setBtnFeedback(btn, '.PDF');
 
-                    // Build print window DOM directly (no document.write / inline scripts)
-                    const printWin = window.open('', '_blank');
+                    // Open the object URL directly to bypass Chrome's cross-origin restrictions
+                    // on loading parent-created blobs into an about:blank popup DOM
+                    const printWin = window.open(objectURL, '_blank');
                     if (!printWin) {
                         URL.revokeObjectURL(objectURL);
                         window.print(); // popup blocked — fall back
                         return;
                     }
 
-                    const doc = printWin.document;
-                    // In some browsers, about:blank has no body until we write one
-                    doc.write('<html><head><title>Jianpu Score</title></head><body></body></html>');
-                    doc.close();
-
-                    doc.title = 'Jianpu Score';
-                    doc.body.style.cssText = 'margin:0;padding:0;';
-
-                    const printImg = doc.createElement('img');
-                    printImg.style.cssText = 'width:100%;display:block;';
-
-                    // Only open the print dialog once the image has finished loading —
-                    // setTimeout(500) is a race condition for large scores.
-                    printImg.onload = () => {
-                        printWin.focus();
+                    // Trigger the print dialog once the browser finishes loading the image natively
+                    printWin.addEventListener('load', () => {
                         printWin.print();
-                    };
-
-                    printImg.src = objectURL;
-                    doc.body.appendChild(printImg);
+                    });
 
                     // Revoke the object URL after printing to free memory
-                    printWin.addEventListener('afterprint', () => URL.revokeObjectURL(objectURL));
+                    printWin.addEventListener('afterprint', () => {
+                        URL.revokeObjectURL(objectURL);
+                    });
                 }, 'image/png');
 
 
