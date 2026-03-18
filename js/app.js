@@ -135,9 +135,6 @@ function renderSelectedPart() {
     const keyMap = { "-7": "Cb", "-6": "Gb", "-5": "Db", "-4": "Ab", "-3": "Eb", "-2": "Bb", "-1": "F", "0": "C", "1": "G", "2": "D", "3": "A", "4": "E", "5": "B", "6": "F#", "7": "C#" };
     const keyStr = keyMap[fifths.toString()] || "C";
 
-    const result = parseXMLToJianpu(dummyDoc);
-    state.jianpuText = result;
-
     let svgMeasures = parseXMLToNoteObjects(dummyDoc);
     const svgResult = renderJianpuSVG(svgMeasures, keyStr, `${beats}/${beatType}`, titleStr, appContainer.clientWidth);
 
@@ -238,9 +235,7 @@ convertBtn.addEventListener('click', async () => {
             }
 
 
-            let jianpuLines = [];
             let jianpuMeasures = [];
-            let currentMeasureNotes = [];
             let currentMeasureNoteObjects = [];
             let currentMeasureIdx = 0;
 
@@ -256,13 +251,10 @@ convertBtn.addEventListener('click', async () => {
 
                 // Pad empty measures with rests
                 while (currentMeasureIdx < noteMeasureIdx) {
-                    if (currentMeasureNotes.length > 0) {
-                        jianpuLines.push(currentMeasureNotes.join(" "));
+                    if (currentMeasureNoteObjects.length > 0) {
                         jianpuMeasures.push(currentMeasureNoteObjects);
-                        currentMeasureNotes = [];
                         currentMeasureNoteObjects = [];
                     } else {
-                        jianpuLines.push("0 - - -");
                         jianpuMeasures.push([{ degree: 0, octave: 0, type: "whole", dot: false, tie: false, rest: true, accidental: '' }]);
                     }
                     currentMeasureIdx++;
@@ -326,35 +318,11 @@ convertBtn.addEventListener('click', async () => {
                     accidental: acc
                 };
                 currentMeasureNoteObjects.push(noteObj);
-
-                let noteStr = noteValue;
-                if (noteType === "whole") {
-                    noteStr = noteValue + " - - -" + dotStr;
-                } else if (noteType === "half") {
-                    noteStr = noteValue + dotStr + " -";
-                } else if (noteType === "quarter") {
-                    noteStr = noteValue + dotStr;
-                } else if (noteType === "eighth") {
-                    noteStr = noteValue + dotStr + "_";
-                } else if (noteType === "16th") {
-                    noteStr = noteValue + dotStr + "__";
-                }
-
-                currentMeasureNotes.push(noteStr);
             }
 
-            if (currentMeasureNotes.length > 0) {
-                jianpuLines.push(currentMeasureNotes.join(" "));
+            if (currentMeasureNoteObjects.length > 0) {
                 jianpuMeasures.push(currentMeasureNoteObjects);
             }
-
-            let chunks = [];
-            for (let i = 0; i < jianpuLines.length; i += 4) {
-                chunks.push(jianpuLines.slice(i, i + 4).join(" | "));
-            }
-
-            const result = `Key: 1=${keyStr}   Time: ${beats}/${beatType}\n\n` + chunks.join(" |\n") + " |";
-            state.jianpuText = result;
 
             let titleStr = midi.header.name || currentFile.name.replace(/\.[^/.]+$/, "");
             state.lastMidiRender = {
