@@ -69,6 +69,8 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
 
     measures = collapseRestRuns(measures);
 
+    let actualMeasureNum = 1;
+
     for (let i = 0; i < measures.length; i++) {
         const measure = measures[i];
 
@@ -84,7 +86,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
 
             // Measure number label
             if (currentX === startX) {
-                svgElements.push(`<text x="${currentX}" y="${currentY - 30}" font-family="Inter" font-size="10" font-style="italic" fill="${svgColor}">${i + 1}</text>`);
+                svgElements.push(`<text x="${currentX}" y="${currentY - 30}" font-family="Inter" font-size="10" font-style="italic" fill="${svgColor}">${actualMeasureNum}</text>`);
                 svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
             }
 
@@ -113,6 +115,8 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
                 svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
             }
             if (currentX > maxTotalWidth) maxTotalWidth = currentX;
+
+            actualMeasureNum += N;
             continue;
         }
 
@@ -133,7 +137,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         // Draw starting bar line for first measure on a line
         if (currentX === startX) {
             // Add measure number
-            svgElements.push(`<text x="${currentX}" y="${currentY - 30}" font-family="Inter" font-size="10" font-style="italic" fill="${svgColor}">${i + 1}</text>`);
+            svgElements.push(`<text x="${currentX}" y="${currentY - 30}" font-family="Inter" font-size="10" font-style="italic" fill="${svgColor}">${actualMeasureNum}</text>`);
             svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
         }
 
@@ -224,6 +228,8 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         }
 
         if (currentX > maxTotalWidth) maxTotalWidth = currentX;
+
+        actualMeasureNum++;
     }
 
     const totalHeight = currentY + 20;
