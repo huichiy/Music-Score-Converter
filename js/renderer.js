@@ -31,7 +31,7 @@ function collapseRestRuns(measures) {
     return out;
 }
 
-function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", containerWidth = 540) {
+function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", containerWidth = 540, tempoStr = "") {
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const svgColor = isDark ? '#FFFFFF' : '#0A0A0A';
     const widthMap = {
@@ -48,7 +48,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
 
     const maxWidth = Math.max(300, containerWidth - 40);
     const lineHeight = 80;
-    const paddingTop = 80;
+    const paddingTop = tempoStr ? 100 : 80;
     const startX = 20;
 
     let currentX = startX;
@@ -59,6 +59,9 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
     // Draw header
     svgElements.push(`<text x="${maxWidth / 2}" y="35" font-family="Inter" font-size="24" font-weight="600" fill="${svgColor}" text-anchor="middle">${escapeSVG(titleStr)}</text>`);
     svgElements.push(`<text x="${startX}" y="65" font-family="Inter" font-size="14" font-weight="500" fill="${svgColor}">Key: 1=${keyStr}   Time: ${timeStr}</text>`);
+    if (tempoStr) {
+        svgElements.push(`<text x="${startX}" y="82" font-family="Inter" font-size="13" fill="${svgColor}">\u2669 = ${tempoStr}</text>`);
+    }
 
     // Draw opening barline
     svgElements.push(`<line x1="${startX}" y1="${currentY - 15}" x2="${startX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);

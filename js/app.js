@@ -42,7 +42,7 @@ themeToggle.addEventListener('click', () => {
         if (parsedXmlDoc) renderSelectedPart();
         else if (state.lastMidiRender) {
             const r = state.lastMidiRender;
-            output.innerHTML = renderJianpuSVG(r.measures, r.keyStr, r.timeStr, r.titleStr, output.clientWidth);
+            output.innerHTML = renderJianpuSVG(r.measures, r.keyStr, r.timeStr, r.titleStr, output.clientWidth, r.tempoStr || "");
         }
     }
 });
@@ -137,8 +137,14 @@ function renderSelectedPart() {
     const keyMap = { "-7": "Cb", "-6": "Gb", "-5": "Db", "-4": "Ab", "-3": "Eb", "-2": "Bb", "-1": "F", "0": "C", "1": "G", "2": "D", "3": "A", "4": "E", "5": "B", "6": "F#", "7": "C#" };
     const keyStr = keyMap[fifths.toString()] || "C";
 
+    let tempoStr = "";
+    const metronomeNodes = parsedXmlDoc.getElementsByTagName("per-minute");
+    if (metronomeNodes.length > 0) {
+        tempoStr = metronomeNodes[0].textContent.trim();
+    }
+
     let svgMeasures = parseXMLToNoteObjects(dummyDoc);
-    const svgResult = renderJianpuSVG(svgMeasures, keyStr, `${beats}/${beatType}`, titleStr, appContainer.clientWidth);
+    const svgResult = renderJianpuSVG(svgMeasures, keyStr, `${beats}/${beatType}`, titleStr, appContainer.clientWidth, tempoStr);
 
     output.innerHTML = svgResult;
     output.style.display = 'block';
@@ -326,14 +332,20 @@ convertBtn.addEventListener('click', async () => {
                 jianpuMeasures.push(currentMeasureNoteObjects);
             }
 
+            let tempoStr = "";
+            if (midi.header.tempos && midi.header.tempos.length > 0) {
+                tempoStr = Math.round(midi.header.tempos[0].bpm).toString();
+            }
+
             let titleStr = midi.header.name || currentFile.name.replace(/\.[^/.]+$/, "");
             state.lastMidiRender = {
                 measures: jianpuMeasures,
                 keyStr: keyStr,
                 timeStr: `${beats}/${beatType}`,
-                titleStr: titleStr
+                titleStr: titleStr,
+                tempoStr: tempoStr
             };
-            const svgResult = renderJianpuSVG(jianpuMeasures, keyStr, `${beats}/${beatType}`, titleStr, appContainer.clientWidth);
+            const svgResult = renderJianpuSVG(jianpuMeasures, keyStr, `${beats}/${beatType}`, titleStr, appContainer.clientWidth, tempoStr);
 
             output.innerHTML = svgResult;
             output.style.display = 'block';
