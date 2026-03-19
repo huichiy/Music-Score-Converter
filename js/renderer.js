@@ -46,6 +46,13 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
     // Used to render whole-measure rests as repeated 0s (one per beat)
     const beatsPerMeasure = parseInt(timeStr.split('/')[0]) || 4;
 
+    // Beat-boundary beaming: note duration in quarter-note units
+    const durationBeats = {
+        "whole": 4, "half": 2, "quarter": 1,
+        "eighth": 0.5, "16th": 0.25, "32nd": 0.125
+    };
+    const beatUnit = 4 / (parseInt(timeStr.split('/')[1]) || 4);
+
     const maxWidth = Math.max(300, containerWidth - 40);
     const lineHeight = 80;
     const paddingTop = tempoStr ? 100 : 80;
@@ -170,6 +177,16 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
             continue;
         }
 
+        // Pre-compute cumulative beat position of each note for beat-boundary beaming
+        let cumulative = [];
+        {
+            let acc = 0;
+            for (let note of measure) {
+                cumulative.push(acc);
+                acc += (durationBeats[note.type] || 1) * (note.dot ? 1.5 : 1);
+            }
+        }
+
         for (let j = 0; j < measure.length; j++) {
             const note = measure[j];
             let noteWidth = (widthMap[note.type] || 40) * (note.dot ? 1.5 : 1);
@@ -219,11 +236,15 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
                 }
             }
 
-            // Rhythm Underlines (Beaming)
+            // Rhythm Underlines (Beaming) — only beam within the same beat group
             let linesCnt = getLines(note.type);
             for (let l = 1; l <= linesCnt; l++) {
-                let connectLeft = (j > 0 && getLines(measure[j - 1].type) >= l);
-                let connectRight = (j < measure.length - 1 && getLines(measure[j + 1].type) >= l);
+                const noteBeat = Math.floor(cumulative[j] / beatUnit);
+                const prevBeat = j > 0 ? Math.floor(cumulative[j - 1] / beatUnit) : -1;
+                const nextBeat = j < measure.length - 1 ? Math.floor(cumulative[j + 1] / beatUnit) : -1;
+
+                let connectLeft = (j > 0 && getLines(measure[j - 1].type) >= l && prevBeat === noteBeat);
+                let connectRight = (j < measure.length - 1 && getLines(measure[j + 1].type) >= l && nextBeat === noteBeat);
 
                 let x1 = connectLeft ? currentX : currentX + 2;
                 let x2 = connectRight ? currentX + noteWidth : currentX + noteWidth - 2;
