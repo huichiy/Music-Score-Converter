@@ -9,7 +9,13 @@ function setBtnFeedback(btn, originalText) {
 function downloadAsImage(type, extension, btn) {
     document.fonts.ready.then(() => {
         const svgElement = output.querySelector('svg');
-        if (!svgElement) return;
+        if (!svgElement) {
+            const errorMsg = document.getElementById('errorMsg');
+            errorMsg.textContent = 'No score to export. Please convert a file first.';
+            errorMsg.style.display = 'block';
+            btn.textContent = type === 'image/png' ? '.PNG' : '.JPEG';
+            return;
+        }
 
         const svgData = new XMLSerializer().serializeToString(svgElement);
         const canvas = document.createElement('canvas');
