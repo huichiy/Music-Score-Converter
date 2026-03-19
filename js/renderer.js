@@ -43,6 +43,9 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         "32nd": 14
     };
 
+    // Used to render whole-measure rests as repeated 0s (one per beat)
+    const beatsPerMeasure = parseInt(timeStr.split('/')[0]) || 4;
+
     const maxWidth = Math.max(300, containerWidth - 40);
     const lineHeight = 80;
     const paddingTop = 80;
@@ -139,6 +142,29 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
             // Add measure number
             svgElements.push(`<text x="${currentX}" y="${currentY - 30}" font-family="Inter" font-size="10" font-style="italic" fill="${svgColor}">${actualMeasureNum}</text>`);
             svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
+        }
+
+        // --- Whole-measure rest: render one 0 per beat, evenly spaced ---
+        const isWholeMeasureRest = measure.every(n => n.rest);
+        if (isWholeMeasureRest) {
+            const wmWidth = widthMap["whole"];  // fixed 160px budget
+            const step = wmWidth / beatsPerMeasure;
+            for (let b = 0; b < beatsPerMeasure; b++) {
+                svgElements.push(`<text x="${currentX + b * step + 2}" y="${currentY}" font-family="Inter" font-size="18" fill="${svgColor}">0</text>`);
+            }
+            currentX += wmWidth;
+
+            // Closing barline
+            if (i === measures.length - 1) {
+                svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
+                svgElements.push(`<line x1="${currentX + 4}" y1="${currentY - 15}" x2="${currentX + 4}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="3"/>`);
+                if (currentX + 4 > maxTotalWidth) maxTotalWidth = currentX + 4;
+            } else {
+                svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
+            }
+            if (currentX > maxTotalWidth) maxTotalWidth = currentX;
+            actualMeasureNum++;
+            continue;
         }
 
         for (let j = 0; j < measure.length; j++) {
