@@ -67,7 +67,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
     svgElements.push(`<text x="${maxWidth / 2}" y="35" font-family="Inter" font-size="24" font-weight="600" fill="${svgColor}" text-anchor="middle">${escapeSVG(titleStr)}</text>`);
     svgElements.push(`<text x="${startX}" y="65" font-family="Inter" font-size="14" font-weight="500" fill="${svgColor}">Key: 1=${keyStr}   Time: ${timeStr}</text>`);
     if (tempoStr) {
-        svgElements.push(`<text x="${startX}" y="82" font-family="Inter" font-size="13" fill="${svgColor}">\u2669 = ${tempoStr}</text>`);
+        svgElements.push(`<text x="${startX}" y="82" font-family="Inter" font-size="13" fill="${svgColor}">Tempo: ${tempoStr}</text>`);
     }
 
     // Draw opening barline
