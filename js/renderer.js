@@ -7,14 +7,17 @@ function collapseRestRuns(measures) {
     const out = [];
     let i = 0;
     while (i < measures.length) {
-        const allRest = Array.isArray(measures[i]) && measures[i].length > 0
-            && measures[i].every(n => n.rest);
+        const allRest = Array.isArray(measures[i])
+            && measures[i].length === 1
+            && measures[i][0].rest
+            && measures[i][0].type === "whole";
         if (allRest) {
             let run = 1;
             while (i + run < measures.length
                 && Array.isArray(measures[i + run])
-                && measures[i + run].length > 0
-                && measures[i + run].every(n => n.rest)) {
+                && measures[i + run].length === 1
+                && measures[i + run][0].rest
+                && measures[i + run][0].type === "whole") {
                 run++;
             }
             if (run >= 2) {
@@ -164,7 +167,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         }
 
         // --- Whole-measure rest: render one 0 per beat, evenly spaced ---
-        const isWholeMeasureRest = measure.every(n => n.rest);
+        const isWholeMeasureRest = measure.length === 1 && measure[0].rest && measure[0].type === "whole";
         if (isWholeMeasureRest) {
             const wmWidth = widthMap["whole"];  // fixed 160px budget
             const step = wmWidth / beatsPerMeasure;
