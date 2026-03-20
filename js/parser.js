@@ -43,6 +43,16 @@ function parseXMLToNoteObjects(xmlDoc) {
         if (attributesNode) {
             const divNode = attributesNode.getElementsByTagName("divisions")[0];
             if (divNode) currentDivisions = parseInt(divNode.textContent) || currentDivisions;
+
+            // Handle mid-piece key changes
+            const newFifthsNode = attributesNode.getElementsByTagName("fifths")[0];
+            if (newFifthsNode) {
+                fifths = parseInt(newFifthsNode.textContent);
+                const newKey = keyMap[fifths.toString()] || "C";
+                baseTonicStep = newKey[0];
+                baseTonicAlter = newKey.includes('#') ? 1 : (newKey.includes('b') ? -1 : 0);
+                baseTonicSemi = pitchToSemitones(baseTonicStep, baseTonicAlter, 4);
+            }
         }
 
         // Detect repeat barlines in this measure
