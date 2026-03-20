@@ -45,6 +45,19 @@ function parseXMLToNoteObjects(xmlDoc) {
             if (divNode) currentDivisions = parseInt(divNode.textContent) || currentDivisions;
         }
 
+        // Detect repeat barlines in this measure
+        let repeatStart = false;
+        let repeatEnd = false;
+        const barlineNodes = measures[i].getElementsByTagName("barline");
+        for (let b = 0; b < barlineNodes.length; b++) {
+            const repeatNode = barlineNodes[b].getElementsByTagName("repeat")[0];
+            if (repeatNode) {
+                const dir = repeatNode.getAttribute("direction");
+                if (dir === "forward") repeatStart = true;
+                if (dir === "backward") repeatEnd = true;
+            }
+        }
+
         for (let j = 0; j < notes.length; j++) {
             const note = notes[j];
 
@@ -135,7 +148,11 @@ function parseXMLToNoteObjects(xmlDoc) {
             measureNotes.push(noteObj);
         }
 
-        if (measureNotes.length > 0) {
+        // Stamp repeat flags on the measure array itself so renderer.js can read them
+        measureNotes._repeatStart = repeatStart;
+        measureNotes._repeatEnd = repeatEnd;
+
+        if (measureNotes.length > 0 || repeatStart || repeatEnd) {
             jianpuMeasures.push(measureNotes);
         }
     }

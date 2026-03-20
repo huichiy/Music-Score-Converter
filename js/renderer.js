@@ -154,6 +154,15 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
             svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
         }
 
+        // Repeat start sign: ||:
+        if (measure._repeatStart) {
+            svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="3"/>`);
+            svgElements.push(`<line x1="${currentX + 4}" y1="${currentY - 15}" x2="${currentX + 4}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
+            svgElements.push(`<circle cx="${currentX + 8}" cy="${currentY - 7}" r="2" fill="${svgColor}"/>`);
+            svgElements.push(`<circle cx="${currentX + 8}" cy="${currentY - 1}" r="2" fill="${svgColor}"/>`);
+            currentX += 12;
+        }
+
         // --- Whole-measure rest: render one 0 per beat, evenly spaced ---
         const isWholeMeasureRest = measure.every(n => n.rest);
         if (isWholeMeasureRest) {
@@ -275,6 +284,14 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
             if (currentX + 4 > maxTotalWidth) maxTotalWidth = currentX + 4;
         } else {
             svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
+        }
+
+        // Repeat end sign: :|
+        if (measure._repeatEnd) {
+            svgElements.push(`<circle cx="${currentX - 8}" cy="${currentY - 7}" r="2" fill="${svgColor}"/>`);
+            svgElements.push(`<circle cx="${currentX - 8}" cy="${currentY - 1}" r="2" fill="${svgColor}"/>`);
+            svgElements.push(`<line x1="${currentX - 4}" y1="${currentY - 15}" x2="${currentX - 4}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
+            svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="3"/>`);
         }
 
         if (currentX > maxTotalWidth) maxTotalWidth = currentX;
