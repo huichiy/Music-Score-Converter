@@ -299,6 +299,11 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
 
         if (currentX > maxTotalWidth) maxTotalWidth = currentX;
 
+        // D.C. / D.S. / Fine direction marking above the barline
+        if (measure._direction) {
+            svgElements.push(`<text x="${currentX - 4}" y="${currentY - 20}" font-family="Inter" font-size="11" font-style="italic" font-weight="500" fill="${svgColor}" text-anchor="end">${escapeSVG(measure._direction)}</text>`);
+        }
+
         actualMeasureNum++;
     }
 

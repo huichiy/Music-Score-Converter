@@ -163,6 +163,23 @@ function parseXMLToNoteObjects(xmlDoc) {
         measureNotes._repeatStart = repeatStart;
         measureNotes._repeatEnd = repeatEnd;
 
+        // Extract D.C. / D.S. / Fine / Coda / Segno direction markings
+        let directionText = "";
+        const directionNodes = measures[i].getElementsByTagName("direction");
+        const knownKeywords = ["d.c.", "d.s.", "fine", "coda", "segno", "al fine", "al coda"];
+        for (let d = 0; d < directionNodes.length; d++) {
+            const wordsNodes = directionNodes[d].getElementsByTagName("words");
+            for (let w = 0; w < wordsNodes.length; w++) {
+                const text = wordsNodes[w].textContent.trim();
+                if (knownKeywords.some(kw => text.toLowerCase().includes(kw))) {
+                    directionText = text;
+                    break;
+                }
+            }
+            if (directionText) break;
+        }
+        measureNotes._direction = directionText;
+
         if (measureNotes.length > 0 || repeatStart || repeatEnd) {
             jianpuMeasures.push(measureNotes);
         }
