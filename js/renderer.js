@@ -280,12 +280,12 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         }
 
         // Draw ending bar line for the measure
-        if (i === measures.length - 1) {
-            // Double bar line at the end
+        if (i === measures.length - 1 && !measure._repeatEnd) {
+            // Double bar line at the end (only if no repeat end sign taking over)
             svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
             svgElements.push(`<line x1="${currentX + 4}" y1="${currentY - 15}" x2="${currentX + 4}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="3"/>`);
             if (currentX + 4 > maxTotalWidth) maxTotalWidth = currentX + 4;
-        } else {
+        } else if (!measure._repeatEnd) {
             svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
         }
 
