@@ -304,6 +304,12 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
             svgElements.push(`<text x="${currentX - 4}" y="${currentY - 20}" font-family="Inter" font-size="11" font-style="italic" font-weight="500" fill="${svgColor}" text-anchor="end">${escapeSVG(measure._direction)}</text>`);
         }
 
+        // Dynamic marking below the note baseline at measure start
+        if (measure._dynamic) {
+            const measureStartX = currentX - measureWidth;
+            svgElements.push(`<text x="${measureStartX + 2}" y="${currentY + 22}" font-family="Inter" font-size="12" font-style="italic" font-weight="600" fill="${svgColor}">${escapeSVG(measure._dynamic)}</text>`);
+        }
+
         actualMeasureNum++;
     }
 

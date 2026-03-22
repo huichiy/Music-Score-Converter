@@ -180,6 +180,17 @@ function parseXMLToNoteObjects(xmlDoc) {
         }
         measureNotes._direction = directionText;
 
+        // Extract dynamic markings (p, f, mf, ff, etc.) from <dynamics> elements
+        let dynamicText = "";
+        for (let d = 0; d < directionNodes.length; d++) {
+            const dynamicsNode = directionNodes[d].getElementsByTagName("dynamics")[0];
+            if (dynamicsNode && dynamicsNode.children.length > 0) {
+                dynamicText = dynamicsNode.children[0].tagName.toLowerCase();
+                break;
+            }
+        }
+        measureNotes._dynamic = dynamicText;
+
         if (measureNotes.length > 0 || repeatStart || repeatEnd) {
             jianpuMeasures.push(measureNotes);
         }
