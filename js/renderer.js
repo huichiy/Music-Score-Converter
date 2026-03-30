@@ -315,7 +315,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         actualMeasureNum++;
     }
 
-    const totalHeight = currentY + 20;
+    const totalHeight = currentY + 40;
     const finalWidth = Math.max(maxWidth, maxTotalWidth + 20);
 
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${finalWidth}" height="${totalHeight}" viewBox="0 0 ${finalWidth} ${totalHeight}">
