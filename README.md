@@ -33,12 +33,15 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 |---|---|
 | **MusicXML & MIDI Support** | Accepts `.xml`, `.mxl`, `.mid`, `.midi` |
 | **Auto Melody Detection** | Scores multi-part files by instrument name keywords, note density, and average pitch. Recognises Chinese instrument names (笛, 二胡, 高胡, 琵琶) and penalizes accompaniment parts (大阮, 低音, 扬琴) |
-| **Accurate Music Theory** | Handles key signatures, accidentals, flat/sharp contexts, ties across measures, dotted notes, and all standard rhythmic durations |
-| **Authentic Jianpu Output** | Renders proper 延音线 (extension dashes), 减时线 (beaming underlines), and octave dots above/below numbers |
-| **SVG Score Rendering** | Output is a fully scalable SVG with correct measure layout, barlines, and line wrapping — not plain text |
+| **Accurate Music Theory** | Handles key signatures, mid-piece key changes, accidentals, flat/sharp contexts, ties across measures, dotted notes, and all standard rhythmic durations |
+| **Authentic Jianpu Output** | Renders proper 延音线 (extension dashes), 减时线 (beaming underlines with beat-boundary grouping), and octave dots above/below numbers |
+| **Tempo & Dynamic Markings** | Extracts BPM from MusicXML `<metronome>` and MIDI header; renders fixed dynamics (`p`, `f`, `mf`, `ff`, `sfz`, etc.) below the staff |
+| **Repeat & Direction Markings** | Renders `\|\|:` and `:\|` repeat barlines; extracts and displays D.C., D.S., Fine, and al Coda direction text |
+| **SVG Score Rendering** | Output is a fully scalable SVG with correct measure layout, barlines, line wrapping, and multi-measure rest brackets |
 | **Multiple Export Formats** | `.PNG` and `.JPEG` via Canvas renderer |
 | **Zero Dependencies** | No server, no build tools, no install. Open `index.html` in any modern browser |
 | **Light / Dark Theme** | Minimal UI inspired by Notion and Linear, with live theme switching that re-renders the SVG output |
+| **Mobile Responsive** | Adapts layout, font sizes, and controls for small screens via CSS media query |
 
 ---
 
@@ -66,7 +69,7 @@ No frameworks. No build tools. Vanilla JS only.
 Music-Score-Converter/
 ├── index.html        — Markup and CSS
 └── js/
-    ├── parser.js     — MusicXML & MIDI parsing, pitch-to-scale-degree conversion
+    ├── parser.js     — MusicXML & MIDI parsing, pitch-to-scale-degree conversion, shared globals
     ├── renderer.js   — SVG score rendering engine
     ├── downloader.js — Export functions (PNG, JPEG)
     └── app.js        — UI state, event handlers, file handling, theme toggle
@@ -77,14 +80,16 @@ Music-Score-Converter/
 ## How It Works
 
 ### 1. File Parsing
-- **MusicXML / MXL** — The `.mxl` container is decompressed via JSZip, reading `META-INF/container.xml` to locate the root XML file. The XML is then parsed with the browser's native `DOMParser` to extract key signature (`<fifths>`), time signature (`<beats>`, `<beat-type>`), and all `<note>` elements per measure.
-- **MIDI** — Parsed via `@tonejs/midi`. Key signature is read from the header. The track with the highest note count is selected as the melody line. Notes are mapped to measures using tick position and PPQ.
+- **MusicXML / MXL** — The `.mxl` container is decompressed via JSZip, reading `META-INF/container.xml` to locate the root XML file. The XML is then parsed with the browser's native `DOMParser` to extract key signature (`<fifths>`), time signature (`<beats>`, `<beat-type>`), tempo (`<per-minute>`), dynamics (`<dynamics>`), repeat barlines, direction markings, and all `<note>` elements per measure.
+- **MIDI** — Parsed via `@tonejs/midi`. Key signature and tempo are read from the header. The track with the highest note count is selected as the melody line. Simultaneous notes (chords) are deduplicated by keeping the highest pitch. Notes are mapped to measures using tick position and PPQ.
 
 ### 2. Pitch Conversion
 Each note undergoes a three-step conversion:
 1. **Diatonic degree** — The note's step (C, D, E...) is compared against the tonic step to find its scale degree (1–7)
 2. **Octave shift** — Calculated as `Math.round((noteSemi - (tonicSemi + scaleDegrees[degree])) / 12)` to determine how many octaves above or below the tonic register the note sits
 3. **Accidental** — The intended semitone at the calculated octave is compared to the actual semitone; any mismatch produces a `#` or `b` prefix
+
+Mid-piece key changes are handled by re-reading `<fifths>` inside each measure's `<attributes>` block and updating the tonic on the fly.
 
 ### 3. Rhythm Parsing
 Note type (`whole`, `half`, `quarter`, `eighth`, `16th`, `32nd`) is read from the `<type>` element. Dotted notes, tied notes, and grace notes are each handled separately:
@@ -95,8 +100,10 @@ Note type (`whole`, `half`, `quarter`, `eighth`, `16th`, `32nd`) is read from th
 ### 4. SVG Rendering
 A custom layout engine in `renderer.js` iterates over note objects and:
 - Pre-calculates each measure's pixel width based on note durations
-- Wraps lines when a measure would exceed `maxWidth`
-- Draws barlines, measure numbers, octave dots (above for `octave > 0`, below for `octave < 0`), beaming underlines for eighth/sixteenth notes, and extension dashes for held notes
+- Wraps lines when a measure would exceed `maxWidth` (derived from container width)
+- Draws barlines, measure numbers, octave dots (above for `octave > 0`, below for `octave < 0`), beaming underlines grouped by beat boundary, and extension dashes for held notes
+- Collapses runs of 2+ consecutive whole-measure rests into a numbered bracket block
+- Renders repeat signs, D.C./D.S. direction text, tempo, and dynamic markings
 - Escapes SVG-unsafe characters in score titles
 
 ### 5. Export
@@ -135,21 +142,22 @@ cd Music-Score-Converter
 | Limitation | Reason |
 |---|---|
 | **Single melody line only** | Chord voices and harmony notes are intentionally skipped to produce a readable melody line |
-| **Mid-piece key changes not supported** | Only the first `<key>` element is read; modulation mid-score is not yet tracked |
 | **MIDI triplets approximate** | MIDI has no semantic triplet encoding; durations are snapped to nearest binary value (quarter, eighth, etc.) |
 | **MIDI key detection** | Relies on the key signature event in the MIDI header; files exported without this metadata default to C major |
+| **No hairpin dynamics** | Crescendo and decrescendo hairpins are not yet rendered |
 | **No multi-voice rendering** | Each part is rendered as a single linear melody; simultaneous voices are not yet supported |
 
 ---
 
 ## Roadmap
 
-- [ ] Mid-piece key change detection and re-mapping
-- [ ] Repeat signs and D.C. / D.S. markings (段落反复记号)
-- [ ] Tempo (速度) and dynamic markings (力度记号) in output
+- [x] Mid-piece key change detection and re-mapping
+- [x] Repeat signs and D.C. / D.S. markings (段落反复记号)
+- [x] Tempo (速度) and dynamic markings (力度记号) in output
+- [x] Mobile-optimised layout and touch interactions
+- [ ] Hairpin dynamics (crescendo / decrescendo)
 - [ ] Multi-voice rendering — duet parts side by side
 - [ ] Jianpu image / PDF → MusicXML via OCR pipeline (Phase 3)
-- [ ] Mobile-optimised layout and touch interactions
 
 ---
 
@@ -185,12 +193,15 @@ cd Music-Score-Converter
 |---|---|
 | **支持 MusicXML 与 MIDI** | 接受 `.xml`、`.mxl`、`.mid`、`.midi` 格式 |
 | **智能旋律识别** | 综合乐器名称关键词、音符密度与平均音高自动评分选择主旋律声部。支持华乐器名（笛、二胡、高胡、琵琶），对伴奏声部（大阮、低音、扬琴）进行降权 |
-| **精准乐理解析** | 正确处理调号、临时升降号、跨小节延音线、附点音符及所有标准时值 |
-| **标准简谱输出** | 输出包含增时线（延音线）、减时线（连音线）与高低八度点的规范简谱 |
-| **SVG 乐谱渲染** | 输出为可缩放 SVG，包含正确的小节布局、纵线与自动换行 |
+| **精准乐理解析** | 正确处理调号、中途变调、临时升降号、跨小节延音线、附点音符及所有标准时值 |
+| **标准简谱输出** | 输出包含增时线（延音线）、按拍分组的减时线（连音线）与高低八度点的规范简谱 |
+| **速度与力度标记** | 从 MusicXML `<metronome>` 及 MIDI 文件头提取速度；渲染 `p`、`f`、`mf`、`ff`、`sfz` 等固定力度标记 |
+| **反复与指示标记** | 渲染 `\|\|:` 与 `:\|` 反复纵线；提取并显示 D.C.、D.S.、Fine、al Coda 等指示文字 |
+| **SVG 乐谱渲染** | 输出为可缩放 SVG，包含正确的小节布局、纵线、自动换行与多小节休止括号 |
 | **多格式导出** | 支持 `.PNG` 与 `.JPEG`（Canvas 渲染） |
 | **无需安装** | 无服务器、无构建工具、无依赖，直接用浏览器打开 `index.html` |
 | **深色/浅色主题** | 极简 UI，主题切换时 SVG 输出实时重新渲染 |
+| **移动端适配** | 通过 CSS 媒体查询自动调整布局、字体与控件 |
 
 ---
 
@@ -217,7 +228,7 @@ cd Music-Score-Converter
 Music-Score-Converter/
 ├── index.html        — HTML 结构与 CSS 样式
 └── js/
-    ├── parser.js     — MusicXML 与 MIDI 解析、音高转音级逻辑
+    ├── parser.js     — MusicXML 与 MIDI 解析、音高转音级逻辑、共享常量
     ├── renderer.js   — SVG 乐谱渲染引擎
     ├── downloader.js — 导出功能（PNG、JPEG）
     └── app.js        — UI 状态、事件处理、文件读取、主题切换
@@ -228,8 +239,8 @@ Music-Score-Converter/
 ### 工作原理
 
 #### 1. 文件解析
-- **MusicXML / MXL** — 通过 JSZip 解压 `.mxl` 容器，读取 `META-INF/container.xml` 定位根 XML 文件，再以浏览器原生 `DOMParser` 提取调号、拍号及各小节音符数据
-- **MIDI** — 通过 `@tonejs/midi` 解析，从文件头读取调号，选取音符数最多的轨道作为旋律线
+- **MusicXML / MXL** — 通过 JSZip 解压 `.mxl` 容器，读取 `META-INF/container.xml` 定位根 XML 文件，再以浏览器原生 `DOMParser` 提取调号、中途变调、拍号、速度、力度、反复纵线、指示标记及各小节音符数据
+- **MIDI** — 通过 `@tonejs/midi` 解析，从文件头读取调号与速度，选取音符数最多的轨道作为旋律线，和弦音符保留最高音
 
 #### 2. 音高转换
 每个音符经过三步转换：
@@ -237,13 +248,15 @@ Music-Score-Converter/
 2. **八度位移** — 通过半音数计算该音符相对于主音所在八度的偏移量
 3. **临时升降号** — 将计算所得半音与实际半音对比，若不符则输出 `#` 或 `b` 前缀
 
+中途变调通过逐小节读取 `<attributes>` 中的 `<fifths>` 实时更新主音。
+
 #### 3. 节奏解析
 - **延音线** — 使用 `lastNoteWasTieStart` 标志跨小节追踪延音线，延续音符渲染为 `-`
 - **附点** — 在 SVG 中渲染为小圆点，或对二分音符/全音符扩展为延音拍
 - **装饰音** — 自动跳过，保持旋律线整洁
 
 #### 4. SVG 渲染
-自定义排版引擎：预计算每小节像素宽度、超出最大宽度自动换行、绘制纵线、小节编号、八度点、减时线与增时线，并对乐谱标题进行 SVG 特殊字符转义。
+自定义排版引擎：预计算每小节像素宽度、超出最大宽度自动换行、绘制纵线、小节编号、八度点、按拍分组的减时线、增时线，连续全休止小节合并为括号标注，并渲染反复符号、指示文字、速度与力度标记。
 
 #### 5. 导出
 | 格式 | 方式 |
@@ -257,21 +270,22 @@ Music-Score-Converter/
 | 限制 | 原因 |
 |---|---|
 | **仅支持单旋律线** | 和弦与和声声部被有意跳过以保持输出整洁 |
-| **不支持中途变调** | 目前仅读取第一个调号标记 |
 | **MIDI 三连音近似处理** | MIDI 无三连音语义编码，时值对齐至最近二进制时值 |
 | **MIDI 调号依赖文件头** | 无调号元数据的 MIDI 文件默认以 C 大调处理 |
+| **暂不支持渐强渐弱符号** | 髭形力度记号（hairpin）尚未渲染 |
 | **暂不支持多声部渲染** | 各声部仅渲染为单一旋律线，同时多声部尚未支持 |
 
 ---
 
 ### 路线图
 
-- [ ] 中途变调检测与重新映射
-- [ ] 段落反复记号（D.C. / D.S.）
-- [ ] 速度与力度标记输出
+- [x] 中途变调检测与重新映射
+- [x] 段落反复记号（D.C. / D.S.）
+- [x] 速度与力度标记输出
+- [x] 移动端布局优化
+- [ ] 渐强渐弱符号（髭形力度记号）
 - [ ] 多声部并排渲染
 - [ ] 简谱图片 / PDF → MusicXML OCR 识别管道
-- [ ] 移动端布局优化
 
 ---
 
