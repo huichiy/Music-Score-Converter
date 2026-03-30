@@ -157,6 +157,9 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
             svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="1"/>`);
         }
 
+        // Capture measure start before _repeatStart may advance currentX
+        const measureStartX = currentX;
+
         // Repeat start sign: ||:
         if (measure._repeatStart) {
             svgElements.push(`<line x1="${currentX}" y1="${currentY - 15}" x2="${currentX}" y2="${currentY + 5}" stroke="${svgColor}" stroke-width="3"/>`);
@@ -306,7 +309,6 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
 
         // Dynamic marking below the note baseline at measure start
         if (measure._dynamic) {
-            const measureStartX = currentX - measureWidth;
             svgElements.push(`<text x="${measureStartX + 2}" y="${currentY + 22}" font-family="Inter" font-size="12" font-style="italic" font-weight="600" fill="${svgColor}">${escapeSVG(measure._dynamic)}</text>`);
         }
 
