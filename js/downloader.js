@@ -31,7 +31,7 @@ function downloadAsImage(type, extension, btn) {
                 canvas.height = svgElement.height.baseVal.value * 2;
 
                 const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-                ctx.fillStyle = isDark ? '#111111' : '#FFFFFF';
+                ctx.fillStyle = isDark ? '#131210' : '#FFFFFF';
                 // Always render background so elements map properly over dark/light themes
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 

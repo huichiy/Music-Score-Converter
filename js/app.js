@@ -42,7 +42,7 @@ themeToggle.addEventListener('click', () => {
         if (parsedXmlDoc) renderSelectedPart();
         else if (state.lastMidiRender) {
             const r = state.lastMidiRender;
-            output.innerHTML = renderJianpuSVG(r.measures, r.keyStr, r.timeStr, r.titleStr, output.clientWidth, r.tempoStr || "");
+            output.innerHTML = renderJianpuSVG(r.measures, r.keyStr, r.timeStr, r.titleStr, appContainer.clientWidth, r.tempoStr || "");
         }
     }
 });
