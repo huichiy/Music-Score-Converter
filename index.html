@@ -322,6 +322,23 @@
             width: 100%;
         }
 
+        .kofi-btn {
+            display: inline-block;
+            margin-bottom: 12px;
+            padding: 7px 16px;
+            border-radius: 6px;
+            background: #FF5E5B;
+            color: #FFFFFF;
+            font-size: 13px;
+            font-family: 'Inter', sans-serif;
+            text-decoration: none;
+            transition: opacity 0.2s;
+        }
+
+        .kofi-btn:hover {
+            opacity: 0.85;
+        }
+
         @media (max-width: 600px) {
             .container {
                 padding-top: 80px;
@@ -418,7 +435,10 @@
         <div class="output-zone" id="output"></div>
     </div>
 
-    <div class="footer">简谱 Jianpu Converter · Built for Chinese orchestra musicians</div>
+    <div class="footer">
+        <a class="kofi-btn" href="https://ko-fi.com/huichiyap" target="_blank" rel="noopener">☕ Buy me a coffee</a><br>
+        简谱 Jianpu Converter · Built for Chinese orchestra musicians
+    </div>
 
     <script src="js/parser.js"></script>
     <script src="js/renderer.js"></script>
