@@ -39,6 +39,7 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | **Repeat & Direction Markings** | Renders `\|\|:` and `:\|` repeat barlines; extracts and displays D.C., D.S., Fine, and al Coda direction text |
 | **SVG Score Rendering** | Output is a fully scalable SVG with correct measure layout, barlines, line wrapping, and multi-measure rest brackets |
 | **Multiple Export Formats** | `.PNG` and `.JPEG` via Canvas renderer |
+| **Try with Sample File** | One-click demo with a built-in sample score — no file upload needed to try the tool |
 | **Zero Dependencies** | No server, no build tools, no install. Open `index.html` in any modern browser |
 | **Light / Dark Theme** | Minimal UI inspired by Notion and Linear, with live theme switching that re-renders the SVG output |
 | **Mobile Responsive** | Adapts layout, font sizes, and controls for small screens via CSS media query |
@@ -67,12 +68,13 @@ No frameworks. No build tools. Vanilla JS only.
 
 ```
 Music-Score-Converter/
-├── index.html        — Markup and CSS
+├── index.html        — Markup, CSS, and Google Analytics
+├── sample.xml        — Built-in sample score (Twinkle Twinkle Little Star)
 └── js/
-    ├── parser.js     — MusicXML & MIDI parsing, pitch-to-scale-degree conversion, shared globals
-    ├── renderer.js   — SVG score rendering engine
+    ├── parser.js     — MusicXML parsing, pitch-to-scale-degree conversion, shared globals
+    ├── renderer.js   — SVG score rendering engine with modular sub-renderers
     ├── downloader.js — Export functions (PNG, JPEG)
-    └── app.js        — UI state, event handlers, file handling, theme toggle
+    └── app.js        — UI state, MIDI parsing, event handlers, theme toggle
 ```
 
 ---
@@ -199,6 +201,7 @@ cd Music-Score-Converter
 | **反复与指示标记** | 渲染 `\|\|:` 与 `:\|` 反复纵线；提取并显示 D.C.、D.S.、Fine、al Coda 等指示文字 |
 | **SVG 乐谱渲染** | 输出为可缩放 SVG，包含正确的小节布局、纵线、自动换行与多小节休止括号 |
 | **多格式导出** | 支持 `.PNG` 与 `.JPEG`（Canvas 渲染） |
+| **内置示例试用** | 一键加载示例乐谱，无需上传文件即可体验转换效果 |
 | **无需安装** | 无服务器、无构建工具、无依赖，直接用浏览器打开 `index.html` |
 | **深色/浅色主题** | 极简 UI，主题切换时 SVG 输出实时重新渲染 |
 | **移动端适配** | 通过 CSS 媒体查询自动调整布局、字体与控件 |
@@ -226,12 +229,13 @@ cd Music-Score-Converter
 
 ```
 Music-Score-Converter/
-├── index.html        — HTML 结构与 CSS 样式
+├── index.html        — HTML 结构、CSS 样式与 Google Analytics
+├── sample.xml        — 内置示例乐谱（小星星）
 └── js/
-    ├── parser.js     — MusicXML 与 MIDI 解析、音高转音级逻辑、共享常量
-    ├── renderer.js   — SVG 乐谱渲染引擎
+    ├── parser.js     — MusicXML 解析、音高转音级逻辑、共享常量
+    ├── renderer.js   — SVG 乐谱渲染引擎（模块化子渲染器）
     ├── downloader.js — 导出功能（PNG、JPEG）
-    └── app.js        — UI 状态、事件处理、文件读取、主题切换
+    └── app.js        — UI 状态、MIDI 解析、事件处理、主题切换
 ```
 
 ---
