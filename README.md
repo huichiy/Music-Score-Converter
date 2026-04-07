@@ -69,12 +69,11 @@ No frameworks. No build tools. Vanilla JS only.
 ```
 Music-Score-Converter/
 ├── index.html        — Markup, CSS, and Google Analytics
-├── sample.xml        — Built-in sample score (Twinkle Twinkle Little Star)
 └── js/
     ├── parser.js     — MusicXML parsing, pitch-to-scale-degree conversion, shared globals
     ├── renderer.js   — SVG score rendering engine with modular sub-renderers
     ├── downloader.js — Export functions (PNG, JPEG)
-    └── app.js        — UI state, MIDI parsing, event handlers, theme toggle
+    └── app.js        — UI state, MIDI parsing, event handlers, embedded sample score
 ```
 
 ---
@@ -230,12 +229,11 @@ cd Music-Score-Converter
 ```
 Music-Score-Converter/
 ├── index.html        — HTML 结构、CSS 样式与 Google Analytics
-├── sample.xml        — 内置示例乐谱（小星星）
 └── js/
     ├── parser.js     — MusicXML 解析、音高转音级逻辑、共享常量
     ├── renderer.js   — SVG 乐谱渲染引擎（模块化子渲染器）
     ├── downloader.js — 导出功能（PNG、JPEG）
-    └── app.js        — UI 状态、MIDI 解析、事件处理、主题切换
+    └── app.js        — UI 状态、MIDI 解析、事件处理、内置示例乐谱
 ```
 
 ---
