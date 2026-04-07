@@ -5,6 +5,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jianpu Converter</title>
+    <!-- Google Analytics (GA4) — replace G-XXXXXXXXXX with your Measurement ID from analytics.google.com -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-XXXXXXXXXX');
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=DM+Serif+Display&family=Ma+Shan+Zheng&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
@@ -214,6 +222,26 @@
 
         input[type="file"] {
             display: none;
+        }
+
+        .try-sample-btn {
+            width: 100%;
+            margin-top: 10px;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 13px;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: border-color 0.2s, color 0.2s;
+            font-family: 'Inter', sans-serif;
+            letter-spacing: 0.2px;
+        }
+
+        .try-sample-btn:hover {
+            border-color: var(--gold);
+            color: var(--gold);
         }
 
         .convert-btn {
@@ -477,6 +505,7 @@
         </div>
 
         <button class="convert-btn" id="convertBtn" disabled>Convert to Jianpu</button>
+        <button class="try-sample-btn" id="trySampleBtn">Try with sample file</button>
         <div class="error-message" id="errorMsg"></div>
 
         <div class="controls-row" id="controlsRow">
