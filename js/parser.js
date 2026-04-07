@@ -211,11 +211,3 @@ function parseXMLToNoteObjects(xmlDoc) {
 
     return jianpuMeasures;
 }
-
-function stripRestMeasures(measures) {
-    let start = 0;
-    while (start < measures.length && measures[start].every(n => n.rest)) start++;
-    let end = measures.length - 1;
-    while (end >= start && measures[end].every(n => n.rest)) end--;
-    return start <= end ? measures.slice(start, end + 1) : [];
-}

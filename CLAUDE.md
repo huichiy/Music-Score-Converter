@@ -176,7 +176,7 @@ if (newFifthsNode) {
 | `getElementById('partSelectorContainer')` | `.parentElement` breaks on DOM restructure |
 | `state.*` for session data | Never `window.*` globals |
 | `parser.js` loads first | Declares all shared globals |
-| Never call `stripRestMeasures` before render | Breaks multi-rest bracket collapsing |
+| `stripRestMeasures` was removed (dead code) | Was never called; would break multi-rest bracket collapsing |
 | Never re-add TXT export | Deliberate removal — output too messy |
 | Never re-add PDF export | Chrome security blocks canvas print from JS |
 | Never override valid 2/4, 3/4, 6/8 | Past regression bug — only reject beats===1 or beats>12 |
@@ -204,3 +204,32 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [ ] MIDI mid-file key change tracking
 - [ ] Multi-voice rendering (long term)
 - [ ] OCR pipeline: Jianpu image → MusicXML (Phase 3, requires backend)
+
+---
+
+## Market & Strategy
+
+### Positioning
+This is a **portfolio project**, not a revenue target. Its value is demonstrating the ability to independently ship a complete, polished product with domain depth.
+
+### Google Trends (as of 2026-04)
+- Keywords "简谱转换" and "musicxml to jianpu" show **near-zero global search volume** over 20 years
+- Only 4 non-zero data points across 267 months
+- Interpretation: demand exists but is too niche for Google Trends to capture; users may search via Baidu or not know such tools exist
+
+### Competitive Landscape
+| Project | Stars | Type | Weakness vs us |
+|---|---|---|---|
+| ssb22/jianpu-ly | 107 | Python CLI + Lilypond | High barrier — requires Lilypond |
+| felixhao28/react-jianpu | 80 | React component | Render only — no conversion |
+| lzh9102/musicxml_to_jianpu | 49 | Python CLI | Experimental, limited features |
+| OrpheusNet | 23 | Python OCR | Nearly dormant |
+| MuseScore jianpu plugins | — | QML plugin | Low activity, version-locked |
+
+**Our differentiator:** Only modern web-based converter with zero install, full MusicXML support, and polished UI.
+
+### Key Decisions
+- Do not pursue direct monetization — market is too small
+- Ko-fi donations are fine as passive income ($0–50/mo expected)
+- Focus on community sharing (Reddit, HN, Chinese orchestra groups) to collect real user feedback
+- OCR is the strongest potential differentiator long-term but requires backend + AI model — defer until user signals justify the investment
