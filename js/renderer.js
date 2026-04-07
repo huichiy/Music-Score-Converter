@@ -66,6 +66,10 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
     let svgElements = [];
     let maxTotalWidth = startX;
 
+    // Slur tracking
+    let slurStartX = null;
+    let slurStartY = null;
+
     // Draw header
     svgElements.push(`<text x="${maxWidth / 2}" y="35" font-family="Inter" font-size="24" font-weight="600" fill="${svgColor}" text-anchor="middle">${escapeSVG(titleStr)}</text>`);
     svgElements.push(`<text x="${startX}" y="65" font-family="Inter" font-size="14" font-weight="500" fill="${svgColor}">Key: 1=${keyStr}   Time: ${timeStr}</text>`);
@@ -146,8 +150,18 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
 
         // Wrap to next line if measure exceeds remaining width
         if (currentX + measureWidth > maxWidth && currentX > startX) {
+            // Close active slur at end of this line, reopen on next line
+            if (slurStartX !== null) {
+                const midX = (slurStartX + currentX) / 2;
+                const arcY = slurStartY - 30;
+                svgElements.push(`<path d="M ${slurStartX},${arcY} Q ${midX},${arcY - 12} ${currentX},${arcY}" fill="none" stroke="${svgColor}" stroke-width="1.2"/>`);
+            }
             currentX = startX;
             currentY += lineHeight;
+            if (slurStartX !== null) {
+                slurStartX = startX;
+                slurStartY = currentY;
+            }
         }
 
         // Draw starting bar line for first measure on a line
@@ -216,6 +230,12 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
                 numXOffset = 8;
             }
 
+            // Record slur start position
+            if (note.slurStart && !note.rest) {
+                slurStartX = currentX + numXOffset;
+                slurStartY = currentY;
+            }
+
             // Draw the main number
             svgElements.push(`<text x="${currentX + numXOffset}" y="${currentY}" font-family="Inter" font-size="18" fill="${svgColor}">${displayStr}</text>`);
 
@@ -280,6 +300,16 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
             }
 
             currentX += noteWidth;
+
+            // Draw slur curve if this note ends the slur
+            if (note.slurStop && !note.rest && slurStartX !== null) {
+                const slurEndX = currentX - noteWidth + numXOffset + 12;
+                const arcY = currentY - 30;
+                const midX = (slurStartX + slurEndX) / 2;
+                svgElements.push(`<path d="M ${slurStartX},${arcY} Q ${midX},${arcY - 12} ${slurEndX},${arcY}" fill="none" stroke="${svgColor}" stroke-width="1.2"/>`);
+                slurStartX = null;
+                slurStartY = null;
+            }
         }
 
         // Draw ending bar line for the measure

@@ -122,7 +122,9 @@ function parseXMLToNoteObjects(xmlDoc) {
                 dot: hasDot,
                 tie: isTieStop,
                 rest: isRest,
-                accidental: ''
+                accidental: '',
+                slurStart: false,
+                slurStop: false
             };
 
             if (!isRest) {
@@ -153,6 +155,17 @@ function parseXMLToNoteObjects(xmlDoc) {
                     noteObj.degree = degree + 1;
                     noteObj.octave = shift;
                     noteObj.accidental = acc;
+                }
+            }
+
+            // Slur detection
+            const notationsNode = note.getElementsByTagName("notations")[0];
+            if (notationsNode) {
+                const slurNodes = notationsNode.getElementsByTagName("slur");
+                for (let s = 0; s < slurNodes.length; s++) {
+                    const slurType = slurNodes[s].getAttribute("type");
+                    if (slurType === "start") noteObj.slurStart = true;
+                    if (slurType === "stop") noteObj.slurStop = true;
                 }
             }
 
