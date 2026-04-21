@@ -41,8 +41,9 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | **Multiple Export Formats** | `.PNG` and `.JPEG` via Canvas renderer |
 | **Try with Sample File** | One-click demo with a built-in sample score — no file upload needed to try the tool |
 | **Zero Dependencies** | No server, no build tools, no install. Open `index.html` in any modern browser |
-| **Light / Dark Theme** | Minimal UI inspired by Notion and Linear, with live theme switching that re-renders the SVG output |
-| **Mobile Responsive** | Adapts layout, font sizes, and controls for small screens via CSS media query |
+| **Warm Earthy Themes** | Two hand-crafted colour schemes: 竹简 (light, rice-paper tones) and 墨夜 (dark, ink-night tones); theme switch re-renders the SVG output |
+| **Reset Button** | × button in the file card instantly clears all state and returns to the initial screen |
+| **Mobile Responsive** | Sidebar collapses to a compact top panel on small screens via CSS media query |
 
 ---
 
@@ -202,8 +203,9 @@ cd Music-Score-Converter
 | **多格式导出** | 支持 `.PNG` 与 `.JPEG`（Canvas 渲染） |
 | **内置示例试用** | 一键加载示例乐谱，无需上传文件即可体验转换效果 |
 | **无需安装** | 无服务器、无构建工具、无依赖，直接用浏览器打开 `index.html` |
-| **深色/浅色主题** | 极简 UI，主题切换时 SVG 输出实时重新渲染 |
-| **移动端适配** | 通过 CSS 媒体查询自动调整布局、字体与控件 |
+| **双色主题** | 手工调制两套配色：竹简（浅色，宣纸暖调）与墨夜（深色，水墨暗调）；切换主题时 SVG 输出实时重新渲染 |
+| **重置按钮** | 文件卡片上的 × 按钮一键清除全部状态，回到初始界面 |
+| **移动端适配** | 侧边栏在小屏幕上折叠为顶部紧凑面板，通过 CSS 媒体查询自动切换布局 |
 
 ---
 

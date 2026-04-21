@@ -1,552 +1,468 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jianpu Converter</title>
-    <!-- Google Analytics (GA4) — replace G-XXXXXXXXXX with your Measurement ID from analytics.google.com -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-        function gtag(){dataLayer.push(arguments);}
-        gtag('js', new Date());
-        gtag('config', 'G-XXXXXXXXXX');
-    </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=DM+Serif+Display&family=Ma+Shan+Zheng&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
-    <style>
-        :root {
-            --bg: #F7F5F2;
-            --surface: #FFFFFF;
-            --border: rgba(0, 0, 0, 0.12);
-            --accent: #9F1239;
-            --gold: #B8943A;
-            --text: #0A0A0A;
-            --text-muted: #6B6B6B;
-            --btn-bg: #0A0A0A;
-            --btn-text: #FFFFFF;
-            --select-bg: #EDE9E3;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jianpu Converter</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+  <!-- Google Analytics (GA4) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-XXXXXXXXXX');
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
+  <style>
+    /* ── Themes ─────────────────────────────────────────────── */
+    :root {
+      --bg:         #EFE5D2;
+      --surface:    #FAF4EA;
+      --sidebar:    #E4D4BC;
+      --border:     #C4AD90;
+      --border-dim: rgba(196,173,144,0.35);
+      --accent:     #B01C1C;
+      --text:       #1C0F06;
+      --muted:      #8A6848;
+      --faint:      #C4AD90;
+      --sel-bg:     #D4C0A4;
+      --load-bg:    #D4C0A4;
+    }
 
-        [data-theme="dark"] {
-            --bg: #0A0908;
-            --surface: #131210;
-            --border: rgba(255, 255, 255, 0.1);
-            --accent: #9F1239;
-            --gold: #C9A84C;
-            --text: #F0EDE6;
-            --text-muted: #6B6865;
-            --btn-bg: #F0EDE6;
-            --btn-text: #0A0908;
-            --select-bg: #1C1A17;
-        }
+    [data-theme="dark"] {
+      --bg:         #100E08;
+      --surface:    #18120A;
+      --sidebar:    #140F08;
+      --border:     #2C2010;
+      --border-dim: rgba(44,32,16,0.55);
+      --accent:     #DC2626;
+      --text:       #E8D4A0;
+      --muted:      #6B5030;
+      --faint:      #3A2C18;
+      --sel-bg:     #1C160A;
+      --load-bg:    #1C160A;
+    }
 
-        * {
-            box-sizing: border-box;
-        }
+    /* ── Reset & Base ────────────────────────────────────────── */
+    * { box-sizing: border-box; }
 
-        body {
-            margin: 0;
-            padding: 0;
-            background: var(--bg);
-            color: var(--text);
-            font-family: 'Inter', sans-serif;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            transition: background 0.2s, color 0.2s;
-            overflow-x: hidden;
-        }
+    body {
+      margin: 0; padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      transition: background 0.25s, color 0.25s;
+    }
 
-        .theme-toggle {
-            position: fixed;
-            top: 24px;
-            right: 24px;
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            color: var(--text-muted);
-            padding: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: color 0.2s;
-        }
+    /* ── Theme Toggle (in sidebar) ───────────────────────────── */
+    .theme-toggle {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--sel-bg);
+      border: 0.5px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer; color: var(--muted);
+      padding: 7px 10px; width: 100%;
+      font-family: 'Inter', sans-serif; font-size: 11px;
+      transition: color 0.2s, background 0.2s;
+      margin-bottom: 10px;
+    }
+    .theme-toggle:hover { color: var(--text); border-color: var(--text); }
+    .theme-toggle svg { width: 14px; height: 14px; flex-shrink: 0; }
+    .theme-toggle-label { flex: 1; text-align: left; }
 
-        .theme-toggle:hover {
-            color: var(--text);
-        }
+    /* ── Layout ──────────────────────────────────────────────── */
+    .layout { flex: 1; display: flex; min-height: 100vh; }
 
-        .theme-toggle svg {
-            width: 20px;
-            height: 20px;
-        }
+    /* ── Sidebar ─────────────────────────────────────────────── */
+    .sidebar {
+      width: 224px; flex-shrink: 0;
+      background: var(--sidebar);
+      border-right: 0.5px solid var(--border);
+      padding: 24px 16px;
+      display: flex; flex-direction: column;
+      transition: background 0.25s, border-color 0.25s;
+    }
 
-        .container {
-            width: 100%;
-            max-width: 520px;
-            margin: 0 auto;
-            padding-top: 140px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            flex: 1;
-            padding-bottom: 80px;
-            position: relative;
-        }
+    /* Logo */
+    .logo-glyph {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 28px; letter-spacing: 7px;
+      color: var(--accent); margin-bottom: 3px; line-height: 1;
+    }
+    .logo-sub { font-size: 11px; color: var(--muted); }
+    .logo-divider { height: 0.5px; background: var(--border); margin: 16px 0; }
 
-        /* Dizi decoration */
-        .decoration-dizi {
-            position: absolute;
-            top: 200px;
-            left: 50%;
-            transform: translateX(-50%) rotate(-15deg);
-            width: 680px;
-            opacity: 0.12;
-            pointer-events: none;
-            color: var(--text);
-        }
+    /* Sections */
+    .sidebar-sec { margin-bottom: 18px; }
 
-        [data-theme="dark"] .decoration-dizi {
-            opacity: 0.07;
-        }
+    .sec-label {
+      font-size: 10px; color: var(--faint);
+      letter-spacing: 0.3px; margin-bottom: 8px; font-weight: 500;
+    }
 
-        header {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            width: 100%;
-        }
+    /* Loaded file card */
+    .loaded-card {
+      background: var(--load-bg);
+      border: 0.5px solid var(--border);
+      border-radius: 4px;
+      padding: 7px 9px; margin-bottom: 8px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .loaded-card-info { flex: 1; min-width: 0; }
+    .loaded-tag { display: block; font-size: 9px; color: var(--muted); margin-bottom: 2px; }
+    .loaded-name {
+      display: block; font-size: 12px; color: var(--text);
+      font-family: monospace;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .reset-btn {
+      flex-shrink: 0;
+      background: transparent; border: none;
+      color: var(--muted); font-size: 16px; line-height: 1;
+      cursor: pointer; padding: 0 2px;
+      transition: color 0.15s;
+    }
+    .reset-btn:hover { color: var(--accent); }
 
-        .badge {
-            background: var(--accent);
-            color: #FFFFFF;
-            font-family: 'Ma Shan Zheng', cursive;
-            font-size: 14px;
-            letter-spacing: 3px;
-            padding: 4px 16px;
-            border-radius: 999px;
-            margin-bottom: 24px;
-        }
+    /* Upload zone — compact */
+    .upload-zone {
+      border: 1px dashed var(--border);
+      border-radius: 6px; padding: 14px 10px;
+      display: flex; flex-direction: column;
+      align-items: center; gap: 4px;
+      text-align: center; cursor: default;
+      transition: border-color 0.2s;
+    }
+    .upload-zone.dragover { border-color: var(--accent); }
+    .upload-char { font-size: 20px; color: var(--faint); line-height: 1; margin-bottom: 2px; }
+    .upload-hint { font-size: 11px; color: var(--muted); line-height: 1.4; }
+    .upload-or { font-size: 10px; color: var(--faint); }
+    .browse-label {
+      font-size: 11px; color: var(--accent); cursor: pointer;
+      border-bottom: 0.5px solid var(--accent); padding-bottom: 1px;
+    }
+    input[type="file"] { display: none; }
 
-        .title {
-            font-family: 'DM Serif Display', serif;
-            font-weight: 400;
-            font-size: 48px;
-            letter-spacing: -1px;
-            margin: 0 0 14px 0;
-            text-align: center;
-            line-height: 1.1;
-        }
+    /* Option rows */
+    .option-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 7px 0; border-bottom: 0.5px solid var(--border-dim);
+    }
+    .opt-label { font-size: 12px; color: var(--muted); }
+    .opt-val   { font-size: 12px; color: var(--text); font-family: monospace; }
 
-        .subtitle {
-            font-size: 14px;
-            color: var(--text-muted);
-            margin: 0 0 56px 0;
-            text-align: center;
-            line-height: 1.65;
-            max-width: 360px;
-        }
+    .part-selector {
+      background: var(--sel-bg); color: var(--text);
+      border: 0.5px solid var(--border);
+      padding: 3px 6px; border-radius: 3px;
+      font-family: 'Inter', sans-serif; font-size: 11px;
+      outline: none; cursor: pointer; max-width: 110px;
+    }
 
-        .upload-zone {
-            width: 100%;
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 52px 32px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            transition: border-color 0.25s, background 0.25s;
-            position: relative;
-            background: var(--surface);
-        }
+    .auto-detect-label {
+      font-size: 10px; color: var(--muted); margin-top: 5px; font-style: italic;
+    }
 
-        .upload-zone:hover,
-        .upload-zone.dragover {
-            border-color: var(--gold);
-        }
+    /* Convert button */
+    .convert-btn {
+      width: 100%; margin-top: 4px;
+      background: var(--accent); color: #fff;
+      font-size: 13px; font-weight: 500;
+      padding: 10px; border-radius: 4px; border: none;
+      cursor: pointer;
+      font-family: Georgia, serif; letter-spacing: 0.5px;
+      transition: opacity 0.2s, background 0.2s, border 0.2s, color 0.2s;
+    }
+    .convert-btn:hover:not(:disabled) { opacity: 0.85; }
+    .convert-btn:disabled {
+      background: transparent; color: var(--faint);
+      border: 0.5px solid var(--border); cursor: not-allowed;
+      font-family: 'Inter', sans-serif; letter-spacing: 0;
+    }
 
-        .upload-icon {
-            width: 28px;
-            height: 28px;
-            stroke: var(--text-muted);
-            fill: none;
-            stroke-width: 1.2;
-            margin-bottom: 14px;
-            transition: stroke 0.25s;
-        }
+    /* Error */
+    .error-message {
+      font-size: 11px; color: var(--accent);
+      padding: 6px 2px; display: none; text-align: center;
+    }
 
-        .upload-zone:hover .upload-icon {
-            stroke: var(--gold);
-        }
+    /* Export */
+    .download-group { display: flex; gap: 6px; }
+    .download-btn {
+      flex: 1; background: var(--sel-bg); color: var(--text);
+      border: 0.5px solid var(--border);
+      padding: 6px 0; border-radius: 3px;
+      font-family: 'Inter', sans-serif; font-size: 11px;
+      cursor: pointer; transition: border-color 0.2s; text-align: center;
+    }
+    .download-btn:hover { border-color: var(--text); }
 
-        .upload-text {
-            font-size: 13px;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-        }
+    /* Try sample button */
+    .try-sample-btn {
+      width: 100%; margin-top: 6px;
+      background: transparent; color: var(--muted);
+      border: none; padding: 4px 0;
+      font-family: 'Inter', sans-serif; font-size: 10px;
+      cursor: pointer; text-align: center;
+      transition: color 0.2s;
+    }
+    .try-sample-btn:hover { color: var(--accent); }
 
-        .upload-or {
-            font-size: 12px;
-            color: var(--text-muted);
-            opacity: 0.5;
-            margin-bottom: 8px;
-        }
+    /* Sidebar footer */
+    .sidebar-footer {
+      margin-top: auto; padding-top: 16px;
+      font-size: 10px; color: var(--faint); line-height: 1.7;
+      border-top: 0.5px solid var(--border-dim);
+    }
 
-        .browse-label {
-            color: var(--gold);
-            font-size: 13px;
-            cursor: pointer;
-            text-decoration: none;
-            transition: opacity 0.2s;
-            position: relative;
-        }
+    /* ── Main content ────────────────────────────────────────── */
+    .main-content {
+      flex: 1; display: flex; flex-direction: column;
+      overflow: hidden; min-width: 0;
+    }
 
-        .browse-label:hover {
-            opacity: 0.75;
-        }
+    /* Toolbar */
+    .toolbar {
+      padding: 13px 20px;
+      border-bottom: 0.5px solid var(--border);
+      background: var(--surface);
+      display: flex; align-items: center; gap: 8px;
+      flex-shrink: 0; transition: background 0.25s, border-color 0.25s;
+    }
+    .toolbar-title { font-family: Georgia, serif; font-size: 14px; color: var(--text); }
+    .toolbar-sep   { color: var(--faint); font-size: 12px; }
+    .toolbar-meta  { font-size: 12px; color: var(--muted); font-family: monospace; }
+    .toolbar-done  {
+      margin-left: auto; font-size: 10px; color: var(--accent);
+      border: 0.5px solid var(--accent); border-radius: 3px;
+      padding: 2px 8px; opacity: 0.8;
+    }
 
-        .browse-label::after {
-            content: '';
-            position: absolute;
-            width: 100%;
-            height: 1px;
-            bottom: -2px;
-            left: 0;
-            background-color: var(--gold);
-            opacity: 0.4;
-        }
+    /* Empty state */
+    .empty-state {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; padding: 40px;
+    }
+    .empty-glyph { font-size: 48px; color: var(--faint); line-height: 1; margin-bottom: 16px; }
+    .empty-text  { font-size: 14px; color: var(--muted); text-align: center; margin-bottom: 6px; }
+    .empty-sub   { font-size: 12px; color: var(--faint); font-style: italic; text-align: center; }
 
-        input[type="file"] {
-            display: none;
-        }
+    /* Score output */
+    .output-zone {
+      flex: 1; padding: 24px 20px;
+      overflow-x: auto; overflow-y: auto;
+      background: var(--surface);
+      transition: background 0.25s;
+    }
 
-        .try-sample-btn {
-            width: 100%;
-            margin-top: 10px;
-            background: transparent;
-            color: var(--text-muted);
-            font-size: 13px;
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            cursor: pointer;
-            transition: border-color 0.2s, color 0.2s;
-            font-family: 'Inter', sans-serif;
-            letter-spacing: 0.2px;
-        }
+    /* ── Mobile ──────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      /* Stack sidebar above main content */
+      .layout {
+        flex-direction: column;
+        min-height: 100vh;
+      }
 
-        .try-sample-btn:hover {
-            border-color: var(--gold);
-            color: var(--gold);
-        }
+      /* Sidebar becomes full-width top panel */
+      .sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 0.5px solid var(--border);
+        padding: 14px 16px;
+      }
 
-        .convert-btn {
-            width: 100%;
-            margin-top: 16px;
-            background: var(--btn-bg);
-            color: var(--btn-text);
-            font-size: 14px;
-            font-weight: 500;
-            padding: 13px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            transition: opacity 0.2s, background 0.2s, color 0.2s, border 0.2s;
-            letter-spacing: 0.2px;
-        }
+      /* Compact logo row */
+      .logo-glyph {
+        font-size: 22px;
+        letter-spacing: 5px;
+        display: inline;
+      }
+      .logo-sub {
+        display: inline;
+        font-size: 10px;
+        margin-left: 8px;
+        vertical-align: middle;
+      }
+      .logo-divider { margin: 10px 0; }
 
-        .convert-btn:hover:not(:disabled) {
-            opacity: 0.85;
-        }
+      /* More compact upload zone */
+      .upload-zone { padding: 12px 10px; }
+      .upload-char { font-size: 16px; }
 
-        .convert-btn:disabled {
-            background: transparent;
-            color: var(--text-muted);
-            border: 1px solid var(--border);
-            cursor: not-allowed;
-        }
+      /* Part selector: allow full width */
+      .part-selector { max-width: none; flex: 1; }
 
-        .output-zone {
-            width: 100%;
-            margin-top: 32px;
-            padding: 24px;
-            border-radius: 10px;
-            border: 1px solid var(--border);
-            background: var(--surface);
-            font-family: 'Inter', sans-serif;
-            font-size: 14px;
-            line-height: 2.2;
-            white-space: pre-wrap;
-            display: none;
-            overflow-x: auto;
-            color: var(--text);
-        }
+      /* Convert button: slightly smaller */
+      .convert-btn { padding: 9px; font-size: 12px; }
 
-        .output-zone svg {
-            max-width: 100%;
-            height: auto;
-            display: block;
-        }
+      /* Sidebar footer: keep theme toggle, hide credit text */
+      .sidebar-footer {
+        margin-top: 0;
+        padding-top: 12px;
+        font-size: 0;   /* hides the raw text nodes */
+        line-height: 0;
+      }
+      /* Restore font inside the toggle button itself */
+      .sidebar-footer .theme-toggle {
+        font-size: 11px;
+        line-height: normal;
+        margin-bottom: 0;
+      }
 
-        .error-message {
-            width: 100%;
-            margin-top: 16px;
-            padding: 12px;
-            border-radius: 8px;
-            background: rgba(159, 18, 57, 0.08);
-            color: var(--accent);
-            border: 1px solid rgba(159, 18, 57, 0.2);
-            font-size: 13px;
-            text-align: center;
-            display: none;
-        }
+      /* Main content: needs a minimum height so the empty state shows */
+      .main-content {
+        min-height: 50vh;
+        overflow: visible;
+      }
 
-        .controls-row {
-            width: 100%;
-            display: none;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 24px;
-            margin-bottom: 8px;
-        }
+      /* Toolbar: allow wrapping on narrow screens */
+      .toolbar {
+        padding: 10px 14px;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .toolbar-title { font-size: 13px; }
+      .toolbar-done  { margin-left: 0; }
 
-        .part-selector {
-            background: var(--select-bg);
-            color: var(--text);
-            border: 1px solid var(--border);
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-family: 'Inter', sans-serif;
-            font-size: 13px;
-            outline: none;
-            cursor: pointer;
-        }
+      /* Empty state: less padding */
+      .empty-state { padding: 28px 16px; }
+      .empty-glyph { font-size: 36px; margin-bottom: 12px; }
+      .empty-text  { font-size: 13px; }
+      .empty-sub   { font-size: 11px; }
 
-        .auto-detect-label {
-            font-size: 11px;
-            color: var(--text-muted);
-            margin-top: 4px;
-            margin-left: 2px;
-            display: none;
-            position: absolute;
-            top: 100%;
-        }
-
-        .part-selector-container {
-            display: flex;
-            flex-direction: column;
-            position: relative;
-        }
-
-        .download-group {
-            display: flex;
-            gap: 8px;
-        }
-
-        .download-btn {
-            background: transparent;
-            color: var(--text);
-            border: 1px solid var(--border);
-            padding: 8px 14px;
-            border-radius: 6px;
-            font-family: 'Inter', sans-serif;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .download-btn:hover {
-            border-color: var(--gold);
-            color: var(--gold);
-        }
-
-        .footer {
-            margin-top: auto;
-            padding-top: 24px;
-            padding-bottom: 40px;
-            font-size: 12px;
-            color: var(--text-muted);
-            text-align: center;
-            width: 100%;
-            border-top: 1px solid var(--border);
-        }
-
-        .kofi-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 14px;
-            padding: 8px 18px;
-            border-radius: 6px;
-            background: transparent;
-            color: var(--text-muted);
-            border: 1px solid var(--border);
-            font-size: 13px;
-            font-family: 'Inter', sans-serif;
-            text-decoration: none;
-            transition: border-color 0.2s, color 0.2s;
-            letter-spacing: 0.2px;
-        }
-
-        .kofi-btn:hover {
-            border-color: var(--text);
-            color: var(--text);
-        }
-
-        .kofi-btn svg {
-            width: 16px;
-            height: 16px;
-            flex-shrink: 0;
-        }
-
-        @media (max-width: 600px) {
-            .container {
-                padding-top: 80px;
-                padding-left: 20px;
-                padding-right: 20px;
-                padding-bottom: 60px;
-            }
-
-            .title {
-                font-size: 36px;
-                letter-spacing: -0.5px;
-            }
-
-            .subtitle {
-                font-size: 13px;
-                margin-bottom: 40px;
-            }
-
-            .upload-zone {
-                padding: 36px 20px;
-            }
-
-            .controls-row {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            .download-group {
-                width: 100%;
-                justify-content: flex-start;
-            }
-
-            .download-btn {
-                flex: 1;
-                text-align: center;
-            }
-
-            .theme-toggle {
-                top: 16px;
-                right: 16px;
-            }
-
-            .decoration-dizi {
-                display: none;
-            }
-        }
-    </style>
+      /* Output zone: less padding */
+      .output-zone { padding: 14px 12px; }
+    }
+  </style>
 </head>
-
 <body>
 
-    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
-        <!-- Sun icon default -->
-        <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <!-- Will switch via JS -->
-        </svg>
-    </button>
+  <div class="layout">
 
-    <div class="container">
-        <!-- Dizi decorative illustration -->
-        <svg class="decoration-dizi" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 60" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <!-- Tube body -->
-            <rect x="10" y="22" width="280" height="16" rx="8"/>
-            <!-- End cap -->
-            <ellipse cx="10" cy="30" rx="4" ry="8"/>
-            <!-- Blow hole -->
-            <ellipse cx="50" cy="30" rx="5" ry="6"/>
-            <!-- Membrane hole -->
-            <ellipse cx="72" cy="30" rx="4" ry="5"/>
-            <!-- 6 finger holes -->
-            <circle cx="106" cy="30" r="4"/>
-            <circle cx="126" cy="30" r="4"/>
-            <circle cx="146" cy="30" r="4"/>
-            <circle cx="172" cy="30" r="4"/>
-            <circle cx="192" cy="30" r="4"/>
-            <circle cx="212" cy="30" r="4"/>
-        </svg>
+    <!-- ── Sidebar ───────────────────────────────────────────── -->
+    <aside class="sidebar">
 
-        <header>
-            <span class="badge">简谱</span>
-            <h1 class="title">Jianpu Converter</h1>
-            <p class="subtitle">Convert MusicXML scores to Jianpu numbered notation</p>
-        </header>
+      <div class="logo-glyph">简谱</div>
+      <div class="logo-sub">Jianpu Converter</div>
+      <div class="logo-divider"></div>
+
+      <!-- File -->
+      <div class="sidebar-sec">
+        <div class="sec-label">文件 · File</div>
+
+        <div class="loaded-card" id="loadedCard" style="display:none">
+          <div class="loaded-card-info">
+            <span class="loaded-tag">已加载 Loaded</span>
+            <span class="loaded-name" id="fileNameDisplay">—</span>
+          </div>
+          <button class="reset-btn" id="resetBtn" title="重置 Reset">×</button>
+        </div>
 
         <div class="upload-zone" id="dropzone">
-            <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
-            </svg>
-            <div class="upload-text" id="fileNameDisplay">Drop your .xml, .mxl, or .mid file here</div>
-            <div class="upload-or">or</div>
-            <label class="browse-label">
-                Browse files
-                <input type="file" id="fileInput" accept=".xml,.mxl,.mid,.midi">
-            </label>
+          <div class="upload-char">♩</div>
+          <div class="upload-hint">拖放 .xml, .mxl, .mid</div>
+          <div class="upload-or">或 · or</div>
+          <label class="browse-label">
+            浏览 Browse
+            <input type="file" id="fileInput" accept=".xml,.mxl,.mid,.midi">
+          </label>
+        </div>
+        <button class="try-sample-btn" id="trySampleBtn">↳ 试用示例 · Try sample</button>
+      </div>
+
+      <!-- Options — shown after file loaded -->
+      <div class="sidebar-sec" id="optionsSec" style="display:none">
+        <div class="sec-label">设置 · Options</div>
+
+        <div class="option-row">
+          <span class="opt-label">声部 Part</span>
+          <div id="partSelectorContainer" style="display:none">
+            <select class="part-selector" id="partSelector">
+              <option value="0">Part 1</option>
+            </select>
+          </div>
+          <span id="partFallback" class="opt-val" style="display:none">—</span>
         </div>
 
-        <button class="convert-btn" id="convertBtn" disabled>Convert to Jianpu</button>
-        <button class="try-sample-btn" id="trySampleBtn">Try with sample file</button>
-        <div class="error-message" id="errorMsg"></div>
-
-        <div class="controls-row" id="controlsRow">
-            <div class="part-selector-container" id="partSelectorContainer">
-                <select class="part-selector" id="partSelector">
-                    <option value="0">Part 1</option>
-                </select>
-                <div class="auto-detect-label" id="autoDetectLabel">Auto-detected melody line</div>
-            </div>
-
-            <div class="download-group">
-                <button class="download-btn" id="dlPng">.PNG</button>
-                <button class="download-btn" id="dlJpeg">.JPEG</button>
-            </div>
+        <div class="option-row">
+          <span class="opt-label">调号 Key</span>
+          <span class="opt-val" id="keyDisplay">—</span>
         </div>
 
-        <div class="output-zone" id="output"></div>
-    </div>
+        <div class="option-row">
+          <span class="opt-label">拍号 Metre</span>
+          <span class="opt-val" id="timeDisplay">—</span>
+        </div>
 
-    <div class="footer">
-        <a class="kofi-btn" href="https://ko-fi.com/huichiyap" target="_blank" rel="noopener">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <!-- Steam lines -->
-                <path d="M8,3 Q9,1 8,0"/>
-                <path d="M12,3 Q13,1 12,0"/>
-                <!-- Cup body -->
-                <path d="M5,6 L6,18 Q6,20 8,20 L16,20 Q18,20 18,18 L19,6 Z"/>
-                <!-- Handle -->
-                <path d="M19,9 Q23,9 23,13 Q23,17 19,17"/>
-                <!-- Saucer -->
-                <line x1="4" y1="20" x2="20" y2="20"/>
-            </svg>
-            Buy me a coffee
-        </a><br>
-        简谱 Jianpu Converter · Built for Chinese orchestra musicians
-    </div>
+        <div class="auto-detect-label" id="autoDetectLabel" style="display:none">↑ Auto-detected melody</div>
+      </div>
 
-    <script src="js/parser.js"></script>
-    <script src="js/renderer.js"></script>
-    <script src="js/downloader.js"></script>
-    <script src="js/app.js"></script>
+      <!-- Convert -->
+      <button class="convert-btn" id="convertBtn" disabled>转换 Convert</button>
+      <div class="error-message" id="errorMsg"></div>
+
+      <!-- Export — shown after conversion -->
+      <div class="sidebar-sec" id="exportSec" style="display:none; margin-top:12px;">
+        <div class="sec-label">导出 · Export</div>
+        <div class="download-group">
+          <button class="download-btn" id="dlPng">.PNG</button>
+          <button class="download-btn" id="dlJpeg">.JPEG</button>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle theme"
+          onclick="(function(){
+            var h = document.documentElement;
+            var isDark = h.getAttribute('data-theme') === 'dark';
+            h.setAttribute('data-theme', isDark ? 'light' : 'dark');
+            document.getElementById('themeLabel').textContent = isDark ? '切换到墨夜 · Dark' : '切换到竹简 · Light';
+            document.getElementById('themeIcon').innerHTML = isDark
+              ? '<circle cx=\'12\' cy=\'12\' r=\'5\'></circle><line x1=\'12\' y1=\'1\' x2=\'12\' y2=\'3\'></line><line x1=\'12\' y1=\'21\' x2=\'12\' y2=\'23\'></line><line x1=\'4.22\' y1=\'4.22\' x2=\'5.64\' y2=\'5.64\'></line><line x1=\'18.36\' y1=\'18.36\' x2=\'19.78\' y2=\'19.78\'></line><line x1=\'1\' y1=\'12\' x2=\'3\' y2=\'12\'></line><line x1=\'21\' y1=\'12\' x2=\'23\' y2=\'12\'></line><line x1=\'4.22\' y1=\'19.78\' x2=\'5.64\' y2=\'18.36\'></line><line x1=\'18.36\' y1=\'5.64\' x2=\'19.78\' y2=\'4.22\'></line>'
+              : '<path d=\'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\'></path>';
+          })()">
+          <svg id="themeIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          <span class="theme-toggle-label" id="themeLabel">切换到竹简 · Light</span>
+        </button>
+        简谱 Jianpu Converter<br>
+        Built for Chinese orchestra musicians
+      </div>
+
+    </aside>
+
+    <!-- ── Main content ──────────────────────────────────────── -->
+    <main class="main-content" id="mainContent">
+
+      <div class="toolbar" id="toolbar" style="display:none">
+        <span class="toolbar-title" id="toolbarTitle"></span>
+        <span class="toolbar-sep">·</span>
+        <span class="toolbar-meta" id="toolbarMeta"></span>
+        <span class="toolbar-done" id="toolbarDone" style="display:none">✓ 完成</span>
+      </div>
+
+      <div class="empty-state" id="emptyState">
+        <div class="empty-glyph">♩</div>
+        <div class="empty-text">上传文件后，简谱将显示在这里</div>
+        <div class="empty-sub">Score output appears here after conversion</div>
+      </div>
+
+      <div class="output-zone" id="output" style="display:none"></div>
+
+    </main>
+  </div>
+
+  <script src="js/parser.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/downloader.js"></script>
+  <script src="js/app.js"></script>
 </body>
-
 </html>

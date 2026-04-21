@@ -4,89 +4,133 @@ if (typeof scaleDegrees === 'undefined') throw new Error('parser.js must be load
 if (typeof stepMapDiatonic === 'undefined') throw new Error('parser.js must be loaded before app.js');
 
 // --- DOM Refs ---
-const themeToggle = document.getElementById('themeToggle');
-const themeIcon = document.getElementById('themeIcon');
-const htmlDoc = document.documentElement;
-
-const dropzone = document.getElementById('dropzone');
-const fileInput = document.getElementById('fileInput');
+const htmlDoc        = document.documentElement;
+const dropzone       = document.getElementById('dropzone');
+const fileInput      = document.getElementById('fileInput');
 const fileNameDisplay = document.getElementById('fileNameDisplay');
-const convertBtn = document.getElementById('convertBtn');
-const output = document.getElementById('output');
-const appContainer = document.querySelector('.container');
-const controlsRow = document.getElementById('controlsRow');
-const partSelector = document.getElementById('partSelector');
-const partSelectorContainer = document.getElementById('partSelectorContainer');
-const autoDetectLabel = document.getElementById('autoDetectLabel');
-const errorMsg = document.getElementById('errorMsg');
-const trySampleBtn = document.getElementById('trySampleBtn');
+const loadedCard     = document.getElementById('loadedCard');
+const convertBtn     = document.getElementById('convertBtn');
+const output         = document.getElementById('output');
+const mainContent    = document.getElementById('mainContent');
 
-let currentFile = null;
+const optionsSec     = document.getElementById('optionsSec');
+const exportSec      = document.getElementById('exportSec');
+const emptyState     = document.getElementById('emptyState');
+const toolbar        = document.getElementById('toolbar');
+const toolbarTitle   = document.getElementById('toolbarTitle');
+const toolbarMeta    = document.getElementById('toolbarMeta');
+const toolbarDone    = document.getElementById('toolbarDone');
+
+const partSelector          = document.getElementById('partSelector');
+const partSelectorContainer = document.getElementById('partSelectorContainer');
+const partFallback          = document.getElementById('partFallback');
+const autoDetectLabel       = document.getElementById('autoDetectLabel');
+const keyDisplay            = document.getElementById('keyDisplay');
+const timeDisplay           = document.getElementById('timeDisplay');
+const errorMsg              = document.getElementById('errorMsg');
+const trySampleBtn          = document.getElementById('trySampleBtn');
+const resetBtn              = document.getElementById('resetBtn');
+
+let currentFile  = null;
 let parsedXmlDoc = null;
 
-// --- Theme Toggle ---
-const moonPath = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
-const sunPath = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
-
-function updateIcon(theme) {
-    themeIcon.innerHTML = theme === 'dark' ? sunPath : moonPath;
-}
-
-updateIcon('dark');
-
-themeToggle.addEventListener('click', () => {
-    const currentTheme = htmlDoc.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    htmlDoc.setAttribute('data-theme', newTheme);
-    updateIcon(newTheme);
+// --- Theme re-render (toggle handled inline in HTML) ---
+document.getElementById('themeToggle').addEventListener('click', () => {
     if (output.style.display !== 'none') {
-        if (parsedXmlDoc) renderSelectedPart();
-        else if (state.lastMidiRender) {
+        if (parsedXmlDoc) {
+            renderSelectedPart();
+        } else if (state.lastMidiRender) {
             const r = state.lastMidiRender;
-            output.innerHTML = renderJianpuSVG(r.measures, r.keyStr, r.timeStr, r.titleStr, appContainer.clientWidth, r.tempoStr || "");
+            output.innerHTML = renderJianpuSVG(r.measures, r.keyStr, r.timeStr, r.titleStr, mainContent.clientWidth, r.tempoStr || "");
         }
     }
 });
 
-// --- App Handlers ---
+// --- Helpers ---
 function showError(msg) {
     errorMsg.textContent = msg;
     errorMsg.style.display = 'block';
-    convertBtn.textContent = 'Convert to Jianpu';
+    convertBtn.textContent = '转换 Convert';
     convertBtn.disabled = false;
 }
 
+function showOutput(svgResult, titleStr, keyStr, timeStr) {
+    output.innerHTML     = svgResult;
+    output.style.display = 'block';
+    emptyState.style.display = 'none';
+
+    toolbar.style.display    = 'flex';
+    toolbarTitle.textContent = titleStr;
+    toolbarMeta.textContent  = `1=${keyStr}  ${timeStr}`;
+    toolbarDone.style.display = 'block';
+
+    exportSec.style.display = 'block';
+    keyDisplay.textContent  = `1=${keyStr}`;
+    timeDisplay.textContent = timeStr;
+}
+
+// --- File handling ---
 function handleFile(file) {
     if (!file) return;
     currentFile = file;
+
     fileNameDisplay.textContent = file.name;
-    fileNameDisplay.style.color = "var(--text)";
+    loadedCard.style.display = 'block';
+
     convertBtn.disabled = false;
-    output.style.display = 'none';
-    controlsRow.style.display = 'none';
-    partSelectorContainer.style.display = '';
-    autoDetectLabel.style.display = 'none';
+    convertBtn.textContent = '转换 Convert';
+    output.style.display      = 'none';
+    emptyState.style.display  = 'flex';
+    toolbar.style.display     = 'none';
+    toolbarDone.style.display = 'none';
+    optionsSec.style.display  = 'none';
+    exportSec.style.display   = 'none';
+    partSelectorContainer.style.display = 'none';
+    partFallback.style.display          = 'none';
+    autoDetectLabel.style.display       = 'none';
     errorMsg.style.display = 'none';
+    keyDisplay.textContent  = '—';
+    timeDisplay.textContent = '—';
     parsedXmlDoc = null;
     state.lastMidiRender = null;
 }
 
-dropzone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropzone.classList.add('dragover');
-});
-dropzone.addEventListener('dragleave', () => {
-    dropzone.classList.remove('dragover');
-});
+// --- Reset ---
+function resetAll() {
+    currentFile  = null;
+    parsedXmlDoc = null;
+    state.lastMidiRender = null;
+
+    loadedCard.style.display  = 'none';
+    output.style.display      = 'none';
+    emptyState.style.display  = 'flex';
+    toolbar.style.display     = 'none';
+    toolbarDone.style.display = 'none';
+    optionsSec.style.display  = 'none';
+    exportSec.style.display   = 'none';
+    partSelectorContainer.style.display = 'none';
+    partFallback.style.display          = 'none';
+    autoDetectLabel.style.display       = 'none';
+    errorMsg.style.display    = 'none';
+
+    fileNameDisplay.textContent = '—';
+    keyDisplay.textContent      = '—';
+    timeDisplay.textContent     = '—';
+    convertBtn.disabled         = true;
+    convertBtn.textContent      = '转换 Convert';
+    fileInput.value             = '';
+}
+
+resetBtn.addEventListener('click', resetAll);
+
+dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => { dropzone.classList.remove('dragover'); });
 dropzone.addEventListener('drop', (e) => {
     e.preventDefault();
     dropzone.classList.remove('dragover');
     handleFile(e.dataTransfer.files[0]);
 });
-
-fileInput.addEventListener('change', (e) => {
-    handleFile(e.target.files[0]);
-});
+fileInput.addEventListener('change', (e) => { handleFile(e.target.files[0]); });
 
 // --- Try Sample (embedded XML, no fetch needed) ---
 const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -116,6 +160,7 @@ trySampleBtn.addEventListener('click', () => {
     convertBtn.click();
 });
 
+// --- Render selected part (XML) ---
 function renderSelectedPart() {
     if (!parsedXmlDoc) return;
 
@@ -127,57 +172,40 @@ function renderSelectedPart() {
     dummyDoc.documentElement.appendChild(parsedXmlDoc.getElementsByTagName("part-list")[0].cloneNode(true));
     dummyDoc.documentElement.appendChild(partsList[selectedIdx].cloneNode(true));
 
-    // Extract title
+    // Title
     let titleStr = "Untitled";
     const movementTitleNodes = parsedXmlDoc.getElementsByTagName("movement-title");
-    const workTitleNodes = parsedXmlDoc.getElementsByTagName("work-title");
-
-    if (movementTitleNodes.length > 0) titleStr = movementTitleNodes[0].textContent;
+    const workTitleNodes     = parsedXmlDoc.getElementsByTagName("work-title");
+    if (movementTitleNodes.length > 0)  titleStr = movementTitleNodes[0].textContent;
     else if (workTitleNodes.length > 0) titleStr = workTitleNodes[0].textContent;
+    if (titleStr === "Untitled" && currentFile) titleStr = currentFile.name.replace(/\.[^/.]+$/, "");
 
-    if (titleStr === "Untitled" && currentFile) {
-        titleStr = currentFile.name.replace(/\.[^/.]+$/, "");
-    }
-
-    // Extract time and key for SVG parameters — read from the selected part's dummyDoc
-    // so that parts with different attributes (e.g. transposing instruments) are handled correctly.
-    // Fall back to the global document if the part doesn't declare its own attributes.
+    // Time signature
     let beats = "4"; let beatType = "4";
     const beatsNodes = dummyDoc.getElementsByTagName("beats");
     if (beatsNodes.length > 0) beats = beatsNodes[0].textContent;
-    else {
-        const fallbackBeats = parsedXmlDoc.getElementsByTagName("beats");
-        if (fallbackBeats.length > 0) beats = fallbackBeats[0].textContent;
-    }
+    else { const fb = parsedXmlDoc.getElementsByTagName("beats"); if (fb.length > 0) beats = fb[0].textContent; }
     const beatTypeNodes = dummyDoc.getElementsByTagName("beat-type");
     if (beatTypeNodes.length > 0) beatType = beatTypeNodes[0].textContent;
-    else {
-        const fallbackBeatType = parsedXmlDoc.getElementsByTagName("beat-type");
-        if (fallbackBeatType.length > 0) beatType = fallbackBeatType[0].textContent;
-    }
+    else { const fb = parsedXmlDoc.getElementsByTagName("beat-type"); if (fb.length > 0) beatType = fb[0].textContent; }
 
+    // Key
     let fifths = 0;
     const fifthsNodes = dummyDoc.getElementsByTagName("fifths");
     if (fifthsNodes.length > 0) fifths = parseInt(fifthsNodes[0].textContent);
-    else {
-        const fallbackFifths = parsedXmlDoc.getElementsByTagName("fifths");
-        if (fallbackFifths.length > 0) fifths = parseInt(fallbackFifths[0].textContent);
-    }
-    const keyMap = { "-7": "Cb", "-6": "Gb", "-5": "Db", "-4": "Ab", "-3": "Eb", "-2": "Bb", "-1": "F", "0": "C", "1": "G", "2": "D", "3": "A", "4": "E", "5": "B", "6": "F#", "7": "C#" };
+    else { const fb = parsedXmlDoc.getElementsByTagName("fifths"); if (fb.length > 0) fifths = parseInt(fb[0].textContent); }
+    const keyMap = { "-7":"Cb","-6":"Gb","-5":"Db","-4":"Ab","-3":"Eb","-2":"Bb","-1":"F","0":"C","1":"G","2":"D","3":"A","4":"E","5":"B","6":"F#","7":"C#" };
     const keyStr = keyMap[fifths.toString()] || "C";
 
+    // Tempo
     let tempoStr = "";
     const metronomeNodes = parsedXmlDoc.getElementsByTagName("per-minute");
-    if (metronomeNodes.length > 0) {
-        tempoStr = metronomeNodes[0].textContent.trim();
-    }
+    if (metronomeNodes.length > 0) tempoStr = metronomeNodes[0].textContent.trim();
 
-    let svgMeasures = parseXMLToNoteObjects(dummyDoc);
-    const svgResult = renderJianpuSVG(svgMeasures, keyStr, `${beats}/${beatType}`, titleStr, appContainer.clientWidth, tempoStr);
+    const svgMeasures = parseXMLToNoteObjects(dummyDoc);
+    const svgResult   = renderJianpuSVG(svgMeasures, keyStr, `${beats}/${beatType}`, titleStr, mainContent.clientWidth, tempoStr);
 
-    output.innerHTML = svgResult;
-    output.style.display = 'block';
-    controlsRow.style.display = 'flex';
+    showOutput(svgResult, titleStr, keyStr, `${beats}/${beatType}`);
 }
 
 partSelector.addEventListener('change', () => {
@@ -190,78 +218,56 @@ async function handleMidiConversion(file) {
     const arrayBuffer = await file.arrayBuffer();
     const midi = new Midi(arrayBuffer);
 
-    // Key detection
     let keyStr = "C";
     if (midi.header.keySignatures && midi.header.keySignatures.length > 0) {
         keyStr = midi.header.keySignatures[0].key;
     }
 
-    let baseTonicStep = keyStr[0];
+    let baseTonicStep  = keyStr[0];
     let baseTonicAlter = keyStr.includes('#') ? 1 : (keyStr.includes('b') ? -1 : 0);
-    let baseTonicSemi = pitchToSemitones(baseTonicStep, baseTonicAlter, 4);
+    let baseTonicSemi  = pitchToSemitones(baseTonicStep, baseTonicAlter, 4);
 
-    // Find track with most notes
-    let bestTrack = null;
-    let maxNotes = -1;
-    for (let track of midi.tracks) {
-        if (track.notes.length > maxNotes) {
-            maxNotes = track.notes.length;
-            bestTrack = track;
-        }
+    let bestTrack = null; let maxNotes = -1;
+    for (const track of midi.tracks) {
+        if (track.notes.length > maxNotes) { maxNotes = track.notes.length; bestTrack = track; }
     }
-
     if (!bestTrack || bestTrack.notes.length === 0) throw new Error("No notes found in MIDI.");
 
-    // Deduplicate simultaneous notes (chords) — keep highest pitch per tick
     const tickMap = new Map();
     for (const n of bestTrack.notes) {
-        if (!tickMap.has(n.ticks) || n.midi > tickMap.get(n.ticks).midi) {
-            tickMap.set(n.ticks, n);
-        }
+        if (!tickMap.has(n.ticks) || n.midi > tickMap.get(n.ticks).midi) tickMap.set(n.ticks, n);
     }
     const melodyNotes = [...tickMap.values()].sort((a, b) => a.ticks - b.ticks);
 
-    // Time signature with validation
-    let beats = 4;
-    let beatType = 4;
+    let beats = 4; let beatType = 4;
     if (midi.header.timeSignatures && midi.header.timeSignatures.length > 0) {
-        const rawBeats = midi.header.timeSignatures[0].timeSignature[0];
+        const rawBeats    = midi.header.timeSignatures[0].timeSignature[0];
         const rawBeatType = midi.header.timeSignatures[0].timeSignature[1];
-
-        const validBeatType = [2, 4, 8, 16].includes(rawBeatType);
-        const validBeats = rawBeats >= 2 && rawBeats <= 12;
-
-        if (validBeats && validBeatType) {
-            beats = rawBeats;
-            beatType = rawBeatType;
+        if ([2,4,8,16].includes(rawBeatType) && rawBeats >= 2 && rawBeats <= 12) {
+            beats = rawBeats; beatType = rawBeatType;
         }
     }
 
     const ppq = midi.header.ppq;
     let measureTicks = beats * (4 / beatType) * ppq;
 
-    // Density heuristic — fallback to 4/4 if grid is too fine
-    const estimatedMeasureCount = Math.ceil(
-        (melodyNotes[melodyNotes.length - 1].ticks + 1) / measureTicks
-    );
-    const avgNotesPerMeasure = melodyNotes.length / Math.max(1, estimatedMeasureCount);
-    if (avgNotesPerMeasure < 1.5) {
-        beats = 4;
-        beatType = 4;
+    const estMeasures = Math.ceil((melodyNotes[melodyNotes.length - 1].ticks + 1) / measureTicks);
+    if (melodyNotes.length / Math.max(1, estMeasures) < 1.5) {
+        beats = 4; beatType = 4;
         measureTicks = beats * (4 / beatType) * ppq;
     }
+
+    const useFlats  = ["F","Bb","Eb","Ab","Db","Gb","Cb"].includes(keyStr);
+    const stepNames = useFlats
+        ? ["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"]
+        : ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 
     let jianpuMeasures = [];
     let currentMeasureNoteObjects = [];
     let currentMeasureIdx = 0;
 
-    const useFlats = ["F", "Bb", "Eb", "Ab", "Db", "Gb", "Cb"].includes(keyStr);
-    const stepNames = useFlats
-        ? ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
-        : ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-
     for (let i = 0; i < melodyNotes.length; i++) {
-        const note = melodyNotes[i];
+        const note           = melodyNotes[i];
         const noteMeasureIdx = Math.floor(note.ticks / measureTicks);
 
         while (currentMeasureIdx < noteMeasureIdx) {
@@ -269,84 +275,57 @@ async function handleMidiConversion(file) {
                 jianpuMeasures.push(currentMeasureNoteObjects);
                 currentMeasureNoteObjects = [];
             } else {
-                jianpuMeasures.push([{ degree: 0, octave: 0, type: "whole", dot: false, tie: false, rest: true, accidental: '' }]);
+                jianpuMeasures.push([{ degree:0, octave:0, type:"whole", dot:false, tie:false, rest:true, accidental:'' }]);
             }
             currentMeasureIdx++;
         }
 
-        let noteNum = note.midi;
-        let octave = Math.floor(noteNum / 12) - 1;
-        let semitone = noteNum % 12;
+        const noteNum  = note.midi;
+        const octave   = Math.floor(noteNum / 12) - 1;
+        const semitone = noteNum % 12;
+        const stepStr  = stepNames[semitone];
+        const step     = stepStr[0];
+        const alter    = stepStr.includes('b') ? -1 : (stepStr.includes('#') ? 1 : 0);
 
-        let stepStr = stepNames[semitone];
-        let step = stepStr[0];
-        let alter = 0;
-        if (stepStr.includes('b')) alter = -1;
-        else if (stepStr.includes('#')) alter = 1;
+        const noteSemi     = pitchToSemitones(step, alter, octave);
+        const tonicDiatAbs = stepMapDiatonic[baseTonicStep] + 4 * 7;
+        const noteDiatAbs  = stepMapDiatonic[step] + octave * 7;
+        let   degree       = ((noteDiatAbs - tonicDiatAbs) % 7 + 7) % 7;
+        const shift        = Math.round((noteSemi - (baseTonicSemi + scaleDegrees[degree])) / 12);
+        const intendedSemi = baseTonicSemi + shift * 12 + scaleDegrees[degree];
+        const acc          = noteSemi > intendedSemi ? "#" : (noteSemi < intendedSemi ? "b" : "");
 
-        let noteSemi = pitchToSemitones(step, alter, octave);
-        let tonicDiatonicAbs = stepMapDiatonic[baseTonicStep] + 4 * 7;
-        let noteDiatonicAbs = stepMapDiatonic[step] + octave * 7;
-
-        let diatonicDiff = noteDiatonicAbs - tonicDiatonicAbs;
-        let degree = (diatonicDiff % 7);
-        if (degree < 0) degree += 7;
-
-        let shift = Math.round((noteSemi - (baseTonicSemi + scaleDegrees[degree])) / 12);
-
-        let intendedSemi = baseTonicSemi + shift * 12 + scaleDegrees[degree];
-        let acc = "";
-        if (noteSemi > intendedSemi) acc = "#";
-        if (noteSemi < intendedSemi) acc = "b";
-
-        // Rhythm quantization
-        let noteBeats = note.durationTicks / ppq;
-        let noteType = "quarter";
-        let hasDot = false;
-
-        if (noteBeats >= 3.75) { noteType = "whole"; }
-        else if (noteBeats >= 2.75) { noteType = "half"; hasDot = true; }
+        const noteBeats = note.durationTicks / ppq;
+        let noteType = "quarter"; let hasDot = false;
+        if      (noteBeats >= 3.75) { noteType = "whole"; }
+        else if (noteBeats >= 2.75) { noteType = "half";    hasDot = true; }
         else if (noteBeats >= 1.75) { noteType = "half"; }
         else if (noteBeats >= 1.25) { noteType = "quarter"; hasDot = true; }
         else if (noteBeats >= 0.75) { noteType = "quarter"; }
-        else if (noteBeats >= 0.6) { noteType = "eighth"; hasDot = true; }
+        else if (noteBeats >= 0.6)  { noteType = "eighth";  hasDot = true; }
         else if (noteBeats >= 0.35) { noteType = "eighth"; }
-        else { noteType = "16th"; }
+        else                        { noteType = "16th"; }
 
-        currentMeasureNoteObjects.push({
-            degree: degree + 1,
-            octave: shift,
-            type: noteType,
-            dot: hasDot,
-            tie: false,
-            rest: false,
-            accidental: acc
-        });
+        currentMeasureNoteObjects.push({ degree:degree+1, octave:shift, type:noteType, dot:hasDot, tie:false, rest:false, accidental:acc });
     }
-
-    if (currentMeasureNoteObjects.length > 0) {
-        jianpuMeasures.push(currentMeasureNoteObjects);
-    }
+    if (currentMeasureNoteObjects.length > 0) jianpuMeasures.push(currentMeasureNoteObjects);
 
     let tempoStr = "";
     if (midi.header.tempos && midi.header.tempos.length > 0) {
         tempoStr = Math.round(midi.header.tempos[0].bpm).toString();
     }
 
-    let titleStr = midi.header.name || file.name.replace(/\.[^/.]+$/, "");
-    state.lastMidiRender = {
-        measures: jianpuMeasures,
-        keyStr: keyStr,
-        timeStr: `${beats}/${beatType}`,
-        titleStr: titleStr,
-        tempoStr: tempoStr
-    };
-    const svgResult = renderJianpuSVG(jianpuMeasures, keyStr, `${beats}/${beatType}`, titleStr, appContainer.clientWidth, tempoStr);
+    const titleStr = midi.header.name || file.name.replace(/\.[^/.]+$/, "");
+    const timeStr  = `${beats}/${beatType}`;
+    state.lastMidiRender = { measures:jianpuMeasures, keyStr, timeStr, titleStr, tempoStr };
 
-    output.innerHTML = svgResult;
-    output.style.display = 'block';
-    controlsRow.style.display = 'flex';
+    const svgResult = renderJianpuSVG(jianpuMeasures, keyStr, timeStr, titleStr, mainContent.clientWidth, tempoStr);
+    showOutput(svgResult, titleStr, keyStr, timeStr);
+
+    optionsSec.style.display            = 'block';
     partSelectorContainer.style.display = 'none';
+    partFallback.style.display          = 'block';
+    partFallback.textContent            = '自动';
 }
 
 // --- MusicXML Conversion ---
@@ -361,26 +340,21 @@ async function handleXmlConversion(file) {
         const containerFile = zip.files['META-INF/container.xml'];
         if (containerFile) {
             const containerXmlText = await containerFile.async("text");
-            const containerParser = new DOMParser();
-            const containerDoc = containerParser.parseFromString(containerXmlText, "text/xml");
-            const rootfile = containerDoc.getElementsByTagName("rootfile")[0];
+            const containerParser  = new DOMParser();
+            const containerDoc     = containerParser.parseFromString(containerXmlText, "text/xml");
+            const rootfile         = containerDoc.getElementsByTagName("rootfile")[0];
             if (rootfile) {
                 const fullPath = rootfile.getAttribute("full-path");
-                if (fullPath && zip.files[fullPath]) {
-                    targetFile = zip.files[fullPath];
-                }
+                if (fullPath && zip.files[fullPath]) targetFile = zip.files[fullPath];
             }
         }
-
         if (!targetFile) {
-            for (let filename in zip.files) {
+            for (const filename in zip.files) {
                 if (filename.endsWith('.xml') && filename !== 'META-INF/container.xml') {
-                    targetFile = zip.files[filename];
-                    break;
+                    targetFile = zip.files[filename]; break;
                 }
             }
         }
-
         if (!targetFile) throw new Error("No XML found in MXL container");
         xmlText = await targetFile.async("text");
     } else {
@@ -390,24 +364,20 @@ async function handleXmlConversion(file) {
     const parser = new DOMParser();
     parsedXmlDoc = parser.parseFromString(xmlText, "text/xml");
 
-    // --- Auto Melody Detection Heuristic ---
     const parts = parsedXmlDoc.getElementsByTagName("part");
 
     const keywords = [
-        "笛", "flute", "dizi", "箫", "xiao", "唢呐", "suona", "管子", "guanzi", "笙", "sheng", "巴乌", "bawu",
-        "二胡", "erhu", "高胡", "gaohu", "中胡", "zhonghu", "板胡", "banhu", "京胡", "jinghu",
-        "violin", "soprano", "melody", "oboe", "clarinet", "trumpet", "horn",
-        "solo", "主旋律", "lead", "主音", "旋律"
+        "笛","flute","dizi","箫","xiao","唢呐","suona","管子","guanzi","笙","sheng","巴乌","bawu",
+        "二胡","erhu","高胡","gaohu","中胡","zhonghu","板胡","banhu","京胡","jinghu",
+        "violin","soprano","melody","oboe","clarinet","trumpet","horn",
+        "solo","主旋律","lead","主音","旋律"
     ];
-
     const penaltyKeywords = [
-        "大阮", "daruan", "中阮", "zhongruan", "革胡", "gehu", "大提琴", "cello",
-        "低音", "bass", "打击", "percussion", "扬琴", "yangqin", "伴奏", "acc", "accompaniment"
+        "大阮","daruan","中阮","zhongruan","革胡","gehu","大提琴","cello",
+        "低音","bass","打击","percussion","扬琴","yangqin","伴奏","acc","accompaniment"
     ];
 
-    let bestPartIndex = 0;
-    let highestScore = -Infinity;
-
+    let bestPartIndex = 0; let highestScore = -Infinity;
     partSelector.innerHTML = '';
 
     for (let i = 0; i < parts.length; i++) {
@@ -418,8 +388,7 @@ async function handleXmlConversion(file) {
         let partName = `Part ${i + 1}`;
         const partList = parsedXmlDoc.getElementsByTagName("part-list")[0];
         if (partList) {
-            const scoreParts = partList.getElementsByTagName("score-part");
-            for (let sp of scoreParts) {
+            for (const sp of partList.getElementsByTagName("score-part")) {
                 if (sp.getAttribute("id") === id) {
                     const nameNode = sp.getElementsByTagName("part-name")[0];
                     if (nameNode) partName = nameNode.textContent;
@@ -431,66 +400,47 @@ async function handleXmlConversion(file) {
         partSelector.appendChild(option);
 
         let score = 0;
-
-        let nameLower = partName.toLowerCase();
-        for (let kw of keywords) {
-            if (nameLower.includes(kw.toLowerCase())) {
-                score += 1000;
-                break;
-            }
-        }
-
-        for (let kw of penaltyKeywords) {
-            if (nameLower.includes(kw.toLowerCase())) {
-                score -= 2000;
-                break;
-            }
-        }
+        const nameLower = partName.toLowerCase();
+        for (const kw of keywords)        { if (nameLower.includes(kw.toLowerCase())) { score += 1000; break; } }
+        for (const kw of penaltyKeywords) { if (nameLower.includes(kw.toLowerCase())) { score -= 2000; break; } }
 
         const notes = parts[i].getElementsByTagName("note");
-        let totalPitches = 0;
-        let pitchSum = 0;
-
+        let totalPitches = 0; let pitchSum = 0;
         for (let j = 0; j < notes.length; j++) {
             const pitchNode = notes[j].getElementsByTagName("pitch")[0];
             if (pitchNode) {
                 totalPitches++;
-                const stepStr = pitchNode.getElementsByTagName("step")[0].textContent;
-                let alter = 0;
+                const stepStr   = pitchNode.getElementsByTagName("step")[0].textContent;
                 const alterNode = pitchNode.getElementsByTagName("alter")[0];
-                if (alterNode) alter = parseFloat(alterNode.textContent);
-                const octave = parseInt(pitchNode.getElementsByTagName("octave")[0].textContent);
-
-                const stepMap = { 'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11 };
-                let semitone = stepMap[stepStr] + alter + (octave * 12);
-                pitchSum += semitone;
+                const alter     = alterNode ? parseFloat(alterNode.textContent) : 0;
+                const octave    = parseInt(pitchNode.getElementsByTagName("octave")[0].textContent);
+                const stepMap   = { 'C':0,'D':2,'E':4,'F':5,'G':7,'A':9,'B':11 };
+                pitchSum       += stepMap[stepStr] + alter + (octave * 12);
             }
         }
-
         score += totalPitches;
-        if (totalPitches > 0) {
-            score += (pitchSum / totalPitches) * 2;
-        }
-
-        if (score > highestScore) {
-            highestScore = score;
-            bestPartIndex = i;
-        }
+        if (totalPitches > 0) score += (pitchSum / totalPitches) * 2;
+        if (score > highestScore) { highestScore = score; bestPartIndex = i; }
     }
+
+    optionsSec.style.display = 'block';
 
     if (parts.length > 1) {
         partSelector.value = bestPartIndex;
-        autoDetectLabel.style.display = 'block';
         partSelectorContainer.style.display = 'block';
+        partFallback.style.display          = 'none';
+        autoDetectLabel.style.display       = 'block';
     } else {
-        autoDetectLabel.style.display = 'none';
         partSelectorContainer.style.display = 'none';
+        partFallback.style.display          = 'block';
+        partFallback.textContent            = '—';
+        autoDetectLabel.style.display       = 'none';
     }
 
     renderSelectedPart();
 }
 
-// --- Convert Button Handler ---
+// --- Convert Button ---
 convertBtn.addEventListener('click', async () => {
     if (!currentFile) return;
 
@@ -500,22 +450,20 @@ convertBtn.addEventListener('click', async () => {
         return;
     }
 
-    convertBtn.textContent = 'Converting...';
+    convertBtn.textContent = '正在转换…';
     convertBtn.disabled = true;
     errorMsg.style.display = 'none';
 
     try {
         const isMidi = currentFile.name.toLowerCase().endsWith('.mid') || currentFile.name.toLowerCase().endsWith('.midi');
-
         if (isMidi) {
             await handleMidiConversion(currentFile);
         } else {
             await handleXmlConversion(currentFile);
         }
-
-        convertBtn.textContent = 'Convert to Jianpu';
+        convertBtn.textContent = '转换 Convert';
         convertBtn.disabled = false;
     } catch (err) {
-        showError('Error processing file: ' + err.message);
+        showError('Error: ' + err.message);
     }
 });
