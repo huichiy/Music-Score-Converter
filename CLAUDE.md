@@ -43,7 +43,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
 - `keyStr` — e.g. `"C"`, `"G"`, `"Bb"`
 - `timeStr` — e.g. `"4/4"`, `"3/4"`, `"6/8"`
 - `titleStr` — score title, SVG-escaped internally
-- `containerWidth` — pass `appContainer.clientWidth` (NOT `output.clientWidth` — it's 0 when hidden)
+- `containerWidth` — pass `mainContent.clientWidth` (NOT `output.clientWidth` — it's 0 when hidden; `mainContent` is the always-visible `<main>` panel)
 - `tempoStr` — BPM string e.g. `"120"`, empty string if no tempo
 
 ---
@@ -153,17 +153,18 @@ if (newFifthsNode) {
 
 ## UI / DOM Rules
 - Always use `getElementById('partSelectorContainer')` — never `.parentElement`
-- Always pass `appContainer.clientWidth` to `renderJianpuSVG` — `output.clientWidth` is 0 when hidden
+- Always pass `mainContent.clientWidth` to `renderJianpuSVG` — `output.clientWidth` is 0 when hidden
 - `state.*` for all session data — never `window.*`
 - File size guard: reject files > 20MB before parsing
 
 ---
 
 ## CSS / Theme
-- Light: `--bg: #F9F9F9`, `--text: #0A0A0A`
-- Dark: `--bg: #0A0A0A`, `--text: #FFFFFF`
+- Light (竹简): `--bg: #EFE5D2`, `--text: #1C0F06`, `--sidebar: #E4D4BC`, `--accent: #B01C1C`
+- Dark (墨夜): `--bg: #100E08`, `--text: #E8D4A0`, `--sidebar: #140F08`, `--accent: #DC2626`
+- Layout: sidebar (`<aside>`) + main content (`<main id="mainContent">`) — sidebar holds upload, options, export
 - SVG color driven by `document.documentElement.getAttribute('data-theme')`
-- Mobile breakpoint: `@media (max-width: 600px)`
+- Mobile breakpoint: `@media (max-width: 600px)` — sidebar collapses to top panel
 - SVG scaling: `.output-zone svg { max-width: 100%; height: auto; display: block; }`
 
 ---
@@ -172,7 +173,7 @@ if (newFifthsNode) {
 | Rule | Reason |
 |---|---|
 | `parseFloat()` for all `alter` reads | MusicXML allows 0.5 quarter-tones |
-| `appContainer.clientWidth` to renderer | `output.clientWidth = 0` when hidden |
+| `mainContent.clientWidth` to renderer | `output.clientWidth = 0` when hidden; `mainContent` is always visible sidebar-main layout |
 | `getElementById('partSelectorContainer')` | `.parentElement` breaks on DOM restructure |
 | `state.*` for session data | Never `window.*` globals |
 | `parser.js` loads first | Declares all shared globals |
