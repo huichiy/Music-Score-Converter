@@ -213,9 +213,29 @@ partSelector.addEventListener('change', () => {
     renderSelectedPart();
 });
 
+// --- Compatibility helpers for iOS < 14.5 ---
+function fileToArrayBuffer(file) {
+    if (file.arrayBuffer) return file.arrayBuffer();
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+    });
+}
+function fileToText(file) {
+    if (file.text) return file.text();
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsText(file, 'UTF-8');
+    });
+}
+
 // --- MIDI Conversion ---
 async function handleMidiConversion(file) {
-    const arrayBuffer = await file.arrayBuffer();
+    const arrayBuffer = await fileToArrayBuffer(file);
     const midi = new Midi(arrayBuffer);
 
     let keyStr = "C";
@@ -333,7 +353,7 @@ async function handleXmlConversion(file) {
     let xmlText = "";
 
     if (file.name.toLowerCase().endsWith('.mxl')) {
-        const arrayBuffer = await file.arrayBuffer();
+        const arrayBuffer = await fileToArrayBuffer(file);
         const zip = await JSZip.loadAsync(arrayBuffer);
 
         let targetFile = null;
@@ -358,7 +378,7 @@ async function handleXmlConversion(file) {
         if (!targetFile) throw new Error("No XML found in MXL container");
         xmlText = await targetFile.async("text");
     } else {
-        xmlText = await file.text();
+        xmlText = await fileToText(file);
     }
 
     const parser = new DOMParser();
