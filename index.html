@@ -223,6 +223,25 @@
     }
     .kofi-btn:hover { color: var(--accent); border-color: var(--accent); }
 
+    /* OCR section */
+    .beta-tag {
+      font-size: 9px; color: var(--accent);
+      border: 0.5px solid var(--accent); border-radius: 2px;
+      padding: 1px 4px; margin-left: 4px; vertical-align: middle;
+    }
+    .ocr-input {
+      width: 100%; background: var(--sel-bg); color: var(--text);
+      border: 0.5px solid var(--border); border-radius: 3px;
+      padding: 5px 8px; font-size: 11px; font-family: monospace;
+      outline: none; margin-bottom: 8px;
+    }
+    .ocr-input:focus { border-color: var(--text); }
+    .ocr-mode-row {
+      display: flex; gap: 12px; margin-bottom: 8px;
+      font-size: 11px; color: var(--muted);
+    }
+    .ocr-mode-opt { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+
     /* Sidebar footer */
     .sidebar-footer {
       margin-top: auto; padding-top: 16px;
@@ -423,6 +442,42 @@
           <button class="download-btn" id="dlPng">.PNG</button>
           <button class="download-btn" id="dlJpeg">.JPEG</button>
         </div>
+      </div>
+
+      <!-- OCR section -->
+      <div class="sidebar-sec" style="margin-top:12px;">
+        <div class="sec-label">图片识别 · OCR <span class="beta-tag">Beta</span></div>
+
+        <input type="password" id="ocrApiKey" class="ocr-input" placeholder="sk-ant-… Claude API key" autocomplete="off">
+
+        <div class="ocr-mode-row">
+          <label class="ocr-mode-opt">
+            <input type="radio" name="ocrMode" value="jianpu" checked> 简谱识别
+          </label>
+          <label class="ocr-mode-opt">
+            <input type="radio" name="ocrMode" value="western"> 五线谱→简谱
+          </label>
+        </div>
+
+        <div class="upload-zone" id="ocrZone" style="margin-bottom:8px;">
+          <div class="upload-char">🖼</div>
+          <div class="upload-hint">拖放图片 .jpg .png</div>
+          <div class="upload-or">或 · or</div>
+          <label class="browse-label">
+            浏览 Browse
+            <input type="file" id="ocrImageInput" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp">
+          </label>
+        </div>
+        <div class="loaded-card" id="ocrLoadedCard" style="display:none">
+          <div class="loaded-card-info">
+            <span class="loaded-tag">已加载 Loaded</span>
+            <span class="loaded-name" id="ocrFileName">—</span>
+          </div>
+          <button class="reset-btn" id="ocrResetBtn" title="重置">×</button>
+        </div>
+
+        <button class="convert-btn" id="ocrAnalyzeBtn" disabled>识别 Analyze</button>
+        <div class="error-message" id="ocrErrorMsg"></div>
       </div>
 
       <div class="sidebar-footer">

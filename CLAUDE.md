@@ -210,7 +210,8 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] Hairpin dynamics (crescendo/decrescendo)
 - [ ] MIDI mid-file key change tracking
 - [ ] Multi-voice rendering (long term)
-- [ ] OCR pipeline: Jianpu image → MusicXML (Phase 3, requires backend)
+- [ ] OCR：简谱图片 → 简谱文字转录（BYOK，Claude Vision）
+- [ ] OCR：五线谱图片 → 简谱（BYOK，Claude Vision）
 
 ---
 

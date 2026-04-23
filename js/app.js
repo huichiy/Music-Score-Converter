@@ -31,8 +31,51 @@ const errorMsg              = document.getElementById('errorMsg');
 const trySampleBtn          = document.getElementById('trySampleBtn');
 const resetBtn              = document.getElementById('resetBtn');
 
+// OCR DOM refs
+const ocrApiKey      = document.getElementById('ocrApiKey');
+const ocrImageInput  = document.getElementById('ocrImageInput');
+const ocrZone        = document.getElementById('ocrZone');
+const ocrLoadedCard  = document.getElementById('ocrLoadedCard');
+const ocrFileName    = document.getElementById('ocrFileName');
+const ocrResetBtn    = document.getElementById('ocrResetBtn');
+const ocrAnalyzeBtn  = document.getElementById('ocrAnalyzeBtn');
+const ocrErrorMsg    = document.getElementById('ocrErrorMsg');
+
 let currentFile  = null;
 let parsedXmlDoc = null;
+let ocrCurrentFile = null;
+
+// --- OCR Prompts ---
+const JIANPU_OCR_PROMPT = `你是简谱专家。仔细分析这张简谱图片，逐小节转录乐谱内容。
+
+输出格式：
+第一行：标题（如有）、调号（Key: X）、拍号（Time: X/X）
+之后按小节输出，用 | 分隔小节。
+- 数字 1-7 代表音级，0 代表休止符
+- 高八度音符后加 '（如 1' 2'），低八度后加 .（如 1. 2.）
+- 八分音符后加 _，十六分音符后加 __
+- 延音用 -
+
+示例：
+标题：茉莉花，Key: G，Time: 4/4
+| 5 6 5 3 | 2 - 0 0 | 3 3_ 3 4 | 5 - - - |`;
+
+const WESTERN_TO_JIANPU_PROMPT = `You are a music expert converting Western staff notation to Jianpu (简谱).
+In Jianpu, numbers 1-7 represent scale degrees relative to the key (1=Do/tonic).
+
+Output format:
+- First line: Title (if visible), Key: X, Time: X/X
+- Then music measure by measure, separated by |
+- 1-7 for scale degrees, 0 for rest
+- Add ' after a number for next higher octave (1' = octave up)
+- Add . after a number for next lower octave (5. = octave down)
+- Add _ for eighth notes, __ for sixteenth notes
+- Use - for held beats (half note = "1 -", whole = "1 - - -")
+- Accidentals: #1 raised, b3 lowered
+
+Example (C major, 4/4):
+Key: C, Time: 4/4
+| 3 3 4 5 | 5 4 3 2 | 1 1 2 3 | 3 - 2 - |`;
 
 // --- Theme re-render (toggle handled inline in HTML) ---
 document.getElementById('themeToggle').addEventListener('click', () => {
@@ -67,6 +110,82 @@ function showOutput(svgResult, titleStr, keyStr, timeStr) {
     exportSec.style.display = 'block';
     keyDisplay.textContent  = `1=${keyStr}`;
     timeDisplay.textContent = timeStr;
+}
+
+// --- OCR helpers ---
+function showOcrError(msg) {
+    ocrErrorMsg.textContent = msg;
+    ocrErrorMsg.style.display = 'block';
+}
+
+function showOcrOutput(htmlContent, label, filename) {
+    output.innerHTML      = htmlContent;
+    output.style.display  = 'block';
+    emptyState.style.display = 'none';
+    toolbar.style.display    = 'flex';
+    toolbarTitle.textContent = label;
+    toolbarMeta.textContent  = filename;
+    toolbarDone.style.display = 'none';
+    exportSec.style.display   = 'none';
+}
+
+function handleOcrFile(file) {
+    if (!file || !file.type.startsWith('image/')) { showOcrError('请上传图片文件'); return; }
+    if (file.size > 5 * 1024 * 1024) { showOcrError('图片不能超过 5MB'); return; }
+    ocrCurrentFile = file;
+    ocrFileName.textContent = file.name;
+    ocrLoadedCard.style.display = 'flex';
+    ocrZone.style.display = 'none';
+    ocrAnalyzeBtn.disabled = false;
+    ocrErrorMsg.style.display = 'none';
+}
+
+async function handleOcrConversion(file, apiKey) {
+    const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+
+    const mode = document.querySelector('input[name="ocrMode"]:checked').value;
+    const mediaType = file.type || 'image/jpeg';
+    const systemPrompt = mode === 'jianpu' ? JIANPU_OCR_PROMPT : WESTERN_TO_JIANPU_PROMPT;
+    const userText = mode === 'jianpu' ? '请识别并转录这张简谱图片。' : '请将这张五线谱转换为简谱。';
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+            'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 2048,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: [
+                { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+                { type: 'text', text: userText }
+            ]}]
+        })
+    });
+
+    if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody.error?.message || `API error ${res.status}`);
+    }
+
+    const data = await res.json();
+    const text = data.content?.[0]?.text || '（无输出）';
+    const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const label = mode === 'jianpu' ? '简谱识别' : '五线谱→简谱';
+    showOcrOutput(
+        `<div style="font-family:monospace;font-size:14px;line-height:1.9;white-space:pre-wrap;color:var(--text);padding:8px 0">${escaped}</div>`,
+        label,
+        file.name
+    );
 }
 
 // --- File handling ---
@@ -485,5 +604,45 @@ convertBtn.addEventListener('click', async () => {
         convertBtn.disabled = false;
     } catch (err) {
         showError('Error: ' + err.message);
+    }
+});
+
+// --- OCR Events ---
+ocrApiKey.value = localStorage.getItem('ocrApiKey') || '';
+ocrApiKey.addEventListener('input', () => localStorage.setItem('ocrApiKey', ocrApiKey.value.trim()));
+
+ocrImageInput.addEventListener('change', e => handleOcrFile(e.target.files[0]));
+
+ocrResetBtn.addEventListener('click', () => {
+    ocrCurrentFile = null;
+    ocrImageInput.value = '';
+    ocrLoadedCard.style.display = 'none';
+    ocrZone.style.display = '';
+    ocrAnalyzeBtn.disabled = true;
+    ocrErrorMsg.style.display = 'none';
+});
+
+ocrZone.addEventListener('dragover', e => { e.preventDefault(); ocrZone.classList.add('dragover'); });
+ocrZone.addEventListener('dragleave', () => ocrZone.classList.remove('dragover'));
+ocrZone.addEventListener('drop', e => {
+    e.preventDefault();
+    ocrZone.classList.remove('dragover');
+    handleOcrFile(e.dataTransfer.files[0]);
+});
+
+ocrAnalyzeBtn.addEventListener('click', async () => {
+    const key = ocrApiKey.value.trim();
+    if (!key) { showOcrError('请输入 Claude API key'); return; }
+    if (!ocrCurrentFile) { showOcrError('请先选择图片'); return; }
+    ocrAnalyzeBtn.disabled = true;
+    ocrAnalyzeBtn.textContent = '识别中…';
+    ocrErrorMsg.style.display = 'none';
+    try {
+        await handleOcrConversion(ocrCurrentFile, key);
+    } catch (err) {
+        showOcrError(err.message || '识别失败，请重试');
+    } finally {
+        ocrAnalyzeBtn.disabled = false;
+        ocrAnalyzeBtn.textContent = '识别 Analyze';
     }
 });
