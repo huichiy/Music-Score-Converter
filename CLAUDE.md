@@ -57,7 +57,12 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
   dot: boolean,
   tie: boolean,        // true = this note is a tie continuation, renders as "-"
   rest: boolean,
-  accidental: "#"|"b"|""
+  accidental: "#"|"b"|"",
+  slurStart: boolean,      // true = start of slur curve above
+  slurStop: boolean,       // true = end of slur curve
+  chordNotes: [            // optional — chord/double-stop notes stacked below
+    { degree, octave, accidental }
+  ]
 }
 ```
 
@@ -67,6 +72,7 @@ measureNotes._repeatStart = boolean;
 measureNotes._repeatEnd = boolean;
 measureNotes._direction = string;   // e.g. "D.C. al Fine", ""
 measureNotes._dynamic = string;     // e.g. "mf", "ff", ""
+measureNotes._wedge = string|null;  // 'cresc' | 'dim' | null — active hairpin for this measure
 ```
 
 ---
@@ -198,10 +204,10 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 ---
 
 ## What's Next (Roadmap)
-- [ ] Chord stacking within melody line (double stops)
-- [ ] Slur curves (连线)
-- [ ] Ko-fi donation button
-- [ ] Hairpin dynamics (crescendo/decrescendo)
+- [x] Chord stacking within melody line (double stops)
+- [x] Slur curves (连线)
+- [x] Ko-fi donation button
+- [x] Hairpin dynamics (crescendo/decrescendo)
 - [ ] MIDI mid-file key change tracking
 - [ ] Multi-voice rendering (long term)
 - [ ] OCR pipeline: Jianpu image → MusicXML (Phase 3, requires backend)

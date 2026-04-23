@@ -213,6 +213,16 @@
     }
     .try-sample-btn:hover { color: var(--accent); }
 
+    /* Ko-fi donation button */
+    .kofi-btn {
+      display: block; text-align: center;
+      font-size: 11px; color: var(--muted);
+      text-decoration: none; padding: 6px 0;
+      border: 0.5px solid var(--border); border-radius: 3px;
+      margin-bottom: 8px; transition: color 0.2s, border-color 0.2s;
+    }
+    .kofi-btn:hover { color: var(--accent); border-color: var(--accent); }
+
     /* Sidebar footer */
     .sidebar-footer {
       margin-top: auto; padding-top: 16px;
@@ -416,6 +426,7 @@
       </div>
 
       <div class="sidebar-footer">
+        <a class="kofi-btn" href="https://ko-fi.com/YOUR_USERNAME" target="_blank" rel="noopener">☕ Support on Ko-fi</a>
         <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle theme"
           onclick="(function(){
             var h = document.documentElement;

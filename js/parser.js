@@ -3,6 +3,25 @@ function pitchToSemitones(step, alter, octave) {
     return stepMap[step] + alter + (octave * 12);
 }
 
+// --- Chord note pitch parser (reuses same pitch logic as main note loop) ---
+function parseChordNote(noteEl, baseTonicStep, baseTonicAlter, baseTonicSemi) {
+    const pitchNode = noteEl.getElementsByTagName("pitch")[0];
+    if (!pitchNode) return null;
+    const step = pitchNode.getElementsByTagName("step")[0].textContent;
+    const alterNode = pitchNode.getElementsByTagName("alter")[0];
+    const alter = alterNode ? parseFloat(alterNode.textContent) : 0;
+    const octave = parseInt(pitchNode.getElementsByTagName("octave")[0].textContent);
+    const noteSemi = pitchToSemitones(step, alter, octave);
+    const diatonicDiff = (stepMapDiatonic[step] - stepMapDiatonic[baseTonicStep] + 7) % 7;
+    const degree = diatonicDiff + 1;
+    const expectedSemi = baseTonicSemi + scaleDegrees[diatonicDiff];
+    const semiDiff = noteSemi - expectedSemi;
+    const octaveShift = Math.round(semiDiff / 12);
+    const remainder = semiDiff - octaveShift * 12;
+    const accidental = remainder > 0 ? '#' : remainder < 0 ? 'b' : '';
+    return { degree, octave: octaveShift, accidental };
+}
+
 // --- Shared pitch-conversion constants (single source of truth for all scripts) ---
 const scaleDegrees = [0, 2, 4, 5, 7, 9, 11];   // semitone offsets for scale degrees 1–7
 const stepMapDiatonic = { 'C': 0, 'D': 1, 'E': 2, 'F': 3, 'G': 4, 'A': 5, 'B': 6 };
@@ -33,6 +52,7 @@ function parseXMLToNoteObjects(xmlDoc) {
     const measures = xmlDoc.getElementsByTagName("measure");
     let currentDivisions = 1;
     let lastNoteWasTieStart = false;
+    let wedgeType = null; // tracks active hairpin: 'cresc' | 'dim' | null
 
     for (let i = 0; i < measures.length; i++) {
         let measureNotes = [];
@@ -72,8 +92,17 @@ function parseXMLToNoteObjects(xmlDoc) {
         for (let j = 0; j < notes.length; j++) {
             const note = notes[j];
 
-            // Skip chords/harmony for simple melody line
-            if (note.getElementsByTagName("chord").length > 0 || note.getElementsByTagName("grace").length > 0) {
+            // Skip grace notes
+            if (note.getElementsByTagName("grace").length > 0) continue;
+
+            // Chord notes: attach to previous note instead of skipping
+            if (note.getElementsByTagName("chord").length > 0) {
+                if (measureNotes.length > 0) {
+                    const prevNote = measureNotes[measureNotes.length - 1];
+                    if (!prevNote.chordNotes) prevNote.chordNotes = [];
+                    const cn = parseChordNote(note, baseTonicStep, baseTonicAlter, baseTonicSemi);
+                    if (cn) prevNote.chordNotes.push(cn);
+                }
                 continue;
             }
 
@@ -203,6 +232,17 @@ function parseXMLToNoteObjects(xmlDoc) {
             }
         }
         measureNotes._dynamic = dynamicText;
+
+        // Extract hairpin dynamics (<wedge> crescendo/diminuendo)
+        for (let d = 0; d < directionNodes.length; d++) {
+            const wedgeNode = directionNodes[d].getElementsByTagName("wedge")[0];
+            if (!wedgeNode) continue;
+            const wType = wedgeNode.getAttribute("type");
+            if (wType === "crescendo")  { wedgeType = 'cresc'; break; }
+            if (wType === "diminuendo") { wedgeType = 'dim';   break; }
+            if (wType === "stop")       { wedgeType = null;    break; }
+        }
+        measureNotes._wedge = wedgeType;
 
         if (measureNotes.length > 0 || repeatStart || repeatEnd) {
             jianpuMeasures.push(measureNotes);

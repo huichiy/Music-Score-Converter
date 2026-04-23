@@ -168,6 +168,25 @@ function renderNote(svgElements, note, currentX, currentY, svgColor) {
 
     svgElements.push(`<text x="${currentX + numXOffset}" y="${currentY}" font-family="Inter" font-size="18" fill="${svgColor}">${displayStr}</text>`);
 
+    // Chord notes stacked below main note
+    if (note.chordNotes && note.chordNotes.length > 0) {
+        note.chordNotes.forEach((cn, idx) => {
+            const chordY = currentY + (idx + 1) * 16;
+            let chordXOffset = 2;
+            if (cn.accidental) {
+                svgElements.push(`<text x="${currentX}" y="${chordY - 6}" font-family="Inter" font-size="9" fill="${svgColor}">${cn.accidental}</text>`);
+                chordXOffset = 7;
+            }
+            svgElements.push(`<text x="${currentX + chordXOffset}" y="${chordY}" font-family="Inter" font-size="16" fill="${svgColor}">${cn.degree}</text>`);
+            // Octave dots for chord notes
+            const dotCx = currentX + chordXOffset + 5;
+            if (cn.octave >= 1) svgElements.push(`<circle cx="${dotCx}" cy="${chordY - 16}" r="1.5" fill="${svgColor}"/>`);
+            if (cn.octave >= 2) svgElements.push(`<circle cx="${dotCx}" cy="${chordY - 22}" r="1.5" fill="${svgColor}"/>`);
+            if (cn.octave <= -1) svgElements.push(`<circle cx="${dotCx}" cy="${chordY + 8}" r="1.5" fill="${svgColor}"/>`);
+            if (cn.octave <= -2) svgElements.push(`<circle cx="${dotCx}" cy="${chordY + 14}" r="1.5" fill="${svgColor}"/>`);
+        });
+    }
+
     return numXOffset;
 }
 
@@ -371,6 +390,21 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         // Dynamic marking
         if (measure._dynamic) {
             svgElements.push(`<text x="${measureStartX + 2}" y="${currentY + 22}" font-family="Inter" font-size="12" font-style="italic" font-weight="600" fill="${svgColor}">${escapeSVG(measure._dynamic)}</text>`);
+        }
+
+        // Hairpin dynamics (crescendo / diminuendo)
+        if (measure._wedge) {
+            const hairpinY  = currentY + 30;
+            const hairpinH  = 5;
+            const mStartX   = measureStartX + 4;
+            const mEndX     = currentX - 4;
+            if (measure._wedge === 'cresc') {
+                svgElements.push(`<line x1="${mStartX}" y1="${hairpinY}" x2="${mEndX}" y2="${hairpinY - hairpinH}" stroke="${svgColor}" stroke-width="1" opacity="0.7"/>`);
+                svgElements.push(`<line x1="${mStartX}" y1="${hairpinY}" x2="${mEndX}" y2="${hairpinY + hairpinH}" stroke="${svgColor}" stroke-width="1" opacity="0.7"/>`);
+            } else {
+                svgElements.push(`<line x1="${mStartX}" y1="${hairpinY - hairpinH}" x2="${mEndX}" y2="${hairpinY}" stroke="${svgColor}" stroke-width="1" opacity="0.7"/>`);
+                svgElements.push(`<line x1="${mStartX}" y1="${hairpinY + hairpinH}" x2="${mEndX}" y2="${hairpinY}" stroke="${svgColor}" stroke-width="1" opacity="0.7"/>`);
+            }
         }
 
         actualMeasureNum++;
