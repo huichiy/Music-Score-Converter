@@ -163,6 +163,7 @@ async function handleOcrConversion(file) {
             body: JSON.stringify({
                 model: 'meta-llama/llama-4-scout-17b-16e-instruct',
                 max_tokens: 2048,
+                temperature: 0,
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: [
