@@ -149,7 +149,6 @@ cd Music-Score-Converter
 | **Single melody line only** | Chord voices and harmony notes are intentionally skipped to produce a readable melody line |
 | **MIDI triplets approximate** | MIDI has no semantic triplet encoding; durations are snapped to nearest binary value (quarter, eighth, etc.) |
 | **MIDI key detection** | Relies on the key signature event in the MIDI header; files exported without this metadata default to C major |
-| **No hairpin dynamics** | Crescendo and decrescendo hairpins are not yet rendered |
 | **No multi-voice rendering** | Each part is rendered as a single linear melody; simultaneous voices are not yet supported |
 
 ---
@@ -283,7 +282,6 @@ Music-Score-Converter/
 | **仅支持单旋律线** | 和弦与和声声部被有意跳过以保持输出整洁 |
 | **MIDI 三连音近似处理** | MIDI 无三连音语义编码，时值对齐至最近二进制时值 |
 | **MIDI 调号依赖文件头** | 无调号元数据的 MIDI 文件默认以 C 大调处理 |
-| **暂不支持渐强渐弱符号** | 髭形力度记号（hairpin）尚未渲染 |
 | **暂不支持多声部渲染** | 各声部仅渲染为单一旋律线，同时多声部尚未支持 |
 
 ---
@@ -296,7 +294,7 @@ Music-Score-Converter/
 - [x] 移动端布局优化
 - [x] 图片识别 — 简谱图片转录（Beta，Groq Llama 4 Vision 驱动）
 - [x] 图片识别 — 五线谱图片转简谱（Beta，Groq Llama 4 Vision 驱动）
-- [ ] 渐强渐弱符号（髭形力度记号）
+- [x] 渐强渐弱符号（髭形力度记号）
 - [ ] 多声部并排渲染
 
 ---
