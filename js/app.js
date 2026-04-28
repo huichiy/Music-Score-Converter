@@ -466,6 +466,7 @@ function parseABC(text, filename) {
     const measures = [];
     let currentMeasure = [];
     let measureAcc = {}; // accidentals active within current measure
+    let pendingTie = false; // set when '-' tie marker seen; applied to next note
 
     let i = 0;
     while (i < body.length) {
@@ -554,8 +555,8 @@ function parseABC(text, filename) {
         const { num, den, consumed } = parseDuration(body, i);
         i += consumed;
 
-        // Skip tie marker (note still rendered normally)
-        if (i < body.length && body[i] === '-') i++;
+        // Tie marker: '-' means next note is a tie stop
+        if (i < body.length && body[i] === '-') { pendingTie = true; i++; }
 
         // Resolve accidental: explicit > active in measure > key signature
         let alter;
@@ -582,8 +583,9 @@ function parseABC(text, filename) {
 
         currentMeasure.push({
             degree: degree + 1, octave: shift,
-            type, dot, tie: false, rest: false, accidental: accStr
+            type, dot, tie: pendingTie, rest: false, accidental: accStr
         });
+        pendingTie = false;
     }
 
     if (currentMeasure.length > 0) measures.push(currentMeasure);
