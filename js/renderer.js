@@ -320,7 +320,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         // Render each note in the measure
         for (let j = 0; j < measure.length; j++) {
             const note = measure[j];
-            let noteWidth = (noteWidths[note.type] || 40) * (note.dot ? 1.5 : 1);
+            let noteWidth = (noteWidths[note.type] || 40) * (note.dot ? 1.5 : 1) + (!note.tie && note.accidental ? 6 : 0);
 
             if (note.slurStart && !note.rest) {
                 slurStartX = currentX + 2;
