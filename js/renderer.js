@@ -161,7 +161,7 @@ function renderNote(svgElements, note, currentX, currentY, svgColor) {
     if (note.tie) displayStr = "-";
 
     let numXOffset = 2;
-    if (!note.rest && note.accidental) {
+    if (!note.rest && !note.tie && note.accidental) {
         svgElements.push(`<text x="${currentX}" y="${currentY - 8}" font-family="Inter" font-size="10" fill="${svgColor}">${note.accidental}</text>`);
         numXOffset = 8;
     }
@@ -254,7 +254,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         // --- Normal measure ---
         let measureWidth = 0;
         for (let note of measure) {
-            measureWidth += (noteWidths[note.type] || 40) * (note.dot ? 1.5 : 1) + (note.accidental ? 6 : 0);
+            measureWidth += (noteWidths[note.type] || 40) * (note.dot ? 1.5 : 1) + (!note.tie && note.accidental ? 6 : 0);
         }
 
         // Wrap to next line
