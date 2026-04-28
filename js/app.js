@@ -626,9 +626,12 @@ async function handleMidiConversion(file) {
     }
     if (!bestTrack || bestTrack.notes.length === 0) throw new Error("No notes found in MIDI.");
 
+    // Snap ticks to a small grid to absorb 1–2 tick quantization errors from DAWs/MuseScore
+    const TICK_SNAP = Math.max(2, Math.round(midi.header.ppq / 120)); // ~0.8% of a beat
     const tickMap = new Map();
     for (const n of bestTrack.notes) {
-        if (!tickMap.has(n.ticks) || n.midi > tickMap.get(n.ticks).midi) tickMap.set(n.ticks, n);
+        const snapped = Math.round(n.ticks / TICK_SNAP) * TICK_SNAP;
+        if (!tickMap.has(snapped) || n.midi > tickMap.get(snapped).midi) tickMap.set(snapped, n);
     }
     const melodyNotes = [...tickMap.values()].sort((a, b) => a.ticks - b.ticks);
 
