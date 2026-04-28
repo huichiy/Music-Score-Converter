@@ -232,6 +232,9 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] OCR：简谱图片 → 简谱文字转录（Groq Llama 4 Vision，免费，Beta）
 - [x] OCR：五线谱图片 → 简谱文字（Groq Llama 4 Vision，免费，Beta）
 - [ ] OCR 升级：AI 文字输出 → Jianpu parser → 渲染成简谱 SVG（Route C）
+- [ ] Playback 播放 — Tone.js，note objects → 实际音高，转完即听
+- [ ] 简谱编辑器 — 文本模式（Route B），序列化 note objects → 可编辑文字，改完重新 parse 渲染
+- [ ] 笛子装饰音标记 — 解析 MusicXML <ornaments>，SVG 渲染对应符号（颤音/打音/叠音等）
 
 ---
 
