@@ -40,6 +40,10 @@ const ocrResetBtn    = document.getElementById('ocrResetBtn');
 const ocrAnalyzeBtn  = document.getElementById('ocrAnalyzeBtn');
 const ocrErrorMsg    = document.getElementById('ocrErrorMsg');
 
+// Transpose DOM refs
+const transposeSelect = document.getElementById('transposeSelect');
+const transposeRow    = document.getElementById('transposeRow');
+
 let currentFile  = null;
 let parsedXmlDoc = null;
 let ocrCurrentFile = null;
@@ -87,13 +91,14 @@ Key: C, Time: 4/4
 
 // --- Theme re-render (toggle handled inline in HTML) ---
 document.getElementById('themeToggle').addEventListener('click', () => {
-    if (output.style.display !== 'none') {
-        if (parsedXmlDoc) {
-            renderSelectedPart();
-        } else if (state.lastMidiRender) {
-            const r = state.lastMidiRender;
-            output.innerHTML = renderJianpuSVG(r.measures, r.keyStr, r.timeStr, r.titleStr, mainContent.clientWidth, r.tempoStr || "");
-        }
+    if (output.style.display !== 'none' && state.originalMeasures) {
+        const targetKey = transposeSelect.value || state.originalKeyStr;
+        const measures  = transposeNoteObjects(state.originalMeasures, state.originalKeyStr, targetKey);
+        output.innerHTML = renderJianpuSVG(
+            measures, targetKey,
+            state.originalTimeStr, state.originalTitleStr,
+            mainContent.clientWidth, state.originalTempoStr || ""
+        );
     }
 });
 
@@ -225,11 +230,18 @@ function handleFile(file) {
     partSelectorContainer.style.display = 'none';
     partFallback.style.display          = 'none';
     autoDetectLabel.style.display       = 'none';
+    transposeRow.style.display          = 'none';
+    transposeSelect.value               = '';
     errorMsg.style.display = 'none';
     keyDisplay.textContent  = '—';
     timeDisplay.textContent = '—';
     parsedXmlDoc = null;
-    state.lastMidiRender = null;
+    state.lastMidiRender   = null;
+    state.originalMeasures = null;
+    state.originalKeyStr   = null;
+    state.originalTimeStr  = null;
+    state.originalTitleStr = null;
+    state.originalTempoStr = null;
 }
 
 // --- Reset ---
@@ -248,6 +260,8 @@ function resetAll() {
     partSelectorContainer.style.display = 'none';
     partFallback.style.display          = 'none';
     autoDetectLabel.style.display       = 'none';
+    transposeRow.style.display          = 'none';
+    transposeSelect.value               = '';
     errorMsg.style.display    = 'none';
 
     fileNameDisplay.textContent = '—';
@@ -256,6 +270,11 @@ function resetAll() {
     convertBtn.disabled         = true;
     convertBtn.textContent      = '转换 Convert';
     fileInput.value             = '';
+    state.originalMeasures = null;
+    state.originalKeyStr   = null;
+    state.originalTimeStr  = null;
+    state.originalTitleStr = null;
+    state.originalTempoStr = null;
 }
 
 resetBtn.addEventListener('click', resetAll);
@@ -339,9 +358,21 @@ function renderSelectedPart() {
     if (metronomeNodes.length > 0) tempoStr = metronomeNodes[0].textContent.trim();
 
     const svgMeasures = parseXMLToNoteObjects(dummyDoc);
-    const svgResult   = renderJianpuSVG(svgMeasures, keyStr, `${beats}/${beatType}`, titleStr, mainContent.clientWidth, tempoStr);
 
-    showOutput(svgResult, titleStr, keyStr, `${beats}/${beatType}`);
+    // Store originals for transpose re-render
+    state.originalMeasures = svgMeasures;
+    state.originalKeyStr   = keyStr;
+    state.originalTimeStr  = `${beats}/${beatType}`;
+    state.originalTitleStr = titleStr;
+    state.originalTempoStr = tempoStr;
+    transposeRow.style.display = 'flex';
+
+    // Apply active transpose (if any)
+    const targetKey    = transposeSelect.value || keyStr;
+    const displayMeasures = transposeNoteObjects(svgMeasures, keyStr, targetKey);
+    const svgResult    = renderJianpuSVG(displayMeasures, targetKey, `${beats}/${beatType}`, titleStr, mainContent.clientWidth, tempoStr);
+
+    showOutput(svgResult, titleStr, targetKey, `${beats}/${beatType}`);
 }
 
 partSelector.addEventListener('change', () => {
@@ -597,6 +628,13 @@ async function handleAbcConversion(file) {
     const { measures, keyStr, timeStr, titleStr, tempoStr } = parseABC(text, file.name);
     if (!measures.length) throw new Error('No notes found in ABC file.');
 
+    // Store originals for transpose
+    state.originalMeasures = measures;
+    state.originalKeyStr   = keyStr;
+    state.originalTimeStr  = timeStr;
+    state.originalTitleStr = titleStr;
+    state.originalTempoStr = tempoStr;
+
     state.lastMidiRender = { measures, keyStr, timeStr, titleStr, tempoStr };
     const svgResult = renderJianpuSVG(measures, keyStr, timeStr, titleStr, mainContent.clientWidth, tempoStr);
     showOutput(svgResult, titleStr, keyStr, timeStr);
@@ -605,6 +643,7 @@ async function handleAbcConversion(file) {
     partSelectorContainer.style.display = 'none';
     partFallback.style.display          = 'block';
     partFallback.textContent            = '—';
+    transposeRow.style.display          = 'flex';
 }
 
 // --- MIDI Conversion ---
@@ -733,6 +772,14 @@ async function handleMidiConversion(file) {
 
     const titleStr = midi.header.name || file.name.replace(/\.[^/.]+$/, "");
     const timeStr  = `${beats}/${beatType}`;
+
+    // Store originals for transpose
+    state.originalMeasures = jianpuMeasures;
+    state.originalKeyStr   = keyStr;
+    state.originalTimeStr  = timeStr;
+    state.originalTitleStr = titleStr;
+    state.originalTempoStr = tempoStr;
+
     state.lastMidiRender = { measures:jianpuMeasures, keyStr, timeStr, titleStr, tempoStr };
 
     const svgResult = renderJianpuSVG(jianpuMeasures, keyStr, timeStr, titleStr, mainContent.clientWidth, tempoStr);
@@ -742,6 +789,7 @@ async function handleMidiConversion(file) {
     partSelectorContainer.style.display = 'none';
     partFallback.style.display          = 'block';
     partFallback.textContent            = '自动';
+    transposeRow.style.display          = 'flex';
 }
 
 // --- MusicXML Conversion ---
@@ -885,6 +933,25 @@ convertBtn.addEventListener('click', async () => {
         convertBtn.disabled = false;
     } catch (err) {
         showError('Error: ' + err.message);
+    }
+});
+
+// --- Transpose ---
+transposeSelect.addEventListener('change', () => {
+    if (!state.originalMeasures) return;
+    const targetKey     = transposeSelect.value || state.originalKeyStr;
+    const measures      = transposeNoteObjects(state.originalMeasures, state.originalKeyStr, targetKey);
+    const svgResult     = renderJianpuSVG(
+        measures, targetKey,
+        state.originalTimeStr, state.originalTitleStr,
+        mainContent.clientWidth, state.originalTempoStr || ""
+    );
+    output.innerHTML        = svgResult;
+    keyDisplay.textContent  = `1=${targetKey}`;
+    toolbarMeta.textContent = `1=${targetKey}  ${state.originalTimeStr}`;
+    // Keep lastMidiRender in sync so export works on the transposed version
+    if (state.lastMidiRender) {
+        state.lastMidiRender = { ...state.lastMidiRender, measures, keyStr: targetKey };
     }
 });
 

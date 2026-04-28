@@ -126,6 +126,21 @@ Rendered at `currentX - 4`, `currentY - 20`, italic, text-anchor end, after clos
 
 ---
 
+## Transposition (parser.js)
+
+```js
+function transposeNoteObjects(measures, fromKeyStr, toKeyStr)
+```
+- Returns original `measures` unchanged if `fromKeyStr === toKeyStr`
+- For each note: recovers absolute semitone via `fromTonicSemi + octave*12 + scaleDegrees[degree-1] + accVal`
+- Re-expresses in `toKey` using the same diatonic arithmetic as the main parser
+- Enharmonic spelling follows toKey character (sharp keys → sharps, flat keys → flats)
+- Handles chord notes, skips rests, passes through `{ _multiRest: N }` blocks
+- All measure-level metadata (`_repeatStart`, `_repeatEnd`, `_direction`, `_dynamic`, `_wedge`) copied to new measure arrays
+- Called by `transposeSelect` change handler in app.js; `state.originalMeasures` / `state.originalKeyStr` hold the pre-transpose source
+
+---
+
 ## Mid-piece Key Changes (parser.js)
 Inside the measure loop, after reading `divisions`, check for new `<fifths>`:
 ```js
@@ -213,6 +228,7 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] MIDI mid-file key change tracking
 - [ ] Multi-voice rendering (long term)
 - [x] ABC Notation (.abc) input support
+- [x] 转调（Transposition）— 下拉菜单选目标调，笛子演奏者换调必备
 - [x] OCR：简谱图片 → 简谱文字转录（Groq Llama 4 Vision，免费，Beta）
 - [x] OCR：五线谱图片 → 简谱文字（Groq Llama 4 Vision，免费，Beta）
 - [ ] OCR 升级：AI 文字输出 → Jianpu parser → 渲染成简谱 SVG（Route C）

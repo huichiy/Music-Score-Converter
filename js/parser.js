@@ -251,3 +251,71 @@ function parseXMLToNoteObjects(xmlDoc) {
 
     return jianpuMeasures;
 }
+
+// --- Transposition ---
+// Re-express all note objects relative to a new tonic key.
+// Recovers the absolute semitone from (degree, octave, accidental, fromKey),
+// then recomputes (degree, octave, accidental) relative to toKey.
+function transposeNoteObjects(measures, fromKeyStr, toKeyStr) {
+    if (fromKeyStr === toKeyStr) return measures;
+
+    const fromAlter     = fromKeyStr.includes('#') ? 1 : (fromKeyStr.includes('b') ? -1 : 0);
+    const toAlter       = toKeyStr.includes('#')   ? 1 : (toKeyStr.includes('b')   ? -1 : 0);
+    const fromTonicSemi = pitchToSemitones(fromKeyStr[0], fromAlter, 4);
+    const toTonicSemi   = pitchToSemitones(toKeyStr[0],   toAlter,   4);
+    const toBaseStep    = toKeyStr[0];
+
+    // Enharmonic spelling follows the target key's character
+    const useFlats  = ["F","Bb","Eb","Ab","Db","Gb","Cb"].includes(toKeyStr);
+    const stepNames = useFlats
+        ? ["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"]
+        : ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+
+    // Recover absolute semitone from a note's jianpu representation in fromKey
+    function absSemi(degree, octave, accidental) {
+        const accVal = accidental === '#' ? 1 : (accidental === 'b' ? -1 : 0);
+        return fromTonicSemi + octave * 12 + scaleDegrees[degree - 1] + accVal;
+    }
+
+    // Re-express an absolute semitone as (degree, octave, accidental) in toKey
+    function reexpress(noteSemi) {
+        const semInOct  = ((noteSemi % 12) + 12) % 12;
+        const absOct    = (noteSemi - semInOct) / 12;
+        const stepStr   = stepNames[semInOct];
+        const step      = stepStr[0];
+        const alter     = stepStr.includes('b') ? -1 : (stepStr.includes('#') ? 1 : 0);
+        const tonicDiat = stepMapDiatonic[toBaseStep] + 4 * 7;
+        const noteDiat  = stepMapDiatonic[step] + absOct * 7;
+        const deg       = ((noteDiat - tonicDiat) % 7 + 7) % 7;
+        const shift     = Math.round((noteSemi - (toTonicSemi + scaleDegrees[deg])) / 12);
+        const intended  = toTonicSemi + shift * 12 + scaleDegrees[deg];
+        const acc       = noteSemi > intended ? '#' : (noteSemi < intended ? 'b' : '');
+        return { degree: deg + 1, octave: shift, accidental: acc };
+    }
+
+    function transposeNote(note) {
+        if (note.rest || note.degree === 0) return { ...note };
+        const semi = absSemi(note.degree, note.octave, note.accidental);
+        const { degree, octave, accidental } = reexpress(semi);
+        const result = { ...note, degree, octave, accidental };
+        if (note.chordNotes) {
+            result.chordNotes = note.chordNotes.map(cn => {
+                const cnSemi = absSemi(cn.degree, cn.octave, cn.accidental);
+                return reexpress(cnSemi);
+            });
+        }
+        return result;
+    }
+
+    return measures.map(measure => {
+        if (measure._multiRest !== undefined) return measure; // pass through multi-rest blocks
+        const newMeasure = measure.map(transposeNote);
+        // Copy measure-level metadata
+        newMeasure._repeatStart = measure._repeatStart;
+        newMeasure._repeatEnd   = measure._repeatEnd;
+        newMeasure._direction   = measure._direction;
+        newMeasure._dynamic     = measure._dynamic;
+        newMeasure._wedge       = measure._wedge;
+        return newMeasure;
+    });
+}
