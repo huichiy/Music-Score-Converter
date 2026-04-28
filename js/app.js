@@ -47,8 +47,12 @@ let ocrCurrentFile = null;
 // --- OCR Prompts ---
 const JIANPU_OCR_PROMPT = `你是简谱专家。仔细分析这张简谱图片，逐小节转录乐谱内容。
 
+严格规则：
+- 只输出简谱文本，不要任何解释、说明、注释或其他文字
+- 如果图片不是简谱（例如是五线谱），只回复：[错误：图片不是简谱，请切换到"五线谱→简谱"模式]
+
 输出格式：
-第一行：标题（如有）、调号（Key: X）、拍号（Time: X/X）
+第一行：标题（如有）、Key: X、Time: X/X
 之后按小节输出，用 | 分隔小节。
 - 数字 1-7 代表音级，0 代表休止符
 - 高八度音符后加 '（如 1' 2'），低八度后加 .（如 1. 2.）
@@ -61,6 +65,11 @@ const JIANPU_OCR_PROMPT = `你是简谱专家。仔细分析这张简谱图片�
 
 const WESTERN_TO_JIANPU_PROMPT = `You are a music expert converting Western staff notation to Jianpu (简谱).
 In Jianpu, numbers 1-7 represent scale degrees relative to the key (1=Do/tonic).
+Assume treble clef unless clearly indicated otherwise.
+
+Strict rules:
+- Output ONLY the Jianpu notation lines. No explanations, no notes, no steps, no markdown, no tables, no LaTeX.
+- If the image is not Western staff notation (e.g. it is already Jianpu numbered notation), reply only with: [Error: Image is not staff notation. Please switch to 简谱识别 mode.]
 
 Output format:
 - First line: Title (if visible), Key: X, Time: X/X
@@ -182,6 +191,12 @@ async function handleOcrConversion(file) {
 
     const data = await res.json();
     const text = data.choices?.[0]?.message?.content || '（无输出）';
+
+    // Detect wrong mode warning from AI
+    if (text.startsWith('[错误：') || text.startsWith('[Error:')) {
+        throw new Error(text.replace(/^\[错误：|^\[Error:\s*/, '').replace(/\]$/, ''));
+    }
+
     const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const label = mode === 'jianpu' ? '简谱识别' : '五线谱→简谱';
     showOcrOutput(
@@ -620,6 +635,10 @@ ocrResetBtn.addEventListener('click', () => {
     ocrZone.style.display = '';
     ocrAnalyzeBtn.disabled = true;
     ocrErrorMsg.style.display = 'none';
+    output.style.display     = 'none';
+    emptyState.style.display = 'flex';
+    toolbar.style.display    = 'none';
+    toolbarDone.style.display = 'none';
 });
 
 ocrZone.addEventListener('dragover', e => { e.preventDefault(); ocrZone.classList.add('dragover'); });
