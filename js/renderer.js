@@ -206,6 +206,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
     let currentY = paddingTop + 20;
     let svgElements = [];
     let maxTotalWidth = startX;
+    let maxBottomY = 0; // tracks deepest drawn Y across all measures (for chord+dynamic overlap)
 
     let slurStartX = null;
     let slurStartY = null;
@@ -387,14 +388,21 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
             svgElements.push(`<text x="${currentX - 4}" y="${currentY - 20}" font-family="Inter" font-size="11" font-style="italic" font-weight="500" fill="${svgColor}" text-anchor="end">${escapeSVG(measure._direction)}</text>`);
         }
 
+        // Push dynamic/hairpin below chord notes if present
+        const chordDepth = Array.isArray(measure)
+            ? measure.reduce((m, n) => Math.max(m, (n.chordNotes?.length || 0)), 0)
+            : 0;
+        const chordOffset = chordDepth * 16;
+        if (chordDepth > 0) maxBottomY = Math.max(maxBottomY, currentY + chordOffset + 36);
+
         // Dynamic marking
         if (measure._dynamic) {
-            svgElements.push(`<text x="${measureStartX + 2}" y="${currentY + 22}" font-family="Inter" font-size="12" font-style="italic" font-weight="600" fill="${svgColor}">${escapeSVG(measure._dynamic)}</text>`);
+            svgElements.push(`<text x="${measureStartX + 2}" y="${currentY + 22 + chordOffset}" font-family="Inter" font-size="12" font-style="italic" font-weight="600" fill="${svgColor}">${escapeSVG(measure._dynamic)}</text>`);
         }
 
         // Hairpin dynamics (crescendo / diminuendo)
         if (measure._wedge) {
-            const hairpinY  = currentY + 30;
+            const hairpinY  = currentY + 30 + chordOffset;
             const hairpinH  = 5;
             const mStartX   = measureStartX + 4;
             const mEndX     = currentX - 4;
@@ -410,7 +418,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         actualMeasureNum++;
     }
 
-    const totalHeight = currentY + 40;
+    const totalHeight = Math.max(currentY + 40, maxBottomY + 8);
     const finalWidth = Math.max(maxWidth, maxTotalWidth + 20);
 
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${finalWidth}" height="${totalHeight}" viewBox="0 0 ${finalWidth} ${totalHeight}">
