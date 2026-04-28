@@ -210,6 +210,7 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] Hairpin dynamics (crescendo/decrescendo)
 - [x] MIDI mid-file key change tracking
 - [ ] Multi-voice rendering (long term)
+- [x] ABC Notation (.abc) input support
 - [x] OCR：简谱图片 → 简谱文字转录（Groq Llama 4 Vision，免费，Beta）
 - [x] OCR：五线谱图片 → 简谱文字（Groq Llama 4 Vision，免费，Beta）
 - [ ] OCR 升级：AI 文字输出 → Jianpu parser → 渲染成简谱 SVG（Route C）
