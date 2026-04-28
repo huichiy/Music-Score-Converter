@@ -25,6 +25,10 @@ function parseChordNote(noteEl, baseTonicStep, baseTonicAlter, baseTonicSemi) {
 // --- Shared pitch-conversion constants (single source of truth for all scripts) ---
 const scaleDegrees = [0, 2, 4, 5, 7, 9, 11];   // semitone offsets for scale degrees 1–7
 const stepMapDiatonic = { 'C': 0, 'D': 1, 'E': 2, 'F': 3, 'G': 4, 'A': 5, 'B': 6 };
+const keyMap = {
+    "-7":"Cb","-6":"Gb","-5":"Db","-4":"Ab","-3":"Eb","-2":"Bb","-1":"F",
+    "0":"C","1":"G","2":"D","3":"A","4":"E","5":"B","6":"F#","7":"C#"
+};
 
 // --- Shared session state (written by app.js, read by downloader.js and theme toggle) ---
 const state = {};
@@ -37,10 +41,6 @@ function parseXMLToNoteObjects(xmlDoc) {
         fifths = parseInt(fifthsNodes[0].textContent);
     }
 
-    const keyMap = {
-        "-7": "Cb", "-6": "Gb", "-5": "Db", "-4": "Ab", "-3": "Eb", "-2": "Bb", "-1": "F",
-        "0": "C", "1": "G", "2": "D", "3": "A", "4": "E", "5": "B", "6": "F#", "7": "C#"
-    };
     let keyStr = keyMap[fifths.toString()] || "C";
 
     let baseTonicStep = keyStr[0];

@@ -331,7 +331,6 @@ function renderSelectedPart() {
     const fifthsNodes = dummyDoc.getElementsByTagName("fifths");
     if (fifthsNodes.length > 0) fifths = parseInt(fifthsNodes[0].textContent);
     else { const fb = parsedXmlDoc.getElementsByTagName("fifths"); if (fb.length > 0) fifths = parseInt(fb[0].textContent); }
-    const keyMap = { "-7":"Cb","-6":"Gb","-5":"Db","-4":"Ab","-3":"Eb","-2":"Bb","-1":"F","0":"C","1":"G","2":"D","3":"A","4":"E","5":"B","6":"F#","7":"C#" };
     const keyStr = keyMap[fifths.toString()] || "C";
 
     // Tempo
