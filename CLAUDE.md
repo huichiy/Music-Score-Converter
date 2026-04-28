@@ -208,7 +208,7 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] Slur curves (连线)
 - [x] Ko-fi donation button
 - [x] Hairpin dynamics (crescendo/decrescendo)
-- [ ] MIDI mid-file key change tracking
+- [x] MIDI mid-file key change tracking
 - [ ] Multi-voice rendering (long term)
 - [x] OCR：简谱图片 → 简谱文字转录（Groq Llama 4 Vision，免费，Beta）
 - [x] OCR：五线谱图片 → 简谱文字（Groq Llama 4 Vision，免费，Beta）

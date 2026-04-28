@@ -414,10 +414,16 @@ async function handleMidiConversion(file) {
         measureTicks = beats * (4 / beatType) * ppq;
     }
 
-    const useFlats  = ["F","Bb","Eb","Ab","Db","Gb","Cb"].includes(keyStr);
-    const stepNames = useFlats
+    let useFlats  = ["F","Bb","Eb","Ab","Db","Gb","Cb"].includes(keyStr);
+    let stepNames = useFlats
         ? ["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"]
         : ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+
+    // Mid-piece key changes: sort all key signature events; first is already applied
+    const sortedKeyChanges = (midi.header.keySignatures || [])
+        .slice()
+        .sort((a, b) => a.ticks - b.ticks);
+    let keyChangeIdx = 1;
 
     let jianpuMeasures = [];
     let currentMeasureNoteObjects = [];
@@ -435,6 +441,19 @@ async function handleMidiConversion(file) {
                 jianpuMeasures.push([{ degree:0, octave:0, type:"whole", dot:false, tie:false, rest:true, accidental:'' }]);
             }
             currentMeasureIdx++;
+        }
+
+        // Apply any key changes that occur at or before this note's tick
+        while (keyChangeIdx < sortedKeyChanges.length && sortedKeyChanges[keyChangeIdx].ticks <= note.ticks) {
+            const newKey = sortedKeyChanges[keyChangeIdx].key;
+            baseTonicStep  = newKey[0];
+            baseTonicAlter = newKey.includes('#') ? 1 : (newKey.includes('b') ? -1 : 0);
+            baseTonicSemi  = pitchToSemitones(baseTonicStep, baseTonicAlter, 4);
+            useFlats  = ["F","Bb","Eb","Ab","Db","Gb","Cb"].includes(newKey);
+            stepNames = useFlats
+                ? ["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"]
+                : ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+            keyChangeIdx++;
         }
 
         const noteNum  = note.midi;
