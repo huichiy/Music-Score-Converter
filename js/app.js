@@ -32,7 +32,6 @@ const trySampleBtn          = document.getElementById('trySampleBtn');
 const resetBtn              = document.getElementById('resetBtn');
 
 // OCR DOM refs
-const ocrApiKey      = document.getElementById('ocrApiKey');
 const ocrImageInput  = document.getElementById('ocrImageInput');
 const ocrZone        = document.getElementById('ocrZone');
 const ocrLoadedCard  = document.getElementById('ocrLoadedCard');
@@ -140,7 +139,7 @@ function handleOcrFile(file) {
     ocrErrorMsg.style.display = 'none';
 }
 
-async function handleOcrConversion(file, apiKey) {
+async function handleOcrConversion(file) {
     const base64 = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result.split(',')[1]);
@@ -153,24 +152,27 @@ async function handleOcrConversion(file, apiKey) {
     const systemPrompt = mode === 'jianpu' ? JIANPU_OCR_PROMPT : WESTERN_TO_JIANPU_PROMPT;
     const userText = mode === 'jianpu' ? '请识别并转录这张简谱图片。' : '请将这张五线谱转换为简谱。';
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
-            'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 2048,
-            system: systemPrompt,
-            messages: [{ role: 'user', content: [
-                { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-                { type: 'text', text: userText }
-            ]}]
-        })
-    });
+    const res = await fetch(
+        'https://api.groq.com/openai/v1/chat/completions',
+        {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'Authorization': `Bearer ${GROQ_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+                max_tokens: 2048,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: [
+                        { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
+                        { type: 'text', text: userText }
+                    ]}
+                ]
+            })
+        }
+    );
 
     if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
@@ -178,7 +180,7 @@ async function handleOcrConversion(file, apiKey) {
     }
 
     const data = await res.json();
-    const text = data.content?.[0]?.text || '（无输出）';
+    const text = data.choices?.[0]?.message?.content || '（无输出）';
     const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const label = mode === 'jianpu' ? '简谱识别' : '五线谱→简谱';
     showOcrOutput(
@@ -608,9 +610,6 @@ convertBtn.addEventListener('click', async () => {
 });
 
 // --- OCR Events ---
-ocrApiKey.value = localStorage.getItem('ocrApiKey') || '';
-ocrApiKey.addEventListener('input', () => localStorage.setItem('ocrApiKey', ocrApiKey.value.trim()));
-
 ocrImageInput.addEventListener('change', e => handleOcrFile(e.target.files[0]));
 
 ocrResetBtn.addEventListener('click', () => {
@@ -631,14 +630,12 @@ ocrZone.addEventListener('drop', e => {
 });
 
 ocrAnalyzeBtn.addEventListener('click', async () => {
-    const key = ocrApiKey.value.trim();
-    if (!key) { showOcrError('请输入 Claude API key'); return; }
     if (!ocrCurrentFile) { showOcrError('请先选择图片'); return; }
     ocrAnalyzeBtn.disabled = true;
     ocrAnalyzeBtn.textContent = '识别中…';
     ocrErrorMsg.style.display = 'none';
     try {
-        await handleOcrConversion(ocrCurrentFile, key);
+        await handleOcrConversion(ocrCurrentFile);
     } catch (err) {
         showOcrError(err.message || '识别失败，请重试');
     } finally {
