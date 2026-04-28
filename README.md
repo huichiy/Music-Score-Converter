@@ -38,6 +38,8 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | **Tempo & Dynamic Markings** | Extracts BPM from MusicXML `<metronome>` and MIDI header; renders fixed dynamics (`p`, `f`, `mf`, `ff`, `sfz`, etc.) below the staff |
 | **Repeat & Direction Markings** | Renders `\|\|:` and `:\|` repeat barlines; extracts and displays D.C., D.S., Fine, and al Coda direction text |
 | **SVG Score Rendering** | Output is a fully scalable SVG with correct measure layout, barlines, line wrapping, and multi-measure rest brackets |
+| **Image OCR — Jianpu Recognition** | Upload a Jianpu image (`.jpg`, `.png`) — AI reads and transcribes the numbered notation (Beta) |
+| **Image OCR — Staff to Jianpu** | Upload a Western staff notation image — AI converts it to Jianpu text (Beta) |
 | **Multiple Export Formats** | `.PNG` and `.JPEG` via Canvas renderer |
 | **Try with Sample File** | One-click demo with a built-in sample score — no file upload needed to try the tool |
 | **Zero Dependencies** | No server, no build tools, no install. Open `index.html` in any modern browser |
@@ -57,6 +59,7 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 |---|---|
 | [@tonejs/midi](https://github.com/Tonejs/Midi) | MIDI file parsing |
 | [JSZip](https://stuk.github.io/jszip/) | `.mxl` compressed file extraction |
+| [Groq API](https://groq.com/) | Vision AI for image OCR (Llama 4 Scout) |
 | [Inter](https://fonts.google.com/specimen/Inter) | UI typography |
 | [Ma Shan Zheng](https://fonts.google.com/specimen/Ma+Shan+Zheng) | Chinese calligraphy badge font |
 | GitHub Pages | Hosting |
@@ -157,9 +160,10 @@ cd Music-Score-Converter
 - [x] Repeat signs and D.C. / D.S. markings (段落反复记号)
 - [x] Tempo (速度) and dynamic markings (力度记号) in output
 - [x] Mobile-optimised layout and touch interactions
+- [x] Image OCR — Jianpu image transcription (Beta, powered by Groq Llama 4 Vision)
+- [x] Image OCR — Western staff notation → Jianpu (Beta, powered by Groq Llama 4 Vision)
 - [ ] Hairpin dynamics (crescendo / decrescendo)
 - [ ] Multi-voice rendering — duet parts side by side
-- [ ] Jianpu image / PDF → MusicXML via OCR pipeline (Phase 3)
 
 ---
 
@@ -200,6 +204,8 @@ cd Music-Score-Converter
 | **速度与力度标记** | 从 MusicXML `<metronome>` 及 MIDI 文件头提取速度；渲染 `p`、`f`、`mf`、`ff`、`sfz` 等固定力度标记 |
 | **反复与指示标记** | 渲染 `\|\|:` 与 `:\|` 反复纵线；提取并显示 D.C.、D.S.、Fine、al Coda 等指示文字 |
 | **SVG 乐谱渲染** | 输出为可缩放 SVG，包含正确的小节布局、纵线、自动换行与多小节休止括号 |
+| **图片识别 — 简谱识别** | 上传简谱图片（`.jpg`、`.png`），AI 自动转录数字简谱（Beta）|
+| **图片识别 — 五线谱转简谱** | 上传西洋五线谱图片，AI 自动转换为简谱文字（Beta）|
 | **多格式导出** | 支持 `.PNG` 与 `.JPEG`（Canvas 渲染） |
 | **内置示例试用** | 一键加载示例乐谱，无需上传文件即可体验转换效果 |
 | **无需安装** | 无服务器、无构建工具、无依赖，直接用浏览器打开 `index.html` |
@@ -218,6 +224,7 @@ cd Music-Score-Converter
 |---|---|
 | [@tonejs/midi](https://github.com/Tonejs/Midi) | MIDI 文件解析 |
 | [JSZip](https://stuk.github.io/jszip/) | `.mxl` 压缩包解压 |
+| [Groq API](https://groq.com/) | 图片识别视觉 AI（Llama 4 Scout）|
 | [Inter](https://fonts.google.com/specimen/Inter) | 界面字体 |
 | [Ma Shan Zheng 马善政](https://fonts.google.com/specimen/Ma+Shan+Zheng) | 简谱标识毛笔字体 |
 | GitHub Pages | 部署托管 |
@@ -287,9 +294,10 @@ Music-Score-Converter/
 - [x] 段落反复记号（D.C. / D.S.）
 - [x] 速度与力度标记输出
 - [x] 移动端布局优化
+- [x] 图片识别 — 简谱图片转录（Beta，Groq Llama 4 Vision 驱动）
+- [x] 图片识别 — 五线谱图片转简谱（Beta，Groq Llama 4 Vision 驱动）
 - [ ] 渐强渐弱符号（髭形力度记号）
 - [ ] 多声部并排渲染
-- [ ] 简谱图片 / PDF → MusicXML OCR 识别管道
 
 ---
 
