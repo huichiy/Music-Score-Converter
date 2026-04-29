@@ -19,7 +19,6 @@ const emptyState     = document.getElementById('emptyState');
 const toolbar        = document.getElementById('toolbar');
 const toolbarTitle   = document.getElementById('toolbarTitle');
 const toolbarMeta    = document.getElementById('toolbarMeta');
-const toolbarDone    = document.getElementById('toolbarDone');
 
 const partSelector          = document.getElementById('partSelector');
 const partSelectorContainer = document.getElementById('partSelectorContainer');
@@ -135,7 +134,7 @@ function showOutput(svgResult, titleStr, keyStr, timeStr) {
     toolbar.style.display    = 'flex';
     toolbarTitle.textContent = titleStr;
     toolbarMeta.textContent  = `1=${keyStr}  ${timeStr}`;
-    toolbarDone.style.display = 'block';
+
 
     exportSec.style.display = 'block';
     keyDisplay.textContent  = `1=${keyStr}`;
@@ -159,7 +158,7 @@ function showOcrOutput(htmlContent, label, filename) {
     toolbar.style.display    = 'flex';
     toolbarTitle.textContent = label;
     toolbarMeta.textContent  = filename;
-    toolbarDone.style.display = 'none';
+
     exportSec.style.display   = 'none';
     editBtnA.style.display    = 'none';
     editBtnB.style.display    = 'none';
@@ -247,7 +246,7 @@ function handleFile(file) {
     output.style.display      = 'none';
     emptyState.style.display  = 'flex';
     toolbar.style.display     = 'none';
-    toolbarDone.style.display = 'none';
+
     optionsSec.style.display  = 'none';
     exportSec.style.display   = 'none';
     partSelectorContainer.style.display = 'none';
@@ -281,7 +280,7 @@ function resetAll() {
     output.style.display      = 'none';
     emptyState.style.display  = 'flex';
     toolbar.style.display     = 'none';
-    toolbarDone.style.display = 'none';
+
     optionsSec.style.display  = 'none';
     exportSec.style.display   = 'none';
     partSelectorContainer.style.display = 'none';
@@ -1330,7 +1329,7 @@ ocrResetBtn.addEventListener('click', () => {
     output.style.display     = 'none';
     emptyState.style.display = 'flex';
     toolbar.style.display    = 'none';
-    toolbarDone.style.display = 'none';
+
 });
 
 ocrZone.addEventListener('dragover', e => { e.preventDefault(); ocrZone.classList.add('dragover'); });
