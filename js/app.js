@@ -51,6 +51,9 @@ const editTextOverlay  = document.getElementById('editTextOverlay');
 const editTextArea     = document.getElementById('editTextArea');
 const editTextSave     = document.getElementById('editTextSave');
 const editTextCancel   = document.getElementById('editTextCancel');
+const editHelpBtn      = document.getElementById('editHelpBtn');
+const editHelpModal    = document.getElementById('editHelpModal');
+const editHelpClose    = document.getElementById('editHelpClose');
 const popupConfirm     = document.getElementById('popupConfirm');
 const popupCancel      = document.getElementById('popupCancel');
 const popupDuration    = document.getElementById('popupDuration');
@@ -1288,6 +1291,11 @@ function setEditModeB(on) {
 editBtnB.addEventListener('click', () => setEditModeB(editTextOverlay.style.display !== 'flex'));
 
 editTextCancel.addEventListener('click', () => setEditModeB(false));
+
+// Route B help modal
+editHelpBtn.addEventListener('click',   () => editHelpModal.classList.add('open'));
+editHelpClose.addEventListener('click', () => editHelpModal.classList.remove('open'));
+editHelpModal.addEventListener('click', e => { if (e.target === editHelpModal) editHelpModal.classList.remove('open'); });
 
 editTextSave.addEventListener('click', () => {
     try {

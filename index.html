@@ -304,24 +304,67 @@
     .edit-text-overlay {
       position: absolute; inset: 0; z-index: 900;
       background: var(--surface);
-      display: none; flex-direction: column; gap: 10px;
-      padding: 16px;
+      display: none; flex-direction: column;
     }
-    .edit-text-hint {
-      font-size: 10px; color: var(--muted); line-height: 1.7; flex-shrink: 0;
+    .edit-text-topbar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 16px; border-bottom: 0.5px solid var(--border);
+      flex-shrink: 0;
     }
-    .edit-text-hint code {
+    .edit-text-title {
+      font-size: 12px; font-weight: 500; color: var(--text); margin-right: auto;
+    }
+    .edit-help-btn {
+      font-size: 11px; color: var(--muted); background: none;
+      border: 0.5px solid var(--border); border-radius: 3px;
+      padding: 4px 9px; cursor: pointer; font-family: 'Inter', sans-serif;
+      transition: color 0.15s, border-color 0.15s; white-space: nowrap;
+    }
+    .edit-help-btn:hover { color: var(--text); border-color: var(--text); }
+    .edit-text-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .edit-text-area {
+      flex: 1; background: var(--sel-bg); color: var(--text);
+      border: none; padding: 16px 20px;
+      font-family: monospace; font-size: 13px;
+      line-height: 1.9; resize: none; outline: none;
+    }
+
+    /* ── Route B help modal ─────────────────────────────────── */
+    .edit-help-modal {
+      display: none; position: absolute; inset: 0; z-index: 950;
+      background: rgba(0,0,0,0.5);
+      align-items: center; justify-content: center; padding: 24px;
+    }
+    .edit-help-modal.open { display: flex; }
+    .edit-help-inner {
+      background: var(--surface); border: 0.5px solid var(--border);
+      border-radius: 6px; padding: 20px 24px; max-width: 500px; width: 100%;
+      max-height: 80vh; overflow-y: auto;
+    }
+    .edit-help-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .edit-help-header span { font-size: 13px; font-weight: 500; color: var(--text); }
+    .edit-help-close {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 18px; padding: 0; line-height: 1; transition: color 0.15s;
+    }
+    .edit-help-close:hover { color: var(--text); }
+    .edit-help-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .edit-help-table th {
+      text-align: left; color: var(--muted); font-weight: 400;
+      border-bottom: 0.5px solid var(--border); padding: 5px 10px;
+    }
+    .edit-help-table td {
+      padding: 7px 10px; border-bottom: 0.5px solid var(--border-dim);
+      color: var(--text); vertical-align: middle;
+    }
+    .edit-help-table tr:last-child td { border-bottom: none; }
+    .edit-help-table code {
       font-family: monospace; background: var(--sel-bg);
       padding: 1px 4px; border-radius: 2px;
     }
-    .edit-text-area {
-      flex: 1; background: var(--sel-bg); color: var(--text);
-      border: 0.5px solid var(--border); border-radius: 4px;
-      padding: 10px 12px; font-family: monospace; font-size: 13px;
-      line-height: 1.8; resize: none; outline: none;
-    }
-    .edit-text-area:focus { border-color: var(--text); }
-    .edit-text-actions { display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0; }
 
     /* Sidebar footer */
     .sidebar-footer {
@@ -623,17 +666,49 @@
 
       <!-- Route B: text edit overlay (inside main so position:absolute is scoped) -->
       <div class="edit-text-overlay" id="editTextOverlay">
-        <div class="edit-text-hint">
-          格式 · Format：<code>[#/b]音级['/''/',/,,][时值][d]</code> &nbsp;·&nbsp;
-          时值 Duration：<code>w</code>=全 &nbsp;<code>h</code>=半 &nbsp;<code>e</code>=八分 &nbsp;<code>x</code>=十六分 &nbsp;默认四分 &nbsp;·&nbsp;
-          <code>d</code>=附点 &nbsp;·&nbsp; <code>|</code>=小节线 &nbsp;·&nbsp; <code>0</code>=休止符 &nbsp;·&nbsp;
-          <code>-</code>=延音（接在音符后）&nbsp;·&nbsp; <code>'</code>=高八度 &nbsp;<code>,</code>=低八度
+
+        <!-- Top action bar -->
+        <div class="edit-text-topbar">
+          <span class="edit-text-title">文字编辑 · Text Edit</span>
+          <button class="edit-help-btn" id="editHelpBtn">? 格式说明</button>
+          <div class="edit-text-actions">
+            <button class="popup-cancel-btn" id="editTextCancel">取消 Cancel</button>
+            <button class="popup-confirm" id="editTextSave">保存并渲染</button>
+          </div>
         </div>
+
         <textarea class="edit-text-area" id="editTextArea" spellcheck="false"></textarea>
-        <div class="edit-text-actions">
-          <button class="popup-cancel-btn" id="editTextCancel">取消 Cancel</button>
-          <button class="popup-confirm" id="editTextSave">保存并渲染 Save</button>
+
+        <!-- Format help modal (appears over the overlay) -->
+        <div class="edit-help-modal" id="editHelpModal">
+          <div class="edit-help-inner">
+            <div class="edit-help-header">
+              <span>格式说明 · Format Guide</span>
+              <button class="edit-help-close" id="editHelpClose">✕</button>
+            </div>
+            <table class="edit-help-table">
+              <thead>
+                <tr><th>写法</th><th>含义</th><th>例子</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>1</code>–<code>7</code></td><td>音级 Scale degree</td><td><code>3</code> = mi</td></tr>
+                <tr><td><code>0</code></td><td>休止符 Rest</td><td><code>0</code></td></tr>
+                <tr><td><code>#3</code> / <code>b7</code></td><td>升/降号（前置）Accidental</td><td><code>#4</code>、<code>b7</code></td></tr>
+                <tr><td><code>5'</code></td><td>高八度 Octave up</td><td><code>5'</code> = 高八度 sol</td></tr>
+                <tr><td><code>1,</code></td><td>低八度 Octave down</td><td><code>1,</code> = 低八度 do</td></tr>
+                <tr><td><code>w</code></td><td>全音符 Whole note</td><td><code>1w</code></td></tr>
+                <tr><td><code>h</code></td><td>半音符 Half note</td><td><code>1h</code></td></tr>
+                <tr><td>（不写）</td><td>四分音符 Quarter note</td><td><code>3</code></td></tr>
+                <tr><td><code>e</code></td><td>八分音符 Eighth note</td><td><code>3e</code></td></tr>
+                <tr><td><code>x</code></td><td>十六分音符 16th note</td><td><code>3x</code></td></tr>
+                <tr><td><code>d</code></td><td>附点 Dotted</td><td><code>3d</code> = 附点四分</td></tr>
+                <tr><td><code>-</code></td><td>延音，紧接音符后 Extend beat</td><td><code>1 -</code> = 二分音符</td></tr>
+                <tr><td><code>|</code></td><td>小节线 Barline</td><td><code>| 1 2 3 4 |</code></td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
+
       </div>
 
     </main>
