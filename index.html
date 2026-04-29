@@ -242,6 +242,87 @@
     }
     .ocr-mode-opt { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 
+    /* ── Editor buttons (toolbar) ──────────────────────────── */
+    .toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+    .edit-btn {
+      font-size: 14px; background: transparent; color: var(--muted);
+      border: 0.5px solid var(--border); border-radius: 3px;
+      padding: 2px 8px; cursor: pointer;
+      font-family: 'Inter', sans-serif; line-height: 1.4;
+      transition: color 0.15s, border-color 0.15s;
+      display: none;
+    }
+    .edit-btn:hover { color: var(--text); border-color: var(--text); }
+    .edit-btn.active { color: var(--accent); border-color: var(--accent); }
+
+    /* ── Route A popup ──────────────────────────────────────── */
+    .edit-popup {
+      position: fixed; z-index: 1000;
+      background: var(--surface); border: 0.5px solid var(--border);
+      border-radius: 6px; padding: 14px 16px;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.28);
+      min-width: 230px; display: none;
+    }
+    .popup-title { font-size: 11px; color: var(--muted); font-weight: 500; margin-bottom: 12px; }
+    .popup-row   { margin-bottom: 10px; }
+    .popup-label { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+    .popup-btn-group { display: flex; gap: 4px; flex-wrap: wrap; }
+    .popup-btn {
+      font-size: 13px; padding: 3px 7px;
+      background: var(--sel-bg); color: var(--muted);
+      border: 0.5px solid var(--border); border-radius: 3px;
+      cursor: pointer; font-family: 'Inter', sans-serif;
+      transition: all 0.12s;
+    }
+    .popup-btn:hover  { color: var(--text); border-color: var(--text); }
+    .popup-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .popup-select {
+      width: 100%; background: var(--sel-bg); color: var(--text);
+      border: 0.5px solid var(--border); border-radius: 3px;
+      padding: 4px 6px; font-size: 12px;
+      font-family: 'Inter', sans-serif; outline: none; cursor: pointer;
+    }
+    .popup-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 12px; }
+    .popup-confirm {
+      background: var(--accent); color: #fff; border: none;
+      border-radius: 3px; padding: 5px 12px; cursor: pointer; font-size: 12px;
+      font-family: 'Inter', sans-serif;
+    }
+    .popup-cancel-btn {
+      background: transparent; color: var(--muted);
+      border: 0.5px solid var(--border); border-radius: 3px;
+      padding: 5px 12px; cursor: pointer; font-size: 12px;
+      font-family: 'Inter', sans-serif; transition: color 0.15s;
+    }
+    .popup-cancel-btn:hover { color: var(--text); }
+
+    /* Route A hover on notes */
+    .edit-mode-a .jn-note { cursor: pointer; }
+    .edit-mode-a .jn-note:hover { opacity: 0.45; }
+
+    /* ── Route B text overlay ───────────────────────────────── */
+    .edit-text-overlay {
+      position: absolute; inset: 0; z-index: 900;
+      background: var(--surface);
+      display: none; flex-direction: column; gap: 10px;
+      padding: 16px;
+    }
+    .edit-text-hint {
+      font-size: 10px; color: var(--muted); line-height: 1.7; flex-shrink: 0;
+    }
+    .edit-text-hint code {
+      font-family: monospace; background: var(--sel-bg);
+      padding: 1px 4px; border-radius: 2px;
+    }
+    .edit-text-area {
+      flex: 1; background: var(--sel-bg); color: var(--text);
+      border: 0.5px solid var(--border); border-radius: 4px;
+      padding: 10px 12px; font-family: monospace; font-size: 13px;
+      line-height: 1.8; resize: none; outline: none;
+    }
+    .edit-text-area:focus { border-color: var(--text); }
+    .edit-text-actions { display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0; }
+
     /* Sidebar footer */
     .sidebar-footer {
       margin-top: auto; padding-top: 16px;
@@ -253,6 +334,7 @@
     .main-content {
       flex: 1; display: flex; flex-direction: column;
       overflow: hidden; min-width: 0;
+      position: relative; /* needed for Route B text overlay */
     }
 
     /* Toolbar */
@@ -267,7 +349,7 @@
     .toolbar-sep   { color: var(--faint); font-size: 12px; }
     .toolbar-meta  { font-size: 12px; color: var(--muted); font-family: monospace; }
     .toolbar-done  {
-      margin-left: auto; font-size: 10px; color: var(--accent);
+      font-size: 10px; color: var(--accent);
       border: 0.5px solid var(--accent); border-radius: 3px;
       padding: 2px 8px; opacity: 0.8;
     }
@@ -529,7 +611,11 @@
         <span class="toolbar-title" id="toolbarTitle"></span>
         <span class="toolbar-sep">·</span>
         <span class="toolbar-meta" id="toolbarMeta"></span>
-        <span class="toolbar-done" id="toolbarDone" style="display:none">✓ 完成</span>
+        <div class="toolbar-right">
+          <button class="edit-btn" id="editBtnA" title="点击音符编辑 Click-to-edit">✎</button>
+          <button class="edit-btn" id="editBtnB" title="文字编辑模式 Text edit">≡</button>
+          <span class="toolbar-done" id="toolbarDone" style="display:none">✓ 完成</span>
+        </div>
       </div>
 
       <div class="empty-state" id="emptyState">
@@ -540,7 +626,66 @@
 
       <div class="output-zone" id="output" style="display:none"></div>
 
+      <!-- Route B: text edit overlay (inside main so position:absolute is scoped) -->
+      <div class="edit-text-overlay" id="editTextOverlay">
+        <div class="edit-text-hint">
+          格式 · Format：<code>[#/b]音级['/''/',/,,][时值][d]</code> &nbsp;·&nbsp;
+          时值 Duration：<code>w</code>=全 &nbsp;<code>h</code>=半 &nbsp;<code>e</code>=八分 &nbsp;<code>x</code>=十六分 &nbsp;默认四分 &nbsp;·&nbsp;
+          <code>d</code>=附点 &nbsp;·&nbsp; <code>|</code>=小节线 &nbsp;·&nbsp; <code>0</code>=休止符 &nbsp;·&nbsp;
+          <code>-</code>=延音（接在音符后）&nbsp;·&nbsp; <code>'</code>=高八度 &nbsp;<code>,</code>=低八度
+        </div>
+        <textarea class="edit-text-area" id="editTextArea" spellcheck="false"></textarea>
+        <div class="edit-text-actions">
+          <button class="popup-cancel-btn" id="editTextCancel">取消 Cancel</button>
+          <button class="popup-confirm" id="editTextSave">保存并渲染 Save</button>
+        </div>
+      </div>
+
     </main>
+
+  <!-- Route A: note edit popup (fixed, outside main) -->
+  <div class="edit-popup" id="editPopup">
+    <div class="popup-title">编辑音符 · Edit Note</div>
+    <div class="popup-row">
+      <div class="popup-label">音级 Degree</div>
+      <div class="popup-btn-group" id="popupDegreeBtns"></div>
+    </div>
+    <div class="popup-row" id="popupAccRow">
+      <div class="popup-label">升降号 Accidental</div>
+      <div class="popup-btn-group">
+        <button class="popup-btn" data-acc="b">♭</button>
+        <button class="popup-btn" data-acc="">♮</button>
+        <button class="popup-btn" data-acc="#">♯</button>
+      </div>
+    </div>
+    <div class="popup-row" id="popupOctRow">
+      <div class="popup-label">八度 Octave</div>
+      <div class="popup-btn-group">
+        <button class="popup-btn" data-oct="-2">−2</button>
+        <button class="popup-btn" data-oct="-1">−1</button>
+        <button class="popup-btn" data-oct="0">0</button>
+        <button class="popup-btn" data-oct="1">+1</button>
+        <button class="popup-btn" data-oct="2">+2</button>
+      </div>
+    </div>
+    <div class="popup-row">
+      <div class="popup-label">时值 Duration</div>
+      <select class="popup-select" id="popupDuration">
+        <option value="whole|false">全音符 Whole</option>
+        <option value="half|false">二分音符 Half</option>
+        <option value="half|true">附点二分 Dotted Half</option>
+        <option value="quarter|false">四分音符 Quarter</option>
+        <option value="quarter|true">附点四分 Dotted Quarter</option>
+        <option value="eighth|false">八分音符 Eighth</option>
+        <option value="eighth|true">附点八分 Dotted Eighth</option>
+        <option value="16th|false">十六分音符 16th</option>
+      </select>
+    </div>
+    <div class="popup-actions">
+      <button class="popup-cancel-btn" id="popupCancel">取消 Cancel</button>
+      <button class="popup-confirm" id="popupConfirm">确认 Confirm</button>
+    </div>
+  </div>
   </div>
 
   <script src="js/config.js"></script>

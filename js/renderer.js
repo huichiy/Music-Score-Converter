@@ -156,7 +156,7 @@ function renderMultiRestBracket(svgElements, currentX, currentY, N, maxWidth, sv
     return blockW;
 }
 
-function renderNote(svgElements, note, currentX, currentY, svgColor) {
+function renderNote(svgElements, note, currentX, currentY, svgColor, mIdx, nIdx) {
     let displayStr = note.rest ? "0" : note.degree.toString();
     if (note.tie) displayStr = "-";
 
@@ -166,7 +166,10 @@ function renderNote(svgElements, note, currentX, currentY, svgColor) {
         numXOffset = 8;
     }
 
-    svgElements.push(`<text x="${currentX + numXOffset}" y="${currentY}" font-family="Inter" font-size="18" fill="${svgColor}">${displayStr}</text>`);
+    const dataAttrs = (mIdx !== undefined && nIdx !== undefined)
+        ? ` data-m="${mIdx}" data-n="${nIdx}" class="jn-note"`
+        : '';
+    svgElements.push(`<text x="${currentX + numXOffset}" y="${currentY}" font-family="Inter" font-size="18" fill="${svgColor}"${dataAttrs}>${displayStr}</text>`);
 
     // Chord notes stacked below main note
     if (note.chordNotes && note.chordNotes.length > 0) {
@@ -219,6 +222,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
     measures = collapseRestRuns(measures);
 
     let actualMeasureNum = 1;
+    let origIdx = 0; // tracks index into pre-collapse measures array (for data-m)
 
     for (let i = 0; i < measures.length; i++) {
         const measure = measures[i];
@@ -228,6 +232,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
             const N = measure._multiRest;
             const blockW = Math.min(RENDER_CONFIG.multiRestMaxWidth, maxWidth * 0.4);
 
+            origIdx += N;
             if (currentX + blockW > maxWidth && currentX > startX) {
                 currentX = startX;
                 currentY += lineHeight;
@@ -328,7 +333,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
                 slurStartY = currentY;
             }
 
-            const numXOffset = renderNote(svgElements, note, currentX, currentY, svgColor);
+            const numXOffset = renderNote(svgElements, note, currentX, currentY, svgColor, origIdx, j);
 
             // Extension dashes for long notes
             renderExtensionDashes(svgElements, note, currentX, numXOffset, noteWidth, currentY, svgColor);
@@ -416,6 +421,7 @@ function renderJianpuSVG(measures, keyStr, timeStr, titleStr = "Untitled", conta
         }
 
         actualMeasureNum++;
+        origIdx++;
     }
 
     const totalHeight = Math.max(currentY + 40, maxBottomY + 8);
