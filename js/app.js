@@ -44,6 +44,21 @@ const ocrErrorMsg    = document.getElementById('ocrErrorMsg');
 const transposeSelect = document.getElementById('transposeSelect');
 const transposeRow    = document.getElementById('transposeRow');
 
+// Editor DOM refs
+const editBtnA         = document.getElementById('editBtnA');
+const editBtnB         = document.getElementById('editBtnB');
+const editPopup        = document.getElementById('editPopup');
+const editTextOverlay  = document.getElementById('editTextOverlay');
+const editTextArea     = document.getElementById('editTextArea');
+const editTextSave     = document.getElementById('editTextSave');
+const editTextCancel   = document.getElementById('editTextCancel');
+const popupConfirm     = document.getElementById('popupConfirm');
+const popupCancel      = document.getElementById('popupCancel');
+const popupDuration    = document.getElementById('popupDuration');
+const popupAccRow      = document.getElementById('popupAccRow');
+const popupOctRow      = document.getElementById('popupOctRow');
+const popupDegreeBtns  = document.getElementById('popupDegreeBtns');
+
 let currentFile  = null;
 let parsedXmlDoc = null;
 let ocrCurrentFile = null;
@@ -94,6 +109,8 @@ document.getElementById('themeToggle').addEventListener('click', () => {
     if (output.style.display !== 'none' && state.originalMeasures) {
         const targetKey = transposeSelect.value || state.originalKeyStr;
         const measures  = transposeNoteObjects(state.originalMeasures, state.originalKeyStr, targetKey);
+        state.currentMeasures = measures;
+        state.currentKeyStr   = targetKey;
         output.innerHTML = renderJianpuSVG(
             measures, targetKey,
             state.originalTimeStr, state.originalTitleStr,
@@ -123,6 +140,10 @@ function showOutput(svgResult, titleStr, keyStr, timeStr) {
     exportSec.style.display = 'block';
     keyDisplay.textContent  = `1=${keyStr}`;
     timeDisplay.textContent = timeStr;
+
+    // Show editor buttons
+    editBtnA.style.display = 'inline-block';
+    editBtnB.style.display = 'inline-block';
 }
 
 // --- OCR helpers ---
@@ -140,6 +161,8 @@ function showOcrOutput(htmlContent, label, filename) {
     toolbarMeta.textContent  = filename;
     toolbarDone.style.display = 'none';
     exportSec.style.display   = 'none';
+    editBtnA.style.display    = 'none';
+    editBtnB.style.display    = 'none';
 }
 
 function handleOcrFile(file) {
@@ -242,6 +265,10 @@ function handleFile(file) {
     state.originalTimeStr  = null;
     state.originalTitleStr = null;
     state.originalTempoStr = null;
+    state.currentMeasures  = null;
+    state.currentKeyStr    = null;
+    editBtnA.style.display = 'none';
+    editBtnB.style.display = 'none';
 }
 
 // --- Reset ---
@@ -275,6 +302,10 @@ function resetAll() {
     state.originalTimeStr  = null;
     state.originalTitleStr = null;
     state.originalTempoStr = null;
+    state.currentMeasures  = null;
+    state.currentKeyStr    = null;
+    editBtnA.style.display = 'none';
+    editBtnB.style.display = 'none';
 }
 
 resetBtn.addEventListener('click', resetAll);
@@ -368,9 +399,11 @@ function renderSelectedPart() {
     transposeRow.style.display = 'flex';
 
     // Apply active transpose (if any)
-    const targetKey    = transposeSelect.value || keyStr;
+    const targetKey       = transposeSelect.value || keyStr;
     const displayMeasures = transposeNoteObjects(svgMeasures, keyStr, targetKey);
-    const svgResult    = renderJianpuSVG(displayMeasures, targetKey, `${beats}/${beatType}`, titleStr, mainContent.clientWidth, tempoStr);
+    state.currentMeasures = displayMeasures;
+    state.currentKeyStr   = targetKey;
+    const svgResult       = renderJianpuSVG(displayMeasures, targetKey, `${beats}/${beatType}`, titleStr, mainContent.clientWidth, tempoStr);
 
     showOutput(svgResult, titleStr, targetKey, `${beats}/${beatType}`);
 }
@@ -635,7 +668,9 @@ async function handleAbcConversion(file) {
     state.originalTitleStr = titleStr;
     state.originalTempoStr = tempoStr;
 
-    state.lastMidiRender = { measures, keyStr, timeStr, titleStr, tempoStr };
+    state.currentMeasures = measures;
+    state.currentKeyStr   = keyStr;
+    state.lastMidiRender  = { measures, keyStr, timeStr, titleStr, tempoStr };
     const svgResult = renderJianpuSVG(measures, keyStr, timeStr, titleStr, mainContent.clientWidth, tempoStr);
     showOutput(svgResult, titleStr, keyStr, timeStr);
 
@@ -780,7 +815,9 @@ async function handleMidiConversion(file) {
     state.originalTitleStr = titleStr;
     state.originalTempoStr = tempoStr;
 
-    state.lastMidiRender = { measures:jianpuMeasures, keyStr, timeStr, titleStr, tempoStr };
+    state.currentMeasures = jianpuMeasures;
+    state.currentKeyStr   = keyStr;
+    state.lastMidiRender  = { measures:jianpuMeasures, keyStr, timeStr, titleStr, tempoStr };
 
     const svgResult = renderJianpuSVG(jianpuMeasures, keyStr, timeStr, titleStr, mainContent.clientWidth, tempoStr);
     showOutput(svgResult, titleStr, keyStr, timeStr);
@@ -941,6 +978,8 @@ transposeSelect.addEventListener('change', () => {
     if (!state.originalMeasures) return;
     const targetKey     = transposeSelect.value || state.originalKeyStr;
     const measures      = transposeNoteObjects(state.originalMeasures, state.originalKeyStr, targetKey);
+    state.currentMeasures = measures;
+    state.currentKeyStr   = targetKey;
     const svgResult     = renderJianpuSVG(
         measures, targetKey,
         state.originalTimeStr, state.originalTitleStr,
@@ -949,9 +988,332 @@ transposeSelect.addEventListener('change', () => {
     output.innerHTML        = svgResult;
     keyDisplay.textContent  = `1=${targetKey}`;
     toolbarMeta.textContent = `1=${targetKey}  ${state.originalTimeStr}`;
-    // Keep lastMidiRender in sync so export works on the transposed version
     if (state.lastMidiRender) {
         state.lastMidiRender = { ...state.lastMidiRender, measures, keyStr: targetKey };
+    }
+});
+
+// ══════════════════════════════════════════════════════════════
+// --- EDITOR: Route A (click-to-edit) + Route B (text mode) ---
+// ══════════════════════════════════════════════════════════════
+
+let editModeA = false;
+let popupMeasureIdx = -1;
+let popupNoteIdx    = -1;
+let popupDegree     = 1;
+let popupAccidental = '';
+let popupOctave     = 0;
+
+// Build degree buttons 0–7
+[0,1,2,3,4,5,6,7].forEach(d => {
+    const btn = document.createElement('button');
+    btn.className = 'popup-btn';
+    btn.dataset.deg = d;
+    btn.textContent = d === 0 ? '0' : d.toString();
+    popupDegreeBtns.appendChild(btn);
+});
+
+function setPopupActive(selector, attrName, value) {
+    document.querySelectorAll(selector).forEach(b => {
+        b.classList.toggle('active', String(b.dataset[attrName]) === String(value));
+    });
+}
+
+function setEditModeA(on) {
+    editModeA = on;
+    editBtnA.classList.toggle('active', on);
+    output.classList.toggle('edit-mode-a', on);
+    if (!on) editPopup.style.display = 'none';
+}
+
+// Toggle Route A
+editBtnA.addEventListener('click', () => {
+    if (editTextOverlay.style.display === 'flex') { setEditModeB(false); }
+    setEditModeA(!editModeA);
+});
+
+// Open popup when a note is clicked in edit mode
+output.addEventListener('click', e => {
+    if (!editModeA) return;
+    const noteEl = e.target.closest('[data-m]');
+    if (!noteEl) return;
+    const m = parseInt(noteEl.dataset.m);
+    const n = parseInt(noteEl.dataset.n);
+    if (isNaN(m) || isNaN(n) || !state.currentMeasures?.[m]?.[n]) return;
+    openPopup(state.currentMeasures[m][n], m, n, e.clientX, e.clientY);
+});
+
+function openPopup(note, m, n, cx, cy) {
+    popupMeasureIdx = m;
+    popupNoteIdx    = n;
+    popupDegree     = note.degree;
+    popupAccidental = note.accidental || '';
+    popupOctave     = note.octave || 0;
+
+    setPopupActive('#popupDegreeBtns [data-deg]', 'deg', popupDegree);
+    setPopupActive('[data-acc]', 'acc', popupAccidental);
+    setPopupActive('[data-oct]', 'oct', popupOctave);
+
+    const durKey = `${note.type}|${!!note.dot}`;
+    popupDuration.value = durKey;
+    if (!popupDuration.value) popupDuration.value = 'quarter|false';
+
+    const isRest = note.rest || note.degree === 0;
+    popupAccRow.style.display = isRest ? 'none' : '';
+    popupOctRow.style.display = isRest ? 'none' : '';
+
+    editPopup.style.display = 'block';
+    // Position: prefer bottom-right of click, keep inside viewport
+    const pw = editPopup.offsetWidth  || 240;
+    const ph = editPopup.offsetHeight || 260;
+    let x = cx + 12, y = cy + 12;
+    if (x + pw > window.innerWidth  - 8) x = cx - pw - 12;
+    if (y + ph > window.innerHeight - 8) y = cy - ph - 12;
+    editPopup.style.left = Math.max(8, x) + 'px';
+    editPopup.style.top  = Math.max(8, y) + 'px';
+}
+
+// Popup button interactions
+popupDegreeBtns.addEventListener('click', e => {
+    const btn = e.target.closest('[data-deg]');
+    if (!btn) return;
+    popupDegree = parseInt(btn.dataset.deg);
+    setPopupActive('#popupDegreeBtns [data-deg]', 'deg', popupDegree);
+    const isRest = popupDegree === 0;
+    popupAccRow.style.display = isRest ? 'none' : '';
+    popupOctRow.style.display = isRest ? 'none' : '';
+});
+document.querySelectorAll('[data-acc]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        popupAccidental = btn.dataset.acc;
+        setPopupActive('[data-acc]', 'acc', popupAccidental);
+    });
+});
+document.querySelectorAll('[data-oct]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        popupOctave = parseInt(btn.dataset.oct);
+        setPopupActive('[data-oct]', 'oct', popupOctave);
+    });
+});
+
+// Close popup on outside click
+document.addEventListener('mousedown', e => {
+    if (editPopup.style.display !== 'none'
+        && !editPopup.contains(e.target)
+        && !e.target.closest('[data-m]')) {
+        editPopup.style.display = 'none';
+    }
+});
+
+popupCancel.addEventListener('click', () => { editPopup.style.display = 'none'; });
+
+popupConfirm.addEventListener('click', () => {
+    const m = popupMeasureIdx, n = popupNoteIdx;
+    if (!state.currentMeasures?.[m]?.[n]) return;
+
+    const [durType, durDotStr] = popupDuration.value.split('|');
+    const isRest = popupDegree === 0;
+    const note   = state.currentMeasures[m][n];
+
+    note.degree     = popupDegree;
+    note.rest       = isRest;
+    note.accidental = isRest ? '' : popupAccidental;
+    note.octave     = isRest ? 0  : popupOctave;
+    note.type       = durType;
+    note.dot        = durDotStr === 'true';
+
+    // Editing commits the current (possibly transposed) version as the new original
+    state.originalMeasures = state.currentMeasures;
+    state.originalKeyStr   = state.currentKeyStr;
+    transposeSelect.value  = '';
+
+    output.innerHTML = renderJianpuSVG(
+        state.currentMeasures, state.currentKeyStr,
+        state.originalTimeStr, state.originalTitleStr || 'Untitled',
+        mainContent.clientWidth, state.originalTempoStr || ""
+    );
+    editPopup.style.display = 'none';
+});
+
+// ─── Route B: Text edit mode ───────────────────────────────────
+
+function serializeNoteToken(note) {
+    if (note.tie) return '-';
+    let tok = '';
+    if (!note.rest) {
+        if (note.accidental === '#') tok += '#';
+        else if (note.accidental === 'b') tok += 'b';
+    }
+    tok += note.rest ? '0' : note.degree.toString();
+    if (!note.rest) {
+        if      (note.octave ===  2) tok += "''";
+        else if (note.octave ===  1) tok += "'";
+        else if (note.octave === -1) tok += ',';
+        else if (note.octave === -2) tok += ',,';
+    }
+    const typeMap = { whole:'w', half:'h', quarter:'q', eighth:'e', '16th':'x', '32nd':'x' };
+    const ts = typeMap[note.type] || 'q';
+    if (ts !== 'q' || note.dot) tok += ts;
+    if (note.dot) tok += 'd';
+    return tok;
+}
+
+function serializeToText(measures, keyStr, timeStr, tempoStr) {
+    const header = `Key: ${keyStr}   Time: ${timeStr}${tempoStr ? '   Tempo: ' + tempoStr : ''}`;
+    let body = '';
+    for (const measure of measures) {
+        body += '| ';
+        if (measure._multiRest !== undefined) { body += `[${measure._multiRest}] `; continue; }
+        for (const note of measure) body += serializeNoteToken(note) + ' ';
+    }
+    body += '|';
+    return header + '\n' + body;
+}
+
+function parseFromText(text) {
+    const lines = text.trim().split('\n');
+    const header = lines[0] || '';
+
+    let keyStr   = state.originalKeyStr  || 'C';
+    let timeStr  = state.originalTimeStr || '4/4';
+    let tempoStr = state.originalTempoStr || '';
+
+    const km = header.match(/Key:\s*([A-G][b#]?)/);
+    const tm = header.match(/Time:\s*(\d+\/\d+)/);
+    const pm = header.match(/Tempo:\s*(\d+)/);
+    if (km) keyStr  = km[1];
+    if (tm) timeStr = tm[1];
+    if (pm) tempoStr = pm[1];
+
+    const dBeats = { whole:4, half:2, quarter:1, eighth:0.5, '16th':0.25 };
+    function beatsToType(b) {
+        if (b >= 3.75) return { type:'whole',   dot:false };
+        if (b >= 2.75) return { type:'half',    dot:true  };
+        if (b >= 1.75) return { type:'half',    dot:false };
+        if (b >= 1.25) return { type:'quarter', dot:true  };
+        if (b >= 0.75) return { type:'quarter', dot:false };
+        if (b >= 0.6 ) return { type:'eighth',  dot:true  };
+        if (b >= 0.35) return { type:'eighth',  dot:false };
+        return { type:'16th', dot:false };
+    }
+
+    const tokens  = lines.slice(1).join(' ').split(/\s+/).filter(Boolean);
+    const measures = [];
+    let current = null, lastNote = null, lastBeats = 0;
+
+    for (const tok of tokens) {
+        if (tok === '|') {
+            if (current !== null && current.length > 0) {
+                current._repeatStart = false; current._repeatEnd = false;
+                current._direction = ''; current._dynamic = ''; current._wedge = null;
+                measures.push(current);
+            }
+            current = []; lastNote = null; lastBeats = 0;
+            continue;
+        }
+        if (current === null) continue;
+
+        // Extension dash: extend previous note by 1 beat
+        if (tok === '-') {
+            if (lastNote) {
+                lastBeats += 1;
+                const { type, dot } = beatsToType(lastBeats);
+                lastNote.type = type; lastNote.dot = dot;
+            }
+            continue;
+        }
+
+        // Multi-rest block [N]
+        const mrm = tok.match(/^\[(\d+)\]$/);
+        if (mrm) {
+            if (current.length > 0) {
+                current._repeatStart = false; current._repeatEnd = false;
+                current._direction = ''; current._dynamic = ''; current._wedge = null;
+                measures.push(current);
+            }
+            measures.push({ _multiRest: parseInt(mrm[1]) });
+            current = []; lastNote = null; lastBeats = 0;
+            continue;
+        }
+
+        // Parse note token: [#/b] degree ['/''/',/,,] [w/h/q/e/x] [d]
+        let i = 0, acc = '';
+        if (tok[i] === '#') { acc = '#'; i++; }
+        else if (tok[i] === 'b' && /[0-7]/.test(tok[i+1])) { acc = 'b'; i++; }
+
+        if (i >= tok.length || !/[0-7]/.test(tok[i])) continue;
+        const deg = parseInt(tok[i]); i++;
+        const isRest = deg === 0;
+
+        let oct = 0;
+        while (i < tok.length && tok[i] === "'") { oct++; i++; }
+        while (i < tok.length && tok[i] === ',')  { oct--; i++; }
+
+        const typeMap = { w:'whole', h:'half', q:'quarter', e:'eighth', x:'16th' };
+        let noteType = 'quarter';
+        if (i < tok.length && typeMap[tok[i]]) { noteType = typeMap[tok[i]]; i++; }
+        let dot = false;
+        if (i < tok.length && tok[i] === 'd') { dot = true; i++; }
+
+        const note = {
+            degree: isRest ? 0 : deg, octave: isRest ? 0 : oct,
+            type: noteType, dot, tie: false, rest: isRest,
+            accidental: isRest ? '' : acc, slurStart: false, slurStop: false
+        };
+        current.push(note);
+        lastNote = note;
+        lastBeats = (dBeats[noteType] || 1) * (dot ? 1.5 : 1);
+    }
+    if (current && current.length > 0) {
+        current._repeatStart = false; current._repeatEnd = false;
+        current._direction = ''; current._dynamic = ''; current._wedge = null;
+        measures.push(current);
+    }
+    return { measures, keyStr, timeStr, tempoStr };
+}
+
+function setEditModeB(on) {
+    editBtnB.classList.toggle('active', on);
+    if (on) {
+        if (editModeA) setEditModeA(false);
+        editTextArea.value = serializeToText(
+            state.currentMeasures, state.currentKeyStr,
+            state.originalTimeStr, state.originalTempoStr
+        );
+        editTextOverlay.style.display = 'flex';
+    } else {
+        editTextOverlay.style.display = 'none';
+    }
+}
+
+editBtnB.addEventListener('click', () => setEditModeB(editTextOverlay.style.display !== 'flex'));
+
+editTextCancel.addEventListener('click', () => setEditModeB(false));
+
+editTextSave.addEventListener('click', () => {
+    try {
+        const { measures, keyStr, timeStr, tempoStr } = parseFromText(editTextArea.value);
+        if (!measures.length) { alert('没有找到任何小节，请检查格式。'); return; }
+
+        state.originalMeasures = measures;
+        state.originalKeyStr   = keyStr;
+        state.originalTimeStr  = timeStr;
+        state.originalTempoStr = tempoStr;
+        state.currentMeasures  = measures;
+        state.currentKeyStr    = keyStr;
+        transposeSelect.value  = '';
+
+        const svgResult = renderJianpuSVG(
+            measures, keyStr, timeStr,
+            state.originalTitleStr || 'Untitled',
+            mainContent.clientWidth, tempoStr
+        );
+        output.innerHTML        = svgResult;
+        keyDisplay.textContent  = `1=${keyStr}`;
+        toolbarMeta.textContent = `1=${keyStr}  ${timeStr}`;
+        setEditModeB(false);
+    } catch(err) {
+        alert('解析失败：' + err.message);
     }
 });
 

@@ -233,8 +233,8 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] OCR：五线谱图片 → 简谱文字（Groq Llama 4 Vision，免费，Beta）
 - [ ] OCR 升级：AI 文字输出 → Jianpu parser → 渲染成简谱 SVG（Route C）
 - [ ] Playback 播放 — Tone.js，note objects → 实际音高，转完即听
-- [ ] 简谱编辑器 Route A（推荐）— 点击 SVG 音符弹出 popup，改音级/时值/升降号/八度，确认后重渲染该小节；数据层改 note objects，渲染层重跑 renderJianpuSVG
-- [ ] 简谱编辑器 Route B — 输出区加"编辑模式"开关，note objects 序列化成类 ABC 文本，改完重新 parse 渲染
+- [x] 简谱编辑器 Route A — 点击 SVG 音符弹出 popup，改音级/时值/升降号/八度，确认后重渲染；data-m/data-n 追踪 note index，编辑提交后清空转调
+- [x] 简谱编辑器 Route B — 工具栏"≡"按钮，note objects 序列化成文本，改完 parse 渲染；格式：[#/b]度数['/,][时值][d]，- 延音，| 小节线
 - [ ] 笛子装饰音标记 — 解析 MusicXML <ornaments>，SVG 渲染对应符号（颤音/打音/叠音等）
 
 ---
