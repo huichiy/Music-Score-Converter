@@ -10,6 +10,8 @@ Thumbs.db
 
 # Claude Code
 .claude/
+.agents/
+skills-lock.json
 
 # Dependencies (none currently, but just in case)
 node_modules/
