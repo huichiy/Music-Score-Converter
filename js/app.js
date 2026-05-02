@@ -1363,20 +1363,3 @@ ocrAnalyzeBtn.addEventListener('click', async () => {
     }
 });
 
-// --- Landing page step tabs ---
-(function () {
-    const tabs = document.getElementById('stepTabs');
-    if (!tabs) return;
-    let cur = 0;
-    tabs.addEventListener('click', e => {
-        const tab = e.target.closest('.step-tab');
-        if (!tab) return;
-        const next = parseInt(tab.dataset.step);
-        if (next === cur) return;
-        tabs.children[cur].classList.remove('active');
-        document.getElementById('panel-' + cur).classList.remove('active');
-        cur = next;
-        tabs.children[cur].classList.add('active');
-        document.getElementById('panel-' + cur).classList.add('active');
-    });
-})();
