@@ -247,7 +247,7 @@ function handleFile(file) {
     convertBtn.disabled = false;
     convertBtn.textContent = '转换 Convert';
     output.style.display      = 'none';
-    emptyState.style.display  = 'flex';
+    emptyState.style.display  = 'block';
     toolbar.style.display     = 'none';
 
     optionsSec.style.display  = 'none';
@@ -281,7 +281,7 @@ function resetAll() {
 
     loadedCard.style.display  = 'none';
     output.style.display      = 'none';
-    emptyState.style.display  = 'flex';
+    emptyState.style.display  = 'block';
     toolbar.style.display     = 'none';
 
     optionsSec.style.display  = 'none';
@@ -1335,7 +1335,7 @@ ocrResetBtn.addEventListener('click', () => {
     ocrAnalyzeBtn.disabled = true;
     ocrErrorMsg.style.display = 'none';
     output.style.display     = 'none';
-    emptyState.style.display = 'flex';
+    emptyState.style.display = 'block';
     toolbar.style.display    = 'none';
 
 });
