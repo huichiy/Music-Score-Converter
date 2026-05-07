@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0f0f0f;
+  --color-foreground: #f0f0f0;
+  --color-surface: #1a1a1a;
+  --color-surface-2: #242424;
+  --color-border: #2a2a2a;
+  --color-accent: #c0281e;
+  --color-accent-hover: #d93020;
+  --color-muted: #888888;
+  --color-faint: #3a3a3a;
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    margin: 0;
+  }
+}
+
+[data-theme="light"] {
+  --color-background: #f4efe8;
+  --color-foreground: #1a1612;
+  --color-surface: #ece7df;
+  --color-surface-2: #e3ddd4;
+  --color-border: #cfc8be;
+  --color-accent: #c0281e;
+  --color-accent-hover: #a01a12;
+  --color-muted: #786e62;
+  --color-faint: #d6cfc5;
+}
+
+/* Sidebar responsive layout */
+.app-sidebar {
+  width: 100%;
+  max-height: 45vh;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+@media (min-width: 640px) {
+  .app-sidebar {
+    width: 256px;
+    min-width: 256px;
+    max-height: none;
+    height: 100%;
+    border-bottom: none;
+    border-right: 1px solid var(--color-border);
+  }
+}
+
+@layer utilities {
+  .score-output svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .score-output .jn-note {
+    cursor: pointer;
+  }
+
+  .score-output.edit-mode .jn-note:hover {
+    opacity: 0.7;
+  }
+
+  /* Hide scrollbar but keep scroll */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

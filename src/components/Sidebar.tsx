@@ -1,0 +1,83 @@
+import FileUpload from './FileUpload'
+import PartSelector from './PartSelector'
+import TransposeSelect from './TransposeSelect'
+import ExportButtons from './ExportButtons'
+import OcrSection from './OcrSection'
+
+interface SidebarProps {
+  onFile: (file: File) => void
+  onPartChange: (idx: number) => void
+  onTranspose: (key: string) => void
+  onOcrScore: (svgHtml: string) => void
+  loadFromText: (text: string) => string
+  svgRef: React.RefObject<HTMLDivElement | null>
+  isDark: boolean
+  onThemeToggle: () => void
+}
+
+export default function Sidebar({
+  onFile,
+  onPartChange,
+  onTranspose,
+  onOcrScore,
+  loadFromText,
+  svgRef,
+  isDark,
+  onThemeToggle,
+}: SidebarProps) {
+  return (
+    <aside className="app-sidebar flex flex-col overflow-y-auto scrollbar-hide">
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-4 py-4 shrink-0"
+        style={{ borderBottom: '1px solid var(--color-border)' }}
+      >
+        <div>
+          <div className="font-bold text-base">简谱转换</div>
+          <div className="text-xs" style={{ color: 'var(--color-muted)' }}>Jianpu Converter</div>
+        </div>
+        <button
+          onClick={onThemeToggle}
+          className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer"
+          style={{
+            background: 'var(--color-surface-2)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-muted)',
+            fontSize: '14px',
+          }}
+          title={isDark ? '切换亮色' : '切换暗色'}
+        >
+          {isDark ? '☀' : '☾'}
+        </button>
+      </div>
+
+      {/* Controls */}
+      <div className="flex flex-col gap-4 px-4 py-4 flex-1">
+        <FileUpload onFile={onFile} />
+        <PartSelector onPartChange={onPartChange} />
+        <TransposeSelect onTranspose={onTranspose} />
+        <ExportButtons svgRef={svgRef} isDark={isDark} />
+
+        <OcrSection onOcrScore={onOcrScore} loadFromText={loadFromText} />
+      </div>
+
+      {/* Footer */}
+      <div
+        className="px-4 py-3 shrink-0"
+        style={{
+          borderTop: '1px solid var(--color-border)',
+          fontSize: '10px',
+          color: 'var(--color-faint)',
+        }}
+      >
+        <a href="https://github.com/huichiy/Music-Score-Converter" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+          GitHub
+        </a>
+        {' · '}
+        <a href="https://ko-fi.com/huichiy" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
+          Ko-fi ☕
+        </a>
+      </div>
+    </aside>
+  )
+}
