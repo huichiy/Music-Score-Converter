@@ -112,7 +112,7 @@ export default function App() {
     store.setCurrent(newMeasures, currentKeyStr)
     store.setTransposeKey('')
     store.setPopupNote(null)
-    store.setEditModeA(false)
+    // edit mode stays ON — user closes it manually
 
     const svg = rerenderWithStore()
     if (svg) setSvgHtml(svg)
