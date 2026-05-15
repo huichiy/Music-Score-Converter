@@ -90,14 +90,13 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
           >
             {ocrFile ? (
               <div className="text-xs space-y-0.5">
-                <div>🖼️</div>
                 <div className="truncate font-medium">{ocrFile.name}</div>
+                <div style={{ color: 'var(--color-muted)' }}>点击更换图片</div>
               </div>
             ) : (
               <div className="text-xs space-y-0.5" style={{ color: 'var(--color-muted)' }}>
-                <div>📷</div>
                 <div>拖放图片或点击选择</div>
-                <div style={{ color: 'var(--color-faint)', fontSize: '10px' }}>JPG · PNG · WebP</div>
+                <div style={{ fontSize: '10px' }}>JPG · PNG · WebP</div>
               </div>
             )}
           </div>

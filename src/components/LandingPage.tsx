@@ -1,10 +1,15 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useCallback } from 'react'
 import { renderJianpuSVG } from '@/lib/renderer'
-import { useScoreStore } from '@/store/scoreStore'
+import OcrSection from '@/components/OcrSection'
 import type { Measure, MeasureArray, NoteObject } from '@/types/score'
 
 interface LandingPageProps {
   onLoadSample: () => void
+  onFile: (file: File) => void
+  onOcrScore: (svg: string) => void
+  loadFromText: (text: string) => string
+  isDark: boolean
+  onThemeToggle: () => void
 }
 
 // ── Sample measures for preview (茉莉花-like, key C, 4/4) ────────
@@ -41,13 +46,27 @@ const PIPELINE = [
 ]
 
 // ─────────────────────────────────────────────────────────────────
-export default function LandingPage({ onLoadSample }: LandingPageProps) {
+export default function LandingPage({ onLoadSample, onFile, onOcrScore, loadFromText, isDark, onThemeToggle }: LandingPageProps) {
   const [hoveredNum,   setHoveredNum]   = useState<number | null>(null)
   const [hoveredScale, setHoveredScale] = useState<number | null>(null)
   const [expandedStep, setExpandedStep] = useState<number | null>(null)
+  const [dragging,     setDragging]     = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const activeNum = hoveredNum ?? hoveredScale
-  const isDark = useScoreStore(s => s.isDark)
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file) onFile(file)
+  }, [onFile])
+
+  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) onFile(file)
+    e.target.value = ''
+  }, [onFile])
 
   // Re-render when theme changes so SVG colors stay correct
   const sampleSvg = useMemo(() =>
@@ -67,6 +86,41 @@ export default function LandingPage({ onLoadSample }: LandingPageProps) {
 
   return (
     <div className="overflow-y-auto h-full">
+
+      {/* ── Top bar ───────────────────────────────────────────────── */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '12px 20px',
+        borderBottom: `0.5px solid ${c.border}`,
+      }}>
+        <a
+          href="https://github.com/huichiy/Music-Score-Converter"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            fontSize: 11, color: c.muted, textDecoration: 'none',
+            transition: 'color 0.15s',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = c.fg)}
+          onMouseLeave={e => (e.currentTarget.style.color = c.muted)}
+        >
+          GitHub
+        </a>
+        <button
+          onClick={onThemeToggle}
+          title={isDark ? '切换亮色' : '切换暗色'}
+          style={{
+            background: 'none', border: `0.5px solid ${c.border}`,
+            borderRadius: 6, padding: '5px 10px',
+            fontSize: 13, color: c.muted, cursor: 'pointer',
+            transition: 'color 0.15s, border-color 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color = c.fg; e.currentTarget.style.borderColor = c.fg }}
+          onMouseLeave={e => { e.currentTarget.style.color = c.muted; e.currentTarget.style.borderColor = c.border }}
+        >
+          {isDark ? '☀' : '☾'}
+        </button>
+      </div>
 
       {/* ── Hero ──────────────────────────────────────────────────── */}
       <div style={{
@@ -159,46 +213,94 @@ export default function LandingPage({ onLoadSample }: LandingPageProps) {
           将西方乐谱转换为中文简谱——专为中乐团演奏者打造。
         </div>
 
-        {/* Format badges + CTA */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          {['.musicxml', '.midi', '.abc', '图片 OCR'].map((f) => (
-            <div key={f} style={{
-              background: c.surface, border: `0.5px solid ${c.border}`,
-              borderRadius: 4, padding: '3px 10px',
-              fontSize: 11, color: c.muted, fontFamily: 'monospace',
-            }}>
-              {f}
+        {/* Upload zone */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xml,.mxl,.mid,.midi,.abc"
+          style={{ display: 'none' }}
+          onChange={handleFileInput}
+        />
+        <div
+          onDragOver={e => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            marginTop: 24,
+            border: `1.5px dashed ${dragging ? c.accent : c.border}`,
+            borderRadius: 8,
+            padding: '22px 24px',
+            cursor: 'pointer',
+            background: dragging
+              ? `color-mix(in srgb, ${c.accent} 6%, transparent)`
+              : c.surface,
+            transition: 'border-color 0.15s, background 0.15s',
+            display: 'flex', alignItems: 'center', gap: 16,
+          }}
+        >
+          <div style={{
+            width: 36, height: 36, borderRadius: 8,
+            background: `color-mix(in srgb, ${c.accent} 12%, transparent)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 18, flexShrink: 0,
+          }}>
+            ↑
+          </div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: c.fg, marginBottom: 3 }}>
+              上传文件
             </div>
-          ))}
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {['.musicxml', '.midi', '.abc'].map((f) => (
+                <span key={f} style={{
+                  fontSize: 10, color: c.muted, fontFamily: 'monospace',
+                  background: c.surface2, border: `0.5px solid ${c.border}`,
+                  borderRadius: 3, padding: '1px 6px',
+                }}>
+                  {f}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginLeft: 'auto', fontSize: 11, color: c.muted }}>
+            或拖放到此处
+          </div>
         </div>
 
-        {/* Primary CTA */}
+        {/* Secondary CTA */}
         <button
           onClick={onLoadSample}
           style={{
-            marginTop: 20,
-            padding: '10px 22px',
-            background: c.accent,
-            border: 'none', borderRadius: 6,
-            color: '#fff', fontSize: 13, fontWeight: 600,
+            marginTop: 12,
+            padding: '8px 18px',
+            background: 'none',
+            border: `1px solid ${c.border}`,
+            borderRadius: 6,
+            color: c.muted, fontSize: 12,
             cursor: 'pointer',
-            transition: 'opacity 0.15s',
+            transition: 'color 0.15s, border-color 0.15s',
           }}
-          onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
-          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+          onMouseEnter={e => { e.currentTarget.style.color = c.fg; e.currentTarget.style.borderColor = c.fg }}
+          onMouseLeave={e => { e.currentTarget.style.color = c.muted; e.currentTarget.style.borderColor = c.border }}
         >
           试试示例 →
         </button>
+
+        {/* OCR section — collapsible, below CTAs */}
+        <div style={{ marginTop: 20 }}>
+          <OcrSection onOcrScore={onOcrScore} loadFromText={loadFromText} />
+        </div>
       </div>
 
       {/* ── What is Jianpu ────────────────────────────────────────── */}
       <div style={{
         padding: '36px 52px',
         borderBottom: `0.5px solid ${c.border}`,
-        display: 'flex', gap: 52, alignItems: 'flex-start',
+        display: 'flex', gap: 52, alignItems: 'flex-start', flexWrap: 'wrap',
       }}>
-        <div style={{ flex: 1 }}>
-          <span style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: c.muted, display: 'block', marginBottom: 8 }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <span style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: c.muted, display: 'block', marginBottom: 8, whiteSpace: 'nowrap' }}>
             WHAT IS JIANPU
           </span>
           <div style={{ fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 700, fontStyle: 'italic', color: c.fg, marginBottom: 12 }}>

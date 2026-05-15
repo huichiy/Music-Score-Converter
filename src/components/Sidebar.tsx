@@ -53,11 +53,16 @@ export default function Sidebar({
 
       {/* Controls */}
       <div className="flex flex-col gap-4 px-4 py-4 flex-1">
+        {/* Input section */}
         <FileUpload onFile={onFile} />
         <PartSelector onPartChange={onPartChange} />
         <TransposeSelect onTranspose={onTranspose} />
-        <ExportButtons svgRef={svgRef} isDark={isDark} />
 
+        {/* Divider: input → output */}
+        <div style={{ height: '0.5px', background: 'var(--color-border)', margin: '0 -4px' }} />
+
+        {/* Output section */}
+        <ExportButtons svgRef={svgRef} isDark={isDark} />
         <OcrSection onOcrScore={onOcrScore} loadFromText={loadFromText} />
       </div>
 
@@ -67,7 +72,7 @@ export default function Sidebar({
         style={{
           borderTop: '1px solid var(--color-border)',
           fontSize: '10px',
-          color: 'var(--color-faint)',
+          color: 'var(--color-muted)',
         }}
       >
         <a href="https://github.com/huichiy/Music-Score-Converter" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>

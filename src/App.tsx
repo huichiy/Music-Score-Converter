@@ -144,16 +144,18 @@ export default function App() {
 
   return (
     <div className="flex flex-col sm:flex-row h-screen overflow-hidden" style={{ background: 'var(--color-background)' }}>
-      <Sidebar
-        onFile={handleFile}
-        onPartChange={handlePartChange}
-        onTranspose={handleTranspose}
-        onOcrScore={handleOcrScore}
-        loadFromText={loadFromText}
-        svgRef={scoreOutputRef}
-        isDark={store.isDark}
-        onThemeToggle={handleThemeToggle}
-      />
+      {isConverted && (
+        <Sidebar
+          onFile={handleFile}
+          onPartChange={handlePartChange}
+          onTranspose={handleTranspose}
+          onOcrScore={handleOcrScore}
+          loadFromText={loadFromText}
+          svgRef={scoreOutputRef}
+          isDark={store.isDark}
+          onThemeToggle={handleThemeToggle}
+        />
+      )}
 
       {/* Main content */}
       <main
@@ -195,7 +197,14 @@ export default function App() {
         )}
 
         {!isConverted ? (
-          <LandingPage onLoadSample={handleLoadSample} />
+          <LandingPage
+            onLoadSample={handleLoadSample}
+            onFile={handleFile}
+            onOcrScore={handleOcrScore}
+            loadFromText={loadFromText}
+            isDark={store.isDark}
+            onThemeToggle={handleThemeToggle}
+          />
         ) : (
           <>
             <Toolbar

@@ -45,7 +45,6 @@ export default function FileUpload({ onFile }: FileUploadProps) {
       >
         {currentFile ? (
           <div className="space-y-1">
-            <div className="text-xl">📄</div>
             <div className="text-sm font-medium truncate max-w-full" title={currentFile.name}>
               {currentFile.name}
             </div>
@@ -55,12 +54,11 @@ export default function FileUpload({ onFile }: FileUploadProps) {
           </div>
         ) : (
           <div className="space-y-1">
-            <div className="text-xl">📂</div>
             <div className="text-sm font-medium">拖放文件到这里</div>
             <div className="text-xs" style={{ color: 'var(--color-muted)' }}>
               或点击选择文件
             </div>
-            <div className="text-xs mt-1" style={{ color: 'var(--color-faint)', fontSize: '10px' }}>
+            <div className="text-xs mt-1" style={{ color: 'var(--color-muted)', fontSize: '10px' }}>
               XML · MXL · MID · ABC
             </div>
           </div>

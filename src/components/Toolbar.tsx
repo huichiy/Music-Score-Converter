@@ -58,7 +58,7 @@ export default function Toolbar({ onEditModeA, onEditModeB, onReset }: ToolbarPr
           }}
           title="点击音符编辑"
         >
-          ✏️ 点击编辑
+          ✏ 点击编辑
         </button>
         <button
           onClick={onEditModeB}
@@ -72,15 +72,25 @@ export default function Toolbar({ onEditModeA, onEditModeB, onReset }: ToolbarPr
         >
           ≡ 文本
         </button>
+
+        {/* Reset — destructive, separated, minimal */}
         <button
           onClick={onReset}
-          className={btnBase}
+          title="重置 / 返回"
           style={{
-            background: 'var(--color-surface-2)',
-            color: 'var(--color-muted)',
-            border: '1px solid var(--color-border)',
+            marginLeft: 6,
+            background: 'none',
+            border: 'none',
+            padding: '4px 6px',
+            cursor: 'pointer',
+            color: 'var(--color-faint)',
+            fontSize: 16,
+            lineHeight: 1,
+            borderRadius: 4,
+            transition: 'color 0.15s',
           }}
-          title="重置"
+          onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-accent)')}
+          onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-faint)')}
         >
           ✕
         </button>
