@@ -152,6 +152,40 @@ function renderMultiRestBracket(
   return blockW
 }
 
+function renderArticulation(els: string[], cx: number, y: number, kind: string, color: string, octave: number): void {
+  // Push higher when there are octave dots above to avoid collision
+  const yAbove = octave >= 2 ? y - 32 : octave >= 1 ? y - 26 : y - 20
+  if (kind === 'accent') {
+    els.push(`<text x="${cx}" y="${yAbove}" font-family="Inter" font-size="11" font-weight="600" fill="${color}" text-anchor="middle">&gt;</text>`)
+  } else if (kind === 'staccato') {
+    els.push(`<circle cx="${cx}" cy="${yAbove - 2}" r="1.5" fill="${color}"/>`)
+  } else if (kind === 'tenuto') {
+    els.push(`<line x1="${cx - 3}" y1="${yAbove - 2}" x2="${cx + 3}" y2="${yAbove - 2}" stroke="${color}" stroke-width="1.2" stroke-linecap="round"/>`)
+  } else if (kind === 'marcato') {
+    els.push(`<text x="${cx}" y="${yAbove}" font-family="Inter" font-size="12" font-weight="700" fill="${color}" text-anchor="middle">^</text>`)
+  } else if (kind === 'fermata') {
+    els.push(`<path d="M ${cx - 6},${yAbove} Q ${cx},${yAbove - 7} ${cx + 6},${yAbove}" fill="none" stroke="${color}" stroke-width="1.2"/>`)
+    els.push(`<circle cx="${cx}" cy="${yAbove - 2}" r="1.2" fill="${color}"/>`)
+  }
+}
+
+function renderGraceNote(els: string[], x: number, y: number, g: { degree: number; octave: number; accidental: string }, color: string): number {
+  // Render a small grace note to the upper-left of the main note position
+  // x = main note's left edge; we draw at x - 9 ish
+  const gx = x - 10
+  const gy = y - 4
+  let offset = 0
+  if (g.accidental) {
+    els.push(`<text x="${gx - 4}" y="${gy - 5}" font-family="Inter" font-size="7" fill="${color}">${g.accidental}</text>`)
+    offset = 3
+  }
+  els.push(`<text x="${gx + offset}" y="${gy}" font-family="Inter" font-size="11" font-style="italic" fill="${color}">${g.degree}</text>`)
+  // Octave dot for grace
+  if (g.octave >= 1) els.push(`<circle cx="${gx + offset + 3}" cy="${gy - 11}" r="1.2" fill="${color}"/>`)
+  if (g.octave <= -1) els.push(`<circle cx="${gx + offset + 3}" cy="${gy + 4}" r="1.2" fill="${color}"/>`)
+  return 0
+}
+
 function renderNote(
   els: string[], note: NoteObject, currentX: number, currentY: number,
   color: string, mIdx: number, nIdx: number,
@@ -163,8 +197,17 @@ function renderNote(
     els.push(`<text x="${currentX}" y="${currentY - 8}" font-family="Inter" font-size="10" fill="${color}">${note.accidental}</text>`)
     numXOffset = 8
   }
+  // Grace note (倚音) — small number before main
+  if (note.graceNote && !note.rest && !note.tie) {
+    renderGraceNote(els, currentX, currentY, note.graceNote, color)
+  }
   const dataAttrs = ` data-m="${mIdx}" data-n="${nIdx}" class="jn-note"`
   els.push(`<text x="${currentX + numXOffset}" y="${currentY}" font-family="Inter" font-size="18" fill="${color}"${dataAttrs}>${displayStr}</text>`)
+  // Articulation above the note
+  if (note.articulation && !note.rest && !note.tie) {
+    const noteCenterX = currentX + numXOffset + 5
+    renderArticulation(els, noteCenterX, currentY, note.articulation, color, note.octave)
+  }
 
   if (note.chordNotes && note.chordNotes.length > 0) {
     note.chordNotes.forEach((cn, idx) => {
