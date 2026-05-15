@@ -234,8 +234,10 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [ ] OCR 升级：AI 文字输出 → Jianpu parser → 渲染成简谱 SVG（Route C）
 - [ ] Playback 播放 — Tone.js，note objects → 实际音高，转完即听
 - [x] 简谱编辑器 Route A — 点击 SVG 音符弹出 popup，改音级/时值/升降号/八度，确认后重渲染；data-m/data-n 追踪 note index，编辑提交后清空转调
-- [x] 简谱编辑器 Route B — 工具栏"≡"按钮，note objects 序列化成文本，改完 parse 渲染；格式：[#/b]度数['/,][时值][d]，- 延音，| 小节线
-- [ ] 笛子装饰音标记 — 解析 MusicXML <ornaments>，SVG 渲染对应符号（颤音/打音/叠音等）
+- [x] 简谱编辑器 Route B — 工具栏"≡"按钮，note objects 序列化成文本，改完 parse 渲染
+- [x] Route B 格式 v2 — 番茄式语法（`1/` 八分、`1.` 附点、`1-` 二分），力度 `&mf` / 渐强 `<>!` / 反复 `\|: :\|` / Fine D.C. / 连线 `()` / 表情 `1[>]` / 倚音 `1[2]` 全部 round-trip
+- [ ] 笛子装饰音标记 — 解析 MusicXML <ornaments>，SVG 渲染对应符号；文本格式扩展 `1[tr]` 颤音、`1[~]` 波音、`1[又]` 叠音、`1[打]` 打音、`1[*]` 花舌等
+- [ ] Route B 跳房子（volta）+ 三连音 `(y1 2 3)` + 临时拍号
 
 ---
 

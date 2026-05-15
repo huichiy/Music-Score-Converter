@@ -423,13 +423,14 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
   }, [])
 
   const loadFromText = useCallback((text: string): string => {
-    const { originalKeyStr, originalTimeStr, originalTempoStr } = useScoreStore.getState()
-    const parsed = parseFromText(text, originalKeyStr, originalTimeStr, originalTempoStr)
-    store.setOriginal(parsed.measures, parsed.keyStr, parsed.timeStr, '简谱导入', parsed.tempoStr)
+    const { originalKeyStr, originalTimeStr, originalTempoStr, originalTitleStr } = useScoreStore.getState()
+    const parsed = parseFromText(text, originalKeyStr, originalTimeStr, originalTempoStr, originalTitleStr)
+    const title = parsed.titleStr || originalTitleStr || '简谱导入'
+    store.setOriginal(parsed.measures, parsed.keyStr, parsed.timeStr, title, parsed.tempoStr)
     store.setCurrent(parsed.measures, parsed.keyStr)
     store.setTransposeKey('')
     store.setIsConverted(true)
-    return renderJianpuSVG(parsed.measures, parsed.keyStr, parsed.timeStr, '简谱导入', getContainerWidth(), parsed.tempoStr)
+    return renderJianpuSVG(parsed.measures, parsed.keyStr, parsed.timeStr, title, getContainerWidth(), parsed.tempoStr)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store])
 

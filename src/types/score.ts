@@ -4,6 +4,14 @@ export interface ChordNote {
   accidental: '#' | 'b' | ''
 }
 
+export type Articulation = 'accent' | 'staccato' | 'tenuto' | 'marcato' | 'fermata' | ''
+
+export interface GraceNote {
+  degree: number
+  octave: number
+  accidental: '#' | 'b' | ''
+}
+
 export interface NoteObject {
   degree: number
   octave: number
@@ -15,6 +23,8 @@ export interface NoteObject {
   slurStart: boolean
   slurStop: boolean
   chordNotes?: ChordNote[]
+  articulation?: Articulation
+  graceNote?: GraceNote | null
 }
 
 export interface MeasureArray extends Array<NoteObject> {
