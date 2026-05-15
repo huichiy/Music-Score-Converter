@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useScoreStore } from '@/store/scoreStore'
-import { serializeToText } from '@/lib/editor'
+import { serializeToText, parseFromText } from '@/lib/editor'
+import type { NotePosition } from '@/lib/editor'
+import { renderJianpuSVG } from '@/lib/renderer'
 
 interface EditTextOverlayProps {
   onSave: (text: string) => void
@@ -111,14 +113,122 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
 
   const [text, setText] = useState('')
   const [showGuide, setShowGuide] = useState(false)
+  const [previewSvg, setPreviewSvg] = useState('')
+  const [previewError, setPreviewError] = useState(false)
+  const [caretPos, setCaretPos] = useState(0)
+  const [previewWidth, setPreviewWidth] = useState(540)
 
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
+  const positionsRef = useRef<NotePosition[]>([])
+  const lastGoodSvg = useRef<string>('')
+
+  // Seed text from store when opening
   useEffect(() => {
     if (editTextVisible && currentMeasures) {
       setText(serializeToText(currentMeasures, currentKeyStr, originalTimeStr, originalTempoStr, originalTitleStr))
+      setCaretPos(0)
     }
   }, [editTextVisible, currentMeasures, currentKeyStr, originalTimeStr, originalTempoStr, originalTitleStr])
 
-  // Cmd+Enter / Ctrl+Enter to save
+  // Observe preview pane width so renderer can adapt
+  useEffect(() => {
+    if (!editTextVisible || !previewRef.current) return
+    const el = previewRef.current
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const w = entry.contentRect.width
+        if (w > 0) setPreviewWidth(w)
+      }
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [editTextVisible])
+
+  // Debounced live preview render
+  useEffect(() => {
+    if (!editTextVisible) return
+    const timer = setTimeout(() => {
+      try {
+        const parsed = parseFromText(text, currentKeyStr, originalTimeStr, originalTempoStr, originalTitleStr)
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+        const svg = renderJianpuSVG(
+          parsed.measures,
+          parsed.keyStr,
+          parsed.timeStr,
+          parsed.titleStr || '',
+          previewWidth - 40,
+          parsed.tempoStr,
+          isDark,
+        )
+        setPreviewSvg(svg)
+        lastGoodSvg.current = svg
+        positionsRef.current = parsed.positions
+        setPreviewError(false)
+      } catch {
+        setPreviewError(true)
+      }
+    }, 180)
+    return () => clearTimeout(timer)
+  }, [text, previewWidth, editTextVisible, currentKeyStr, originalTimeStr, originalTempoStr, originalTitleStr])
+
+  // Find which note the caret currently sits in
+  const currentNote = useMemo(() => {
+    const positions = positionsRef.current
+    // Primary: caret is INSIDE a token's range — show its highlight (or no highlight if unhighlightable)
+    for (const p of positions) {
+      if (caretPos >= p.start && caretPos <= p.end) {
+        return p.measureIdx < 0 ? null : p
+      }
+    }
+    // Fallback: caret is in whitespace between tokens — show last highlightable note
+    let best: NotePosition | null = null
+    for (const p of positions) {
+      if (p.measureIdx < 0) continue
+      if (p.end <= caretPos) {
+        if (!best || p.end > best.end) best = p
+      }
+    }
+    return best
+  }, [caretPos, previewSvg]) // re-run when previewSvg changes (positions updated)
+
+  // Apply highlight class to corresponding SVG element
+  useEffect(() => {
+    if (!previewRef.current) return
+    previewRef.current.querySelectorAll('.jn-note-current').forEach(el => el.classList.remove('jn-note-current'))
+    if (currentNote) {
+      const el = previewRef.current.querySelector(`[data-m="${currentNote.measureIdx}"][data-n="${currentNote.noteIdx}"]`)
+      el?.classList.add('jn-note-current')
+    }
+  }, [currentNote, previewSvg])
+
+  // Track caret position globally — fires on arrow keys, clicks, selection drag
+  useEffect(() => {
+    if (!editTextVisible) return
+    const handler = () => {
+      if (document.activeElement === textareaRef.current && textareaRef.current) {
+        setCaretPos(textareaRef.current.selectionStart)
+      }
+    }
+    document.addEventListener('selectionchange', handler)
+    return () => document.removeEventListener('selectionchange', handler)
+  }, [editTextVisible])
+
+  // Click in preview → jump caret in textarea
+  const handlePreviewClick = useCallback((e: React.MouseEvent) => {
+    const target = (e.target as Element).closest('[data-m][data-n]') as Element | null
+    if (!target || !textareaRef.current) return
+    const m = parseInt(target.getAttribute('data-m')!)
+    const n = parseInt(target.getAttribute('data-n')!)
+    const pos = positionsRef.current.find(p => p.measureIdx === m && p.noteIdx === n && p.measureIdx >= 0)
+    if (pos) {
+      textareaRef.current.focus()
+      textareaRef.current.setSelectionRange(pos.start, pos.end)
+      setCaretPos(pos.start)
+    }
+  }, [])
+
+  // Keyboard shortcuts
   useEffect(() => {
     if (!editTextVisible) return
     const handler = (e: KeyboardEvent) => {
@@ -140,6 +250,12 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
       flexDirection: 'column',
       background: 'var(--color-background)',
     }}>
+      {/* Inline styles for highlight + SVG sizing */}
+      <style>{`
+        .jn-note-current { fill: var(--color-accent) !important; font-weight: 700; }
+        .edit-preview svg { max-width: 100%; height: auto; display: block; }
+      `}</style>
+
       {/* Title bar */}
       <div style={{
         display: 'flex',
@@ -150,12 +266,15 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
         borderBottom: '1px solid var(--color-border)',
         flexShrink: 0,
       }}>
-        {/* Title */}
         <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--color-muted)', letterSpacing: '0.02em' }}>
           简谱 · Jianpu Notation
+          {previewError && (
+            <span style={{ marginLeft: '12px', color: '#c44', fontSize: '11px' }}>
+              · 语法待补全
+            </span>
+          )}
         </div>
 
-        {/* Actions */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button
             onClick={() => setShowGuide(v => !v)}
@@ -167,7 +286,6 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
               border: '1px solid var(--color-border)',
               color: showGuide ? 'var(--color-foreground)' : 'var(--color-muted)',
               cursor: 'pointer',
-              transition: 'color 0.15s, background 0.15s',
             }}
           >
             ? 格式
@@ -204,34 +322,64 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
         </div>
       </div>
 
-      {/* Body */}
+      {/* Body: main column (text top / preview bottom) + optional right drawer */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Editor */}
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          autoFocus
-          style={{
-            flex: 1,
-            padding: '28px 32px',
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            color: 'var(--color-foreground)',
-            fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-            fontSize: '14px',
-            lineHeight: '1.8',
-            resize: 'none',
-          }}
-          spellCheck={false}
-        />
+        {/* Main column */}
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+          {/* Textarea (top half) */}
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onClick={() => textareaRef.current && setCaretPos(textareaRef.current.selectionStart)}
+            onKeyUp={() => textareaRef.current && setCaretPos(textareaRef.current.selectionStart)}
+            autoFocus
+            style={{
+              flex: '1 1 50%',
+              minHeight: 0,
+              padding: '24px 32px',
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: 'var(--color-foreground)',
+              fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+              fontSize: '14px',
+              lineHeight: '1.8',
+              resize: 'none',
+            }}
+            spellCheck={false}
+          />
 
-        {/* Format guide panel */}
+          {/* Divider */}
+          <div style={{
+            height: '1px',
+            background: 'var(--color-border)',
+            flexShrink: 0,
+          }} />
+
+          {/* Live preview (bottom half) */}
+          <div
+            ref={previewRef}
+            onClick={handlePreviewClick}
+            className="edit-preview"
+            style={{
+              flex: '1 1 50%',
+              minHeight: 0,
+              padding: '20px 32px',
+              overflow: 'auto',
+              background: 'var(--color-surface)',
+              cursor: 'default',
+            }}
+            dangerouslySetInnerHTML={{ __html: previewSvg || lastGoodSvg.current }}
+          />
+        </div>
+
+        {/* Right drawer — format reference */}
         {showGuide && (
           <div style={{
-            width: '300px',
+            width: '280px',
             borderLeft: '1px solid var(--color-border)',
-            padding: '24px 20px',
+            padding: '20px 18px',
             flexShrink: 0,
             overflowY: 'auto',
             background: 'var(--color-surface)',
@@ -241,39 +389,20 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
               fontWeight: 600,
               letterSpacing: '0.1em',
               color: 'var(--color-muted)',
-              marginBottom: '20px',
+              marginBottom: '16px',
               textTransform: 'uppercase',
             }}>
               格式说明
             </div>
 
-            {/* Example — first measure of the actual score */}
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--color-muted)', marginBottom: '8px' }}>你的第一小节</div>
-              <code style={{
-                fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-                fontSize: '12px',
-                color: 'var(--color-foreground)',
-                background: 'var(--color-surface-2)',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                display: 'block',
-                lineHeight: '1.6',
-                wordBreak: 'break-all',
-              }}>
-                {text.match(/\|[^|\n]+\|/)?.[0]?.trim() ?? '| 1/ 2/ #3 0--- |'}
-              </code>
-            </div>
-
-            {/* Reference sections */}
             {GUIDE_SECTIONS.map(({ label, items }) => (
-              <div key={label} style={{ marginBottom: '18px' }}>
+              <div key={label} style={{ marginBottom: '16px' }}>
                 <div style={{
                   fontSize: '10px',
                   fontWeight: 600,
                   letterSpacing: '0.08em',
                   color: 'var(--color-muted)',
-                  marginBottom: '8px',
+                  marginBottom: '6px',
                   textTransform: 'uppercase',
                 }}>{label}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -300,8 +429,8 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
             ))}
 
             <div style={{
-              marginTop: '24px',
-              paddingTop: '16px',
+              marginTop: '20px',
+              paddingTop: '14px',
               borderTop: '1px solid var(--color-border)',
               fontSize: '10px',
               color: 'var(--color-muted)',

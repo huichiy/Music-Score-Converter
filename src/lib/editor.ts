@@ -1,5 +1,45 @@
 import type { Articulation, GraceNote, Measure, MeasureArray, NoteObject } from '@/types/score'
 
+// Compute renderer's origIdx for each measure index in the parsed array.
+// Mirrors collapseRestRuns + the per-measure origIdx incrementing in renderer.ts.
+// Returns a Map: originalMeasureIdx -> origIdx (only for measures that contribute
+// to data-m on note elements; whole-rest measures are absent since their `0`s
+// have no data-m).
+function computeOrigIdxMap(measures: Measure[]): Map<number, number> {
+  const map = new Map<number, number>()
+  let origIdx = 0
+  let i = 0
+  while (i < measures.length) {
+    const m = measures[i]
+    if (!Array.isArray(m) && (m as { _multiRest?: number })._multiRest !== undefined) {
+      origIdx += (m as { _multiRest: number })._multiRest
+      i++
+      continue
+    }
+    const arr = m as MeasureArray
+    const isWholeRest = arr.length === 1 && arr[0].rest && arr[0].type === 'whole'
+    if (isWholeRest) {
+      // Look ahead for run of consecutive whole-rest measures (collapseRestRuns groups 2+)
+      let j = i + 1
+      while (j < measures.length) {
+        const next = measures[j]
+        if (!Array.isArray(next)) break
+        if (next.length !== 1 || !next[0].rest || next[0].type !== 'whole') break
+        j++
+      }
+      const runLen = j - i
+      if (runLen >= 2) origIdx += runLen
+      // single whole-rest: origIdx not incremented (renderer's isWholeMeasureRest path skips it)
+      i = j
+    } else {
+      map.set(i, origIdx)
+      origIdx++
+      i++
+    }
+  }
+  return map
+}
+
 // ============================================================================
 // Serialize (note objects → text)
 // ============================================================================
@@ -23,7 +63,8 @@ const SYM_TO_ARTIC: Record<string, Articulation> = {
 function durationSuffix(type: NoteObject['type'], dot: boolean): string {
   if (type === 'quarter') return dot ? '.' : ''
   if (type === 'half') return dot ? '--' : '-'
-  if (type === 'whole') return dot ? '-----' : '---'
+  // Dotted whole (6 beats) doesn't fit in standard meters — fall back to whole
+  if (type === 'whole') return '---'
   if (type === 'eighth') return dot ? './' : '/'
   if (type === '16th' || type === '32nd') return dot ? './/' : '//'
   return ''
@@ -78,6 +119,16 @@ function directionToTag(dir: string): string {
   return ''
 }
 
+function isWholeMeasureRest(m: Measure): boolean {
+  if (!Array.isArray(m)) return false
+  if (m.length !== 1) return false
+  const n = m[0]
+  if (!n.rest || n.type !== 'whole') return false
+  // Don't collapse if measure carries metadata that needs preserving
+  if (m._repeatStart || m._repeatEnd || m._dynamic || m._wedge || m._direction) return false
+  return true
+}
+
 export function serializeToText(
   measures: Measure[],
   keyStr: string,
@@ -98,6 +149,18 @@ export function serializeToText(
       body += '| '
       body += `[${(measure as { _multiRest: number })._multiRest}] `
       continue
+    }
+
+    // Auto-collapse 2+ consecutive whole-measure rests into [N] block
+    if (isWholeMeasureRest(measure)) {
+      let runEnd = mi
+      while (runEnd + 1 < measures.length && isWholeMeasureRest(measures[runEnd + 1])) runEnd++
+      const runLen = runEnd - mi + 1
+      if (runLen >= 2) {
+        body += `| [${runLen}] `
+        mi = runEnd
+        continue
+      }
     }
 
     const m = measure as MeasureArray
@@ -153,12 +216,15 @@ export function serializeToText(
 // Parse (text → note objects)
 // ============================================================================
 
+export type NotePosition = { measureIdx: number; noteIdx: number; start: number; end: number }
+
 type Parsed = {
   measures: Measure[]
   keyStr: string
   timeStr: string
   tempoStr: string
   titleStr: string
+  positions: NotePosition[]
 }
 
 function parseDurationSuffix(suffix: string): { type: NoteObject['type']; dot: boolean } {
@@ -168,8 +234,9 @@ function parseDurationSuffix(suffix: string): { type: NoteObject['type']; dot: b
     const n = suffix.length
     if (n === 1) return { type: 'half', dot: false }
     if (n === 2) return { type: 'half', dot: true }
-    if (n === 3) return { type: 'whole', dot: false }
-    return { type: 'whole', dot: n >= 4 }
+    // 3+ dashes → whole note (4 beats). More dashes don't add anything since
+    // 附点全音符 (6 beats) doesn't fit in standard 4/4 — treat extras as no-op.
+    return { type: 'whole', dot: false }
   }
   if (suffix === '/') return { type: 'eighth', dot: false }
   if (suffix === './') return { type: 'eighth', dot: true }
@@ -211,8 +278,11 @@ function parseGraceNoteText(s: string): GraceNote | null {
   }
 }
 
-function tokenize(text: string): string[] {
-  const tokens: string[] = []
+type TokenWithPos = { tok: string; start: number; end: number }
+
+function tokenize(text: string, offset: number = 0): TokenWithPos[] {
+  const tokens: TokenWithPos[] = []
+  const push = (tok: string, start: number, end: number) => tokens.push({ tok, start: start + offset, end: end + offset })
   let i = 0
   while (i < text.length) {
     const ch = text[i]
@@ -224,23 +294,23 @@ function tokenize(text: string): string[] {
         if (text[i + 2] === '&') {
           let j = i + 2
           while (j < text.length && !/\s/.test(text[j])) j++
-          tokens.push(text.slice(i, j))
+          push(text.slice(i, j), i, j)
           i = j
         } else {
-          tokens.push('||')
+          push('||', i, i + 2)
           i += 2
         }
       } else if (text[i + 1] === ':') {
-        tokens.push('|:')
+        push('|:', i, i + 2)
         i += 2
       } else {
-        tokens.push('|')
+        push('|', i, i + 1)
         i++
       }
       continue
     }
     if (ch === ':' && text[i + 1] === '|') {
-      tokens.push(':|')
+      push(':|', i, i + 2)
       i += 2
       continue
     }
@@ -249,14 +319,14 @@ function tokenize(text: string): string[] {
     if (ch === '[') {
       const end = text.indexOf(']', i)
       if (end === -1) { i++; continue }
-      tokens.push(text.slice(i, end + 1))
+      push(text.slice(i, end + 1), i, end + 1)
       i = end + 1
       continue
     }
 
     // Slur parens / hairpins / hairpin end
     if (ch === '(' || ch === ')' || ch === '<' || ch === '>' || ch === '!') {
-      tokens.push(ch)
+      push(ch, i, i + 1)
       i++
       continue
     }
@@ -265,7 +335,7 @@ function tokenize(text: string): string[] {
     if (ch === '&') {
       let j = i + 1
       while (j < text.length && /[a-zA-Z]/.test(text[j])) j++
-      tokens.push(text.slice(i, j))
+      push(text.slice(i, j), i, j)
       i = j
       continue
     }
@@ -274,7 +344,7 @@ function tokenize(text: string): string[] {
     let j = i
     while (j < text.length && !/[\s|:()<>!&\[\]]/.test(text[j])) j++
     if (j === i) { i++; continue }
-    tokens.push(text.slice(i, j))
+    push(text.slice(i, j), i, j)
     i = j
   }
   return tokens
@@ -311,16 +381,16 @@ export function parseFromText(
   fallbackTempoStr = '',
   fallbackTitleStr = '',
 ): Parsed {
-  const lines = text.trim().split('\n')
+  const lines = text.split('\n')
 
   let keyStr = fallbackKeyStr
   let timeStr = fallbackTimeStr
   let tempoStr = fallbackTempoStr
   let titleStr = fallbackTitleStr
 
-  // Header lines = consecutive lines at top matching Title:/Key:/Time:/Tempo: (max 3)
+  // Header lines = consecutive lines at top matching Title:/Key:/Time:/Tempo: (max 4)
   let headerEndIdx = 0
-  for (let i = 0; i < Math.min(3, lines.length); i++) {
+  for (let i = 0; i < Math.min(4, lines.length); i++) {
     const ln = lines[i]
     if (/^(Title|Key|Time|Tempo)\s*:/.test(ln)) {
       headerEndIdx = i + 1
@@ -332,17 +402,27 @@ export function parseFromText(
       if (km) keyStr = km[1]
       if (tm) timeStr = tm[1]
       if (pm) tempoStr = pm[1]
+    } else if (ln.trim() === '') {
+      continue
     } else {
       break
     }
   }
 
-  const bodyText = lines.slice(headerEndIdx).join(' ')
-  const tokens = tokenize(bodyText)
+  // Compute byte offset where body begins, so token positions are absolute in `text`
+  const headerOffset = headerEndIdx > 0
+    ? lines.slice(0, headerEndIdx).join('\n').length + 1
+    : 0
+  const bodyText = text.slice(headerOffset)
+  const tokens = tokenize(bodyText, headerOffset)
 
   const measures: Measure[] = []
+  // Positions captured during parsing with `measureIdx` = ORIGINAL array index (will be
+  // remapped to renderer's origIdx after parsing completes via computeOrigIdxMap).
+  const positions: NotePosition[] = []
   let current: MeasureArray | null = null
   let lastNote: NoteObject | null = null
+  let lastNotePos: { measureIdx: number; noteIdx: number } | null = null
   let pendingRepeatStart = false
   let pendingDynamic = ''
   let activeWedge: 'cresc' | 'dim' | null = null
@@ -367,10 +447,11 @@ export function parseFromText(
     }
     if (activeWedge) current._wedge = activeWedge
     lastNote = null
+    lastNotePos = null
   }
 
   for (let ti = 0; ti < tokens.length; ti++) {
-    const tok = tokens[ti]
+    const { tok, start, end } = tokens[ti]
 
     if (tok === '|') {
       flushMeasure()
@@ -408,7 +489,7 @@ export function parseFromText(
       continue
     }
 
-    // Bracket modifier: articulation or grace note — applies to lastNote
+    // Bracket modifier: articulation or grace note — applies to lastNote, extends its text range
     if (tok.startsWith('[') && tok.endsWith(']')) {
       if (!lastNote) continue
       const inner = tok.slice(1, -1)
@@ -417,6 +498,13 @@ export function parseFromText(
       } else {
         const g = parseGraceNoteText(inner)
         if (g) lastNote.graceNote = g
+      }
+      // Extend last note's position range to include this bracket modifier
+      if (lastNotePos) {
+        const lastPos = positions[positions.length - 1]
+        if (lastPos && lastPos.measureIdx === lastNotePos.measureIdx && lastPos.noteIdx === lastNotePos.noteIdx) {
+          lastPos.end = end
+        }
       }
       continue
     }
@@ -464,6 +552,13 @@ export function parseFromText(
         const { type, dot } = beatsToType(newBeats)
         lastNote.type = type
         lastNote.dot = dot
+        // Extend last note's text range to include this extension
+        if (lastNotePos) {
+          const lastPos = positions[positions.length - 1]
+          if (lastPos && lastPos.measureIdx === lastNotePos.measureIdx && lastPos.noteIdx === lastNotePos.noteIdx) {
+            lastPos.end = end
+          }
+        }
       }
       continue
     }
@@ -487,11 +582,28 @@ export function parseFromText(
       note.slurStart = true
       pendingSlurStart = false
     }
+    // measureIdx here is the ORIGINAL array index of current (which is what
+    // measures.length will be when current gets flushed). Remapped to renderer's
+    // origIdx in the post-processing step below.
+    const measureIdx = measures.length
+    const noteIdx = current.length
     current.push(note)
     lastNote = note
+    lastNotePos = { measureIdx, noteIdx }
+    positions.push({ measureIdx, noteIdx, start, end })
   }
 
   if (current && current.length > 0) measures.push(current)
 
-  return { measures, keyStr, timeStr, tempoStr, titleStr }
+  // Remap position.measureIdx from "array index" to "renderer origIdx" (data-m on SVG).
+  // For notes in whole-rest measures (no data-m in SVG), keep the position but mark
+  // with measureIdx = -1 so the cursor-sync logic shows "no highlight" instead of
+  // falling back to the previous note (which would be misleading).
+  const origIdxMap = computeOrigIdxMap(measures)
+  const remappedPositions: NotePosition[] = positions.map(p => {
+    const o = origIdxMap.get(p.measureIdx)
+    return { ...p, measureIdx: o === undefined ? -1 : o }
+  })
+
+  return { measures, keyStr, timeStr, tempoStr, titleStr, positions: remappedPositions }
 }
