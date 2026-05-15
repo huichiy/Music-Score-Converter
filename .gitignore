@@ -16,6 +16,9 @@ skills-lock.json
 # Dependencies (none currently, but just in case)
 node_modules/
 
+# Build output
+dist/
+
 # Environment
 .env
 .env.local
