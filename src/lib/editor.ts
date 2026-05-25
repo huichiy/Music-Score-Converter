@@ -479,19 +479,10 @@ export function parseFromText(
       continue
     }
 
-    // Multi-rest [N]
-    const mrm = tok.match(/^\[(\d+)\]$/)
-    if (mrm) {
-      if (current && current.length > 0) measures.push(current)
-      measures.push({ _multiRest: parseInt(mrm[1]) })
-      current = freshMeasure()
-      lastNote = null
-      continue
-    }
-
-    // Bracket modifier: articulation or grace note — applies to lastNote, extends its text range
-    if (tok.startsWith('[') && tok.endsWith(']')) {
-      if (!lastNote) continue
+    // Bracket modifier (articulation/grace note) — must be checked BEFORE multi-rest,
+    // because [2] [3] etc. would otherwise collide with multi-rest's [N] regex.
+    // A bracket attached to a previous note (lastNote set) is always a modifier.
+    if (tok.startsWith('[') && tok.endsWith(']') && lastNote) {
       const inner = tok.slice(1, -1)
       if (SYM_TO_ARTIC[inner]) {
         lastNote.articulation = SYM_TO_ARTIC[inner]
@@ -508,6 +499,19 @@ export function parseFromText(
       }
       continue
     }
+
+    // Multi-rest [N] — only at measure start (no lastNote)
+    const mrm = tok.match(/^\[(\d+)\]$/)
+    if (mrm) {
+      if (current && current.length > 0) measures.push(current)
+      measures.push({ _multiRest: parseInt(mrm[1]) })
+      current = freshMeasure()
+      lastNote = null
+      continue
+    }
+
+    // Bracket token with no preceding note (and not a multi-rest digit) → orphan, ignore
+    if (tok.startsWith('[') && tok.endsWith(']')) continue
 
     if (tok === '(') {
       pendingSlurStart = true

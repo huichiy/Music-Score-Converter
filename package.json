@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "tsx scripts/test-roundtrip.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.4",
