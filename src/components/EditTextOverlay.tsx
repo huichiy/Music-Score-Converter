@@ -114,7 +114,6 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
   const [text, setText] = useState('')
   const [showGuide, setShowGuide] = useState(false)
   const [previewSvg, setPreviewSvg] = useState('')
-  const [previewError, setPreviewError] = useState(false)
   const [caretPos, setCaretPos] = useState(0)
   const [previewWidth, setPreviewWidth] = useState(540)
 
@@ -164,9 +163,8 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
         setPreviewSvg(svg)
         lastGoodSvg.current = svg
         positionsRef.current = parsed.positions
-        setPreviewError(false)
       } catch {
-        setPreviewError(true)
+        // Parser is tolerant and never throws in practice; if it does, keep the last good preview
       }
     }, 180)
     return () => clearTimeout(timer)
@@ -268,11 +266,6 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
       }}>
         <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--color-muted)', letterSpacing: '0.02em' }}>
           简谱 · Jianpu Notation
-          {previewError && (
-            <span style={{ marginLeft: '12px', color: '#c44', fontSize: '11px' }}>
-              · 语法待补全
-            </span>
-          )}
         </div>
 
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
