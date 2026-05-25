@@ -116,6 +116,15 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
   const [previewSvg, setPreviewSvg] = useState('')
   const [caretPos, setCaretPos] = useState(0)
   const [previewWidth, setPreviewWidth] = useState(540)
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 600px)').matches)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 600px)')
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
@@ -170,16 +179,20 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
     return () => clearTimeout(timer)
   }, [text, previewWidth, editTextVisible, currentKeyStr, originalTimeStr, originalTempoStr, originalTitleStr])
 
-  // Find which note the caret currently sits in
+  // Find which note the caret currently sits in. Returns either a regular note position
+  // (measureIdx >= 0) or a rest-measure position (restMeasureIdx defined) or null.
   const currentNote = useMemo(() => {
     const positions = positionsRef.current
-    // Primary: caret is INSIDE a token's range — show its highlight (or no highlight if unhighlightable)
+    // Primary: caret is INSIDE a token's range
     for (const p of positions) {
       if (caretPos >= p.start && caretPos <= p.end) {
-        return p.measureIdx < 0 ? null : p
+        // Highlightable note OR rest-measure token — both are returned
+        if (p.measureIdx >= 0) return p
+        if (p.restMeasureIdx !== undefined) return p
+        return null
       }
     }
-    // Fallback: caret is in whitespace between tokens — show last highlightable note
+    // Fallback: caret in whitespace between tokens — last highlightable note
     let best: NotePosition | null = null
     for (const p of positions) {
       if (p.measureIdx < 0) continue
@@ -194,9 +207,15 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
   useEffect(() => {
     if (!previewRef.current) return
     previewRef.current.querySelectorAll('.jn-note-current').forEach(el => el.classList.remove('jn-note-current'))
+    previewRef.current.querySelectorAll('.jn-rest-current').forEach(el => el.classList.remove('jn-rest-current'))
     if (currentNote) {
-      const el = previewRef.current.querySelector(`[data-m="${currentNote.measureIdx}"][data-n="${currentNote.noteIdx}"]`)
-      el?.classList.add('jn-note-current')
+      if (currentNote.measureIdx >= 0) {
+        const el = previewRef.current.querySelector(`[data-m="${currentNote.measureIdx}"][data-n="${currentNote.noteIdx}"]`)
+        el?.classList.add('jn-note-current')
+      } else if (currentNote.restMeasureIdx !== undefined) {
+        const g = previewRef.current.querySelector(`[data-rest-m="${currentNote.restMeasureIdx}"]`)
+        g?.classList.add('jn-rest-current')
+      }
     }
   }, [currentNote, previewSvg])
 
@@ -251,6 +270,7 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
       {/* Inline styles for highlight + SVG sizing */}
       <style>{`
         .jn-note-current { fill: var(--color-accent) !important; font-weight: 700; }
+        .jn-rest-current .jn-rest-rect { stroke: var(--color-accent); stroke-width: 1.2; stroke-dasharray: 3 2; opacity: 0.7; }
         .edit-preview svg { max-width: 100%; height: auto; display: block; }
       `}</style>
 
@@ -328,15 +348,17 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
             onKeyUp={() => textareaRef.current && setCaretPos(textareaRef.current.selectionStart)}
             autoFocus
             style={{
-              flex: '1 1 50%',
+              // On mobile, give the textarea slightly more room (60%) than the preview (40%)
+              // because composing is the active task; preview is for verification.
+              flex: isMobile ? '1 1 60%' : '1 1 50%',
               minHeight: 0,
-              padding: '24px 32px',
+              padding: isMobile ? '16px 18px' : '24px 32px',
               background: 'transparent',
               border: 'none',
               outline: 'none',
               color: 'var(--color-foreground)',
               fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-              fontSize: '14px',
+              fontSize: isMobile ? '13px' : '14px',
               lineHeight: '1.8',
               resize: 'none',
             }}
@@ -356,9 +378,9 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
             onClick={handlePreviewClick}
             className="edit-preview"
             style={{
-              flex: '1 1 50%',
+              flex: isMobile ? '1 1 40%' : '1 1 50%',
               minHeight: 0,
-              padding: '20px 32px',
+              padding: isMobile ? '12px 18px' : '20px 32px',
               overflow: 'auto',
               background: 'var(--color-surface)',
               cursor: 'default',
@@ -367,11 +389,18 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
           />
         </div>
 
-        {/* Right drawer — format reference */}
+        {/* Format-reference drawer — slides in from the right on desktop,
+            fullscreen overlay on mobile so it doesn't squeeze the workspace */}
         {showGuide && (
           <div style={{
-            width: '280px',
-            borderLeft: '1px solid var(--color-border)',
+            position: isMobile ? 'absolute' : 'static',
+            top: isMobile ? '48px' : undefined,    // sit below title bar
+            right: isMobile ? 0 : undefined,
+            bottom: isMobile ? 0 : undefined,
+            left: isMobile ? 0 : undefined,
+            zIndex: isMobile ? 51 : undefined,
+            width: isMobile ? 'auto' : '280px',
+            borderLeft: isMobile ? 'none' : '1px solid var(--color-border)',
             padding: '20px 18px',
             flexShrink: 0,
             overflowY: 'auto',

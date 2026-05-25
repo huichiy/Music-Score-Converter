@@ -327,9 +327,15 @@ export function renderJianpuSVG(
     if (isWholeMeasureRest) {
       const wmWidth = noteWidths['whole']
       const step = wmWidth / beatsPerMeasure
+      // Wrap the 4 rest "0"s in a <g> with data-rest-m so text-editor cursor sync
+      // can outline the whole group when caret is in the matching 0--- token.
+      svgElements.push(`<g class="jn-rest-group" data-rest-m="${i}">`)
       for (let b = 0; b < beatsPerMeasure; b++) {
         svgElements.push(`<text x="${currentX + b * step + 2}" y="${currentY}" font-family="Inter" font-size="18" fill="${svgColor}">0</text>`)
       }
+      // Invisible hit/highlight rect spanning the group — gets outlined when active.
+      svgElements.push(`<rect class="jn-rest-rect" x="${currentX - 2}" y="${currentY - 18}" width="${wmWidth}" height="26" fill="none" stroke="none" rx="3"/>`)
+      svgElements.push(`</g>`)
       currentX += wmWidth
       if (i === measures.length - 1) {
         renderBarline(svgElements, currentX, currentY, svgColor, true)

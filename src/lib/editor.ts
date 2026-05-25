@@ -216,7 +216,13 @@ export function serializeToText(
 // Parse (text → note objects)
 // ============================================================================
 
-export type NotePosition = { measureIdx: number; noteIdx: number; start: number; end: number }
+export type NotePosition = {
+  measureIdx: number    // renderer's origIdx for note (data-m), or -1 for unhighlightable individual notes (e.g. whole-rest)
+  noteIdx: number       // index within measure
+  start: number         // text offset of token start
+  end: number           // text offset of token end (inclusive)
+  restMeasureIdx?: number  // when this token lives inside a whole-rest measure, the array index of that measure (for data-rest-m highlight)
+}
 
 type Parsed = {
   measures: Measure[]
@@ -600,13 +606,21 @@ export function parseFromText(
   if (current && current.length > 0) measures.push(current)
 
   // Remap position.measureIdx from "array index" to "renderer origIdx" (data-m on SVG).
-  // For notes in whole-rest measures (no data-m in SVG), keep the position but mark
-  // with measureIdx = -1 so the cursor-sync logic shows "no highlight" instead of
-  // falling back to the previous note (which would be misleading).
+  // For notes in whole-rest measures (no per-note data-m, but their <g> wrapper has
+  // data-rest-m), set measureIdx = -1 AND record restMeasureIdx = array index so the
+  // cursor-sync logic can highlight the rest group instead of the previous note.
   const origIdxMap = computeOrigIdxMap(measures)
   const remappedPositions: NotePosition[] = positions.map(p => {
     const o = origIdxMap.get(p.measureIdx)
-    return { ...p, measureIdx: o === undefined ? -1 : o }
+    if (o !== undefined) return { ...p, measureIdx: o }
+    // No origIdx → this note is inside a whole-rest measure (or some other unhighlightable spot).
+    // Check if the original measure is a whole-rest; if so attach restMeasureIdx.
+    const arrayIdx = p.measureIdx
+    const m = measures[arrayIdx]
+    const isWholeRest = Array.isArray(m) && m.length === 1 && m[0].rest && m[0].type === 'whole'
+    return isWholeRest
+      ? { ...p, measureIdx: -1, restMeasureIdx: arrayIdx }
+      : { ...p, measureIdx: -1 }
   })
 
   return { measures, keyStr, timeStr, tempoStr, titleStr, positions: remappedPositions }
