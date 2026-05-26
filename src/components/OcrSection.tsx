@@ -2,6 +2,7 @@ import { useRef, useState, useCallback } from 'react'
 import { useScoreStore } from '@/store/scoreStore'
 import { useOcr } from '@/hooks/useOcr'
 import PdfPagePicker from './PdfPagePicker'
+import OcrSettings from './OcrSettings'
 
 interface OcrSectionProps {
   onOcrScore: (svgHtml: string) => void
@@ -16,6 +17,7 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
   const [isOpen, setIsOpen] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [pendingPdf, setPendingPdf] = useState<File | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const { handleOcrFile, runOcr, resetOcr } = useOcr()
 
@@ -73,14 +75,31 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
 
   return (
     <div style={sectionStyle} className="space-y-2">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between text-xs font-medium uppercase tracking-widest cursor-pointer"
-        style={{ color: 'var(--color-muted)', background: 'none', border: 'none', padding: 0 }}
-      >
-        <span>OCR 图片识别</span>
-        <span>{isOpen ? '▲' : '▼'}</span>
-      </button>
+      <div className="flex items-center justify-between gap-2">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex-1 flex items-center justify-between text-xs font-medium uppercase tracking-widest cursor-pointer"
+          style={{ color: 'var(--color-muted)', background: 'none', border: 'none', padding: 0 }}
+        >
+          <span>OCR 图片识别</span>
+          <span>{isOpen ? '▲' : '▼'}</span>
+        </button>
+        {isOpen && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setSettingsOpen(true) }}
+            title="OCR 设置 (BYOK)"
+            className="cursor-pointer"
+            style={{
+              fontSize: 10, padding: '2px 8px',
+              background: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 4, color: 'var(--color-muted)',
+            }}
+          >
+            ⚙ 模型
+          </button>
+        )}
+      </div>
 
       {isOpen && (
         <div className="space-y-3">
@@ -196,6 +215,8 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
         onSelect={handlePdfPageSelected}
         onCancel={() => setPendingPdf(null)}
       />
+
+      <OcrSettings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )
 }

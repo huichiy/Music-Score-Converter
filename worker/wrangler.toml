@@ -1,0 +1,15 @@
+name = "jianpu-ocr"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Secrets — set via:
+#   wrangler secret put GEMINI_API_KEY
+#   (optional) wrangler secret put ALLOWED_ORIGINS  # CSV of origins
+#
+# Then:
+#   wrangler deploy
+#
+# After deploy, the Worker URL will be printed (e.g.
+# https://jianpu-ocr.<your-subdomain>.workers.dev).
+# Add it to the app's .env.production as:
+#   VITE_OCR_WORKER_URL=https://jianpu-ocr.<your-subdomain>.workers.dev

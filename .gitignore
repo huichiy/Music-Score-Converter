@@ -22,4 +22,10 @@ dist/
 # Environment
 .env
 .env.local
+.env.production
 js/config.js
+
+# Cloudflare Wrangler (Worker tooling)
+worker/.wrangler/
+worker/node_modules/
+worker/dist/
