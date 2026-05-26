@@ -13,6 +13,10 @@ export default function App() {
   const mainContentRef = useRef<HTMLDivElement>(null)
   const scoreOutputRef = useRef<HTMLDivElement>(null)
   const [svgHtml, setSvgHtml] = useState('')
+  // Two-layer entry: landing pitches the project; clicking 开始使用 lifts user into the tool layer.
+  // Once in the tool layer we stay there even after Reset — going back to landing on every reset is jarring.
+  const [hasEnteredTool, setHasEnteredTool] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
 
   const store = useScoreStore()
   const { convert, transpose, loadSample, changePartAndRender, rerenderWithStore, loadFromText } = useFileHandler(mainContentRef)
@@ -40,6 +44,7 @@ export default function App() {
   }, [convert, store])
 
   const handleLoadSample = useCallback(async () => {
+    setHasEnteredTool(true)  // sample also enters tool layer
     store.setIsConverting(true)
     store.setErrorMsg('')
     try {
@@ -51,6 +56,10 @@ export default function App() {
       store.setIsConverting(false)
     }
   }, [loadSample, store])
+
+  const handleEnterTool = useCallback(() => {
+    setHasEnteredTool(true)
+  }, [])
 
   // ── Part change ───────────────────────────────────────────────
   const handlePartChange = useCallback(async (idx: number) => {
@@ -142,9 +151,25 @@ export default function App() {
   const isConverting = store.isConverting
   const errorMsg = store.errorMsg
 
+  // Tool-layer drag-and-drop: accept a dropped file anywhere on the main canvas
+  // (works whether or not a score is already loaded).
+  const handleMainDragOver = useCallback((e: React.DragEvent) => {
+    if (!hasEnteredTool) return
+    e.preventDefault()
+    setDragOver(true)
+  }, [hasEnteredTool])
+  const handleMainDragLeave = useCallback(() => setDragOver(false), [])
+  const handleMainDrop = useCallback((e: React.DragEvent) => {
+    if (!hasEnteredTool) return
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (file) handleFile(file)
+  }, [hasEnteredTool, handleFile])
+
   return (
     <div className="flex flex-col sm:flex-row h-screen overflow-hidden" style={{ background: 'var(--color-background)' }}>
-      {isConverted && (
+      {hasEnteredTool && (
         <Sidebar
           onFile={handleFile}
           onPartChange={handlePartChange}
@@ -160,8 +185,11 @@ export default function App() {
       {/* Main content */}
       <main
         ref={mainContentRef}
-        className="flex-1 flex flex-col min-w-0 overflow-hidden"
+        className="flex-1 flex flex-col min-w-0 overflow-hidden relative"
         style={{ background: 'var(--color-background)' }}
+        onDragOver={handleMainDragOver}
+        onDragLeave={handleMainDragLeave}
+        onDrop={handleMainDrop}
       >
         {isConverting && (
           <div
@@ -196,16 +224,38 @@ export default function App() {
           </div>
         )}
 
-        {!isConverted ? (
+        {/* Drop-target overlay — appears only when user is dragging a file over the main canvas */}
+        {hasEnteredTool && dragOver && (
+          <div
+            className="absolute inset-0 flex items-center justify-center z-40 pointer-events-none"
+            style={{
+              background: 'color-mix(in srgb, var(--color-accent) 10%, transparent)',
+              border: '2px dashed var(--color-accent)',
+              borderRadius: '12px',
+              margin: '12px',
+            }}
+          >
+            <div
+              className="px-6 py-4 rounded-lg text-sm font-medium"
+              style={{
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-accent)',
+                color: 'var(--color-accent)',
+              }}
+            >
+              松手即可上传
+            </div>
+          </div>
+        )}
+
+        {!hasEnteredTool ? (
           <LandingPage
+            onEnterTool={handleEnterTool}
             onLoadSample={handleLoadSample}
-            onFile={handleFile}
-            onOcrScore={handleOcrScore}
-            loadFromText={loadFromText}
             isDark={store.isDark}
             onThemeToggle={handleThemeToggle}
           />
-        ) : (
+        ) : isConverted ? (
           <>
             <Toolbar
               onEditModeA={handleEditModeAToggle}
@@ -220,6 +270,33 @@ export default function App() {
               />
             </div>
           </>
+        ) : (
+          // Empty tool state — user entered but hasn't converted anything yet.
+          // Sidebar is fully usable; this surface invites a drop or sidebar click.
+          <div className="flex-1 flex items-center justify-center px-6">
+            <div className="text-center" style={{ maxWidth: 380 }}>
+              <div
+                style={{
+                  fontSize: 38,
+                  marginBottom: 14,
+                  color: 'var(--color-muted)',
+                  fontFamily: "Georgia, 'Noto Serif SC', serif",
+                  letterSpacing: 6,
+                  userSelect: 'none',
+                }}
+              >
+                1 2 3
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-foreground)', marginBottom: 8 }}>
+                把乐谱拖到这里
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--color-muted)', lineHeight: 1.7 }}>
+                或在左侧选择文件 · 支持 MusicXML、MIDI、ABC
+                <br />
+                也可以扫一张简谱/五线谱图片
+              </div>
+            </div>
+          </div>
         )}
       </main>
 
