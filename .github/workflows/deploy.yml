@@ -28,6 +28,12 @@ jobs:
       - run: npm ci
 
       - run: npm run build
+        env:
+          # Cloudflare Worker that fronts our Gemini key. Set this secret in
+          # repo Settings → Secrets and variables → Actions.
+          # If unset, the app falls back to BYOK-only mode (still works, but
+          # users must provide their own API key in OCR Settings).
+          VITE_OCR_WORKER_URL: ${{ secrets.VITE_OCR_WORKER_URL }}
 
       - uses: actions/upload-pages-artifact@v3
         with:
