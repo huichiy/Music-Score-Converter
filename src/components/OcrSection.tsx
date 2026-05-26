@@ -1,17 +1,43 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useCallback } from 'react'
 import { useScoreStore } from '@/store/scoreStore'
 import { useOcr } from '@/hooks/useOcr'
+import PdfPagePicker from './PdfPagePicker'
 
 interface OcrSectionProps {
   onOcrScore: (svgHtml: string) => void
   loadFromText: (text: string) => string
 }
 
+function isPdf(file: File): boolean {
+  return file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+}
+
 export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [pendingPdf, setPendingPdf] = useState<File | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const { handleOcrFile, runOcr, resetOcr } = useOcr()
+
+  // Route incoming files: PDFs open the page picker; images go straight to OCR.
+  const routeFile = useCallback((file: File | null | undefined) => {
+    if (!file) return
+    if (isPdf(file)) {
+      if (file.size > 20 * 1024 * 1024) {
+        useScoreStore.getState().setOcrError('PDF 不能超过 20MB')
+        return
+      }
+      useScoreStore.getState().setOcrError('')
+      setPendingPdf(file)
+      return
+    }
+    handleOcrFile(file)
+  }, [handleOcrFile])
+
+  const handlePdfPageSelected = useCallback((img: File) => {
+    setPendingPdf(null)  // close picker
+    handleOcrFile(img)   // image takes the normal OCR path
+  }, [handleOcrFile])
 
   const ocrFile = useScoreStore((s) => s.ocrFile)
   const isOcrAnalyzing = useScoreStore((s) => s.isOcrAnalyzing)
@@ -23,11 +49,11 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
-    handleOcrFile(e.dataTransfer.files[0])
+    routeFile(e.dataTransfer.files[0])
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleOcrFile(e.target.files?.[0] ?? null)
+    routeFile(e.target.files?.[0] ?? null)
   }
 
   const handleUseAsScore = () => {
@@ -96,14 +122,14 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
             ) : (
               <div className="text-xs space-y-0.5" style={{ color: 'var(--color-muted)' }}>
                 <div>拖放图片或点击选择</div>
-                <div style={{ fontSize: '10px' }}>JPG · PNG · WebP</div>
+                <div style={{ fontSize: '10px' }}>JPG · PNG · WebP · PDF</div>
               </div>
             )}
           </div>
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,application/pdf,.pdf"
             className="hidden"
             onChange={handleInputChange}
             onClick={(e) => { (e.target as HTMLInputElement).value = '' }}
@@ -164,6 +190,12 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
           )}
         </div>
       )}
+
+      <PdfPagePicker
+        file={pendingPdf}
+        onSelect={handlePdfPageSelected}
+        onCancel={() => setPendingPdf(null)}
+      />
     </div>
   )
 }
