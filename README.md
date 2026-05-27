@@ -18,10 +18,6 @@
     <td><img src="docs/screenshots/07-text-editor-format-light.png" alt="Route B text editor with format reference" /></td>
     <td><img src="docs/screenshots/08-ocr-settings-light.png" alt="OCR settings panel" /></td>
   </tr>
-  <tr>
-    <td><img src="docs/screenshots/10-mobile-landing.png" alt="Mobile view" /></td>
-    <td><img src="docs/screenshots/06-text-editor-dark.png" alt="Text editor — dark theme" /></td>
-  </tr>
 </table>
 
 ---
@@ -309,10 +305,6 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
   <tr>
     <td><img src="docs/screenshots/07-text-editor-format-light.png" alt="Route B 文本编辑器（含格式说明）" /></td>
     <td><img src="docs/screenshots/08-ocr-settings-light.png" alt="OCR 设置面板" /></td>
-  </tr>
-  <tr>
-    <td><img src="docs/screenshots/10-mobile-landing.png" alt="移动端视图" /></td>
-    <td><img src="docs/screenshots/06-text-editor-dark.png" alt="文本编辑器 — 深色主题" /></td>
   </tr>
 </table>
 
