@@ -5,7 +5,24 @@
 
 **[🎼 Try the Live Demo](https://huichiy.github.io/Music-Score-Converter/)**
 
-![Demo Screenshot](docs/demo.png)
+<table>
+  <tr>
+    <td><img src="docs/screenshots/01-landing-light.png" alt="Landing page — light theme" /></td>
+    <td><img src="docs/screenshots/02-landing-dark.png" alt="Landing page — dark theme" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/04-tool-light.png" alt="Conversion tool — light theme" /></td>
+    <td><img src="docs/screenshots/05-tool-dark.png" alt="Conversion tool — dark theme" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/07-text-editor-format-light.png" alt="Route B text editor with format reference" /></td>
+    <td><img src="docs/screenshots/08-ocr-settings-light.png" alt="OCR settings panel" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/10-mobile-landing.png" alt="Mobile view" /></td>
+    <td><img src="docs/screenshots/06-text-editor-dark.png" alt="Text editor — dark theme" /></td>
+  </tr>
+</table>
 
 ---
 
@@ -40,8 +57,10 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | **Transposition** | Dropdown selector transposes the score to any target key — essential for 笛子 players switching instrument lengths |
 | **Click-to-Edit (Route A)** | Click any number in the rendered score to open a popup and change pitch, duration, accidental, or octave; re-renders instantly |
 | **Text Editor (Route B)** | Toolbar `≡` button opens a dedicated full-screen editor with a 番茄简谱-aligned text format, live preview underneath, and bidirectional cursor sync between text and rendered notes |
-| **Image OCR — Jianpu Recognition** | Upload a Jianpu image (`.jpg`, `.png`) — AI reads and transcribes the numbered notation (Beta) |
+| **PDF Input + Page Picker** | Drop a multi-page PDF into the OCR drop zone — page thumbnails appear, click any page to extract it as an image and feed the existing OCR pipeline |
+| **Image OCR — Jianpu Recognition** | Upload a Jianpu image (`.jpg`, `.png`, `.pdf`) — AI reads and transcribes the numbered notation (Beta) |
 | **Image OCR — Staff to Jianpu** | Upload a Western staff notation image — AI converts it to Jianpu text (Beta) |
+| **BYOK Multi-Provider OCR** | Default OCR runs Gemini 2.5 Flash via a Cloudflare Worker proxy (key stays on the Worker, never in the JS bundle). Power users can paste their own key for Gemini Pro, Claude 3.5 Sonnet, GPT-4o, Groq, or any OpenAI-compatible endpoint — keys live in browser `localStorage` only |
 | **SVG Score Rendering** | Output is a fully scalable SVG with correct measure layout, barlines, line wrapping, and multi-measure rest brackets |
 | **Multiple Export Formats** | `.PNG` and `.JPEG` via Canvas renderer |
 | **Try with Sample File** | One-click demo with a built-in sample score — no file upload needed to try the tool |
@@ -66,10 +85,13 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | [Radix UI](https://www.radix-ui.com/) | Accessible primitives (dialog, select, tooltip) |
 | [@tonejs/midi](https://github.com/Tonejs/Midi) | MIDI file parsing |
 | [JSZip](https://stuk.github.io/jszip/) | `.mxl` compressed file extraction |
-| [Groq API](https://groq.com/) | Vision AI for image OCR (Llama 4 Scout) |
+| [pdfjs-dist](https://github.com/mozilla/pdf.js/) | Render PDF pages to image for OCR (lazy-loaded) |
+| [Google Gemini](https://ai.google.dev/) | Vision AI for image OCR (default, via Worker proxy) |
+| [Anthropic Claude](https://www.anthropic.com/) · [OpenAI](https://openai.com/) · [Groq](https://groq.com/) | Optional BYOK vision providers |
+| [Cloudflare Workers](https://workers.cloudflare.com/) | Optional API-key proxy (~120 LoC, free tier) |
 | GitHub Pages | Hosting |
 
-All parsing, rendering, and export run **entirely client-side** — no backend, no file upload to any server.
+File parsing, rendering, transposition, and export run **entirely client-side**. OCR is the only network call — it goes either to a Cloudflare Worker proxy (default, key kept off the bundle) or directly to your chosen provider (BYOK).
 
 ---
 
@@ -78,7 +100,14 @@ All parsing, rendering, and export run **entirely client-side** — no backend, 
 ```
 Music-Score-Converter/
 ├── docs/
-│   └── JIANPU_FORMAT.md      — Route B text editor format spec
+│   ├── JIANPU_FORMAT.md          — Route B text editor format spec
+│   └── screenshots/              — README screenshots
+├── scripts/
+│   └── test-roundtrip.ts         — Route B serialize/parse round-trip tests
+├── worker/                       — Optional Cloudflare Worker (OCR proxy)
+│   ├── src/index.ts              — OpenAI-shape → Gemini translator
+│   ├── wrangler.toml
+│   └── README.md                 — Worker deploy guide
 ├── src/
 │   ├── components/
 │   │   ├── EditNotePopup.tsx     — Route A click-to-edit popup
@@ -87,27 +116,43 @@ Music-Score-Converter/
 │   │   ├── FileUpload.tsx        — Drag & drop / file picker
 │   │   ├── LandingPage.tsx       — Pre-conversion welcome screen
 │   │   ├── OcrSection.tsx        — AI image OCR panel
+│   │   ├── OcrSettings.tsx       — BYOK provider / model / API key modal
 │   │   ├── PartSelector.tsx      — Multi-part MusicXML selector
+│   │   ├── PdfPagePicker.tsx     — PDF thumbnail grid for picking a page
 │   │   ├── ScoreOutput.tsx       — Rendered SVG container
 │   │   ├── Sidebar.tsx           — Upload + options + export sidebar
 │   │   ├── Toolbar.tsx           — Top toolbar with editor entry points
 │   │   └── TransposeSelect.tsx   — Key transposition dropdown
 │   ├── hooks/
 │   │   ├── useFileHandler.ts     — File parsing + render orchestration
-│   │   └── useOcr.ts             — OCR API integration
+│   │   └── useOcr.ts             — OCR runner (delegates to vision adapter)
 │   ├── lib/
 │   │   ├── abcParser.ts          — ABC notation parser
 │   │   ├── editor.ts             — Route B text serialize / parse + position tracking
 │   │   ├── parser.ts             — MusicXML parser + pitch conversion + transposition
+│   │   ├── pdfTools.ts           — Lazy-loaded pdfjs wrapper
 │   │   ├── renderer.ts           — SVG layout engine
 │   │   ├── downloader.ts         — PNG / JPEG export
-│   │   └── utils.ts              — Shared helpers
+│   │   ├── utils.ts              — Shared helpers
+│   │   └── vision/               — Provider-agnostic OCR adapters
+│   │       ├── adapters/
+│   │       │   ├── gemini.ts     — Google Gemini direct
+│   │       │   ├── anthropic.ts  — Claude with browser-direct header
+│   │       │   ├── openai.ts     — GPT-4o
+│   │       │   ├── groq.ts       — Llama 4 Scout (legacy fallback)
+│   │       │   ├── custom.ts     — Any OpenAI-compatible endpoint
+│   │       │   └── openaiCompat.ts — Shared chat-completions helper
+│   │       ├── types.ts          — VisionAdapter interface + provider config
+│   │       ├── prompts.ts        — System / user prompts (shared across providers)
+│   │       ├── utils.ts          — base64, error unwrap
+│   │       └── index.ts          — Adapter factory + localStorage persistence
 │   ├── store/
 │   │   └── scoreStore.ts         — Zustand global state
 │   ├── types/
 │   │   └── score.ts              — Note / measure / chord type definitions
-│   ├── App.tsx
+│   ├── App.tsx                   — Two-layer landing/tool entry
 │   └── main.tsx
+├── .github/workflows/deploy.yml  — GitHub Pages auto-deploy (reads VITE_OCR_WORKER_URL)
 ├── index.html
 ├── package.json
 └── vite.config.ts
@@ -186,6 +231,23 @@ npm run build       # type-check + bundle into dist/
 npm run preview     # serve the built bundle locally
 ```
 
+To run the Route B round-trip tests:
+
+```bash
+npm run test
+```
+
+### Forking & deploying your own copy
+
+OCR will work in BYOK mode out of the box — users paste their own API key in OCR Settings. If you want OCR to "just work" without users configuring anything, deploy the included Cloudflare Worker (see [`worker/README.md`](worker/README.md)) and set:
+
+```bash
+# Build-time secret (GitHub Actions reads this from repo Settings → Secrets)
+VITE_OCR_WORKER_URL=https://your-worker.your-name.workers.dev
+```
+
+Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the app falls back to BYOK-only.
+
 ---
 
 ## Known Limitations
@@ -214,15 +276,20 @@ npm run preview     # serve the built bundle locally
 - [x] Mobile-optimised layout and touch interactions
 - [x] Transposition (转调) — dropdown selector
 - [x] ABC Notation (.abc) input support
-- [x] Image OCR — Jianpu image transcription (Beta, Groq Llama 4 Vision)
-- [x] Image OCR — Western staff notation → Jianpu (Beta)
+- [x] Image OCR — Jianpu / staff-notation image transcription (Beta)
 - [x] Route A click-to-edit popup editor
-- [x] Route B text editor with live preview + bidirectional cursor sync
+- [x] Route B text editor — 番茄简谱-aligned syntax, live preview, bidirectional cursor sync, mobile responsive
+- [x] Landing page / tool layer separation
+- [x] PDF input + page picker (lazy-loaded pdfjs)
+- [x] BYOK multi-provider OCR — Gemini / Claude / GPT-4o / Groq / custom OpenAI-compatible
+- [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with key off the bundle
+- [ ] Phase 3 OCR: box-select UI for picking one instrument out of a 总谱 (full score) PDF
 - [ ] Playback (Tone.js) — hear the score as it's converted
 - [ ] Volta / 跳房子 (first / second time endings)
 - [ ] Tuplets — triplets, quintuplets, etc.
 - [ ] Flute-specific ornaments — 颤音 / 波音 / 叠音 / 打音 / 花舌
 - [ ] Multi-voice rendering — duet parts side by side
+- [ ] Route C: OCR text → Jianpu parser → SVG (close the loop so OCR output renders inline)
 
 ---
 
@@ -230,7 +297,24 @@ npm run preview     # serve the built bundle locally
 
 **[🎼 在线体验](https://huichiy.github.io/Music-Score-Converter/)**
 
-![Demo Screenshot](docs/demo.png)
+<table>
+  <tr>
+    <td><img src="docs/screenshots/01-landing-light.png" alt="首页 — 浅色主题" /></td>
+    <td><img src="docs/screenshots/02-landing-dark.png" alt="首页 — 深色主题" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/04-tool-light.png" alt="转换工具 — 浅色主题" /></td>
+    <td><img src="docs/screenshots/05-tool-dark.png" alt="转换工具 — 深色主题" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/07-text-editor-format-light.png" alt="Route B 文本编辑器（含格式说明）" /></td>
+    <td><img src="docs/screenshots/08-ocr-settings-light.png" alt="OCR 设置面板" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/10-mobile-landing.png" alt="移动端视图" /></td>
+    <td><img src="docs/screenshots/06-text-editor-dark.png" alt="文本编辑器 — 深色主题" /></td>
+  </tr>
+</table>
 
 ---
 
@@ -265,8 +349,10 @@ npm run preview     # serve the built bundle locally
 | **转调** | 下拉菜单一键转到目标调——笛子换调必备 |
 | **点击编辑（Route A）** | 点击渲染谱面上任何数字，弹出 popup 改音高 / 时值 / 升降号 / 八度 |
 | **文本编辑器（Route B）** | 工具栏 `≡` 按钮打开全屏编辑器：上下分栏，文本在上，实时预览在下，光标双向同步；格式说明可侧滑抽屉显示。文本格式对齐番茄简谱约定 |
-| **图片识别 — 简谱识别** | 上传简谱图片，AI 自动转录（Beta）|
+| **PDF 输入 + 页面选择器** | 把多页 PDF 拖进 OCR 区，弹出页面缩略图网格，点任一页即提取为图片送 OCR |
+| **图片识别 — 简谱识别** | 上传简谱图片（JPG / PNG / PDF），AI 自动转录（Beta）|
 | **图片识别 — 五线谱转简谱** | 上传五线谱图片，AI 自动转换（Beta）|
+| **BYOK 多模型 OCR** | 默认走 Cloudflare Worker 代理 Gemini 2.5 Flash（key 在 Worker 里，不进 bundle）。进阶用户可在「OCR 设置」里粘自己的 key，切换 Gemini Pro / Claude 3.5 Sonnet / GPT-4o / Groq / 任意 OpenAI 兼容端点。Key 只存浏览器 localStorage |
 | **SVG 乐谱渲染** | 输出可缩放 SVG，自动换行、多小节休止括号 |
 | **多格式导出** | `.PNG` 与 `.JPEG`（Canvas 渲染） |
 | **内置示例试用** | 一键加载示例乐谱 |
@@ -291,10 +377,13 @@ npm run preview     # serve the built bundle locally
 | Radix UI | 无障碍组件原语 |
 | @tonejs/midi | MIDI 解析 |
 | JSZip | `.mxl` 解压 |
-| Groq API | 视觉 AI（Llama 4 Scout）|
+| pdfjs-dist | PDF 页面渲染为图片（懒加载）|
+| Google Gemini | 视觉 OCR（默认，经 Worker 代理）|
+| Claude / OpenAI / Groq | BYOK 备选视觉模型 |
+| Cloudflare Workers | 可选的 API key 代理（~120 行，免费层）|
 | GitHub Pages | 部署 |
 
-所有解析、渲染、导出**全部在浏览器端完成**，无后端、不上传文件。
+文件解析、渲染、转调、导出**全部在浏览器端完成**。唯一会触发网络请求的是 OCR——默认走 Cloudflare Worker 代理（key 在 Worker 里），或者直接调用你 BYOK 的提供商。
 
 ---
 
@@ -345,6 +434,23 @@ npm run build       # 类型检查 + 打包到 dist/
 npm run preview     # 本地预览生产 bundle
 ```
 
+跑 Route B round-trip 测试：
+
+```bash
+npm run test
+```
+
+### Fork 后部署到自己的域名
+
+OCR 默认就支持 BYOK——用户在「OCR 设置」里填自己的 key 即可。如果你想让 OCR **不需要用户配置**就能用，可以部署仓库里附带的 Cloudflare Worker（见 [`worker/README.md`](worker/README.md)）然后配 build secret：
+
+```bash
+# 在 GitHub repo Settings → Secrets and variables → Actions 里加
+VITE_OCR_WORKER_URL=https://你的-worker.你的名字.workers.dev
+```
+
+没设的话，「默认」按钮会被禁用，只能走 BYOK 路径。
+
 ---
 
 ### 已知限制
@@ -373,15 +479,20 @@ npm run preview     # 本地预览生产 bundle
 - [x] 移动端布局优化
 - [x] 转调
 - [x] ABC Notation 输入
-- [x] 图片识别 — 简谱图片转录（Beta）
-- [x] 图片识别 — 五线谱图片转简谱（Beta）
+- [x] 图片识别 — 简谱 / 五线谱图片转录（Beta）
 - [x] Route A 点击式编辑器
-- [x] Route B 文本编辑器（实时预览 + 光标双向同步）
+- [x] Route B 文本编辑器 — 番茄式语法、实时预览、光标双向同步、移动端响应式
+- [x] Landing / 工具两层分离
+- [x] PDF 输入 + 页面选择器（pdfjs 懒加载）
+- [x] BYOK 多模型 OCR — Gemini / Claude / GPT-4o / Groq / Custom
+- [x] Cloudflare Worker 代理 — 默认走 Gemini 2.5 Flash，key 不进 bundle
+- [ ] Phase 3 OCR：总谱框选 UI，挑一行（如笛子）单独识别
 - [ ] Playback 播放（Tone.js）
 - [ ] 跳房子（volta）
 - [ ] 三连音 / 多连音
 - [ ] 笛子专属技巧（颤音 / 波音 / 叠音 / 打音 / 花舌）
 - [ ] 多声部并排渲染
+- [ ] Route C：OCR 文本 → Jianpu parser → SVG 闭环渲染
 
 ---
 
