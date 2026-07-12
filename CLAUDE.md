@@ -21,7 +21,7 @@ npm run preview    # serve the built bundle
 npm run test       # run scripts/test-roundtrip.ts (Route B serialize/parse coverage, 33 assertions)
 ```
 
-- `npm run test` shells out to `tsx`, which is **not** in devDependencies. If it fails with `tsx: command not found`, run `npx -y tsx scripts/test-roundtrip.ts` instead (verified working, 33/33 pass).
+- `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`.
 - `node scripts/screenshots.mjs` regenerates the README/docs screenshots via Playwright — the dev server must already be running on port 7790 (`npm run dev -- --port 7790`).
 - Imports use the `@/` alias → `src/` (defined in `vite.config.ts`); follow it in new files.
 - Vite `base` is `/Music-Score-Converter/` in production builds (GitHub Pages subpath) and `/` in dev.
