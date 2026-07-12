@@ -271,6 +271,55 @@ describe('Title round-trip', () => {
   assertEq('tempo', parsed.tempoStr, '120')
 })
 
+describe('Cross-barline tie round-trip', () => {
+  const input: Measure[] = [
+    measure([note({ degree: 1, type: 'whole' })]),
+    measure([note({ degree: 1, tie: true, type: 'whole' })]),
+    measure([note({ degree: 2 }), note({ degree: 3 }), note({ degree: 4 }), note({ degree: 5 })]),
+  ]
+  const { measures: out, text } = roundTrip(input)
+  console.log(`  text: ${text.split('\n').slice(1).join(' ')}`)
+  assertEq('measure count preserved', out.length, 3)
+  assertEq('tie measure', asNotes(out[1]), asNotes(input[1]))
+  assertEq('following measure intact', asNotes(out[2]), asNotes(input[2]))
+})
+
+describe('Rest extension via standalone dashes', () => {
+  const parsed = parseFromText('Key: C   Time: 4/4\n| 0 - - - | 1 2 3 4 ||')
+  const m0 = parsed.measures[0] as MeasureArray
+  assertEq('single rest in measure', m0.length, 1)
+  assertEq('rest extended to whole', { rest: m0[0].rest, type: m0[0].type, dot: m0[0].dot }, { rest: true, type: 'whole', dot: false })
+})
+
+describe('Chord notes (double stops) round-trip', () => {
+  const input: Measure[] = [
+    measure([
+      note({ degree: 5, chordNotes: [{ degree: 3, octave: 0, accidental: '' }] }),
+      note({ degree: 6, type: 'half', chordNotes: [{ degree: 4, octave: -1, accidental: '#' }, { degree: 1, octave: 0, accidental: '' }] }),
+      note({ degree: 1 }),
+    ]),
+  ]
+  const { measures: out, text } = roundTrip(input)
+  console.log(`  text: ${text.split('\n').slice(1).join(' ')}`)
+  assertEq('text contains 5:3', text.includes('5:3'), true)
+  assertEq('chord measure', asNotes(out[0]), asNotes(input[0]))
+})
+
+describe('32nd notes round-trip', () => {
+  const input: Measure[] = [
+    measure([
+      note({ degree: 1, type: '32nd' }),
+      note({ degree: 2, type: '32nd', dot: true }),
+      note({ degree: 3, type: '16th', dot: true }),
+      note({ degree: 4, type: 'half', dot: true }),
+    ]),
+  ]
+  const { measures: out, text } = roundTrip(input)
+  console.log(`  text: ${text.split('\n').slice(1).join(' ')}`)
+  assertEq('text contains ///', text.includes('///'), true)
+  assertEq('32nd measure', asNotes(out[0]), asNotes(input[0]))
+})
+
 // ============================================================================
 
 console.log(`\n${'='.repeat(50)}`)

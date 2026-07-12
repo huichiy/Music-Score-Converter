@@ -1,4 +1,4 @@
-import type { Articulation, GraceNote, Measure, MeasureArray, NoteObject } from '@/types/score'
+import type { Articulation, ChordNote, GraceNote, Measure, MeasureArray, NoteObject } from '@/types/score'
 
 // Compute renderer's origIdx for each measure index in the parsed array.
 // Mirrors collapseRestRuns + the per-measure origIdx incrementing in renderer.ts.
@@ -66,7 +66,8 @@ function durationSuffix(type: NoteObject['type'], dot: boolean): string {
   // Dotted whole (6 beats) doesn't fit in standard meters — fall back to whole
   if (type === 'whole') return '---'
   if (type === 'eighth') return dot ? './' : '/'
-  if (type === '16th' || type === '32nd') return dot ? './/' : '//'
+  if (type === '16th') return dot ? './/' : '//'
+  if (type === '32nd') return dot ? './//' : '///'
   return ''
 }
 
@@ -88,7 +89,9 @@ function graceNoteToText(g: GraceNote): string {
 }
 
 function serializeNote(note: NoteObject): string {
-  if (note.tie) return '-'
+  // Tie continuation: one dash per beat so the duration survives round-trip
+  // (parse rebuilds the tie note from the dash count at measure start)
+  if (note.tie) return '-'.repeat(Math.max(1, Math.round(durationBeats(note.type, note.dot))))
 
   let tok = ''
   if (!note.rest) {
@@ -96,7 +99,18 @@ function serializeNote(note: NoteObject): string {
     else if (note.accidental === 'b') tok += 'b'
   }
   tok += note.rest ? '0' : note.degree.toString()
-  if (!note.rest) tok += octaveSuffix(note.octave)
+  if (!note.rest) {
+    tok += octaveSuffix(note.octave)
+    // Chord notes (double stops): 5:3, 6:#4,:1 — duration suffix applies to the whole chord
+    if (note.chordNotes) {
+      for (const cn of note.chordNotes) {
+        tok += ':'
+        if (cn.accidental === '#') tok += '#'
+        else if (cn.accidental === 'b') tok += 'b'
+        tok += cn.degree.toString() + octaveSuffix(cn.octave)
+      }
+    }
+  }
   tok += durationSuffix(note.type, note.dot)
 
   // Grace note bracket (e.g. 1[2])
@@ -248,6 +262,8 @@ function parseDurationSuffix(suffix: string): { type: NoteObject['type']; dot: b
   if (suffix === './') return { type: 'eighth', dot: true }
   if (suffix === '//') return { type: '16th', dot: false }
   if (suffix === './/') return { type: '16th', dot: true }
+  if (suffix === '///') return { type: '32nd', dot: false }
+  if (suffix === './//') return { type: '32nd', dot: true }
   return { type: 'quarter', dot: false }
 }
 
@@ -266,21 +282,22 @@ function beatsToType(b: number): { type: NoteObject['type']; dot: boolean } {
   if (b >= 0.75) return { type: 'quarter', dot: false }
   if (b >= 0.6) return { type: 'eighth', dot: true }
   if (b >= 0.35) return { type: 'eighth', dot: false }
-  return { type: '16th', dot: false }
+  if (b >= 0.2) return { type: '16th', dot: false }
+  return { type: '32nd', dot: false }
+}
+
+function octaveFromMarks(marks: string | undefined): number {
+  if (!marks) return 0
+  return marks[0] === "'" ? marks.length : -marks.length
 }
 
 function parseGraceNoteText(s: string): GraceNote | null {
   const m = s.match(/^([#b])?([1-7])('+|,+)?$/)
   if (!m) return null
-  let oct = 0
-  if (m[3]) {
-    if (m[3][0] === "'") oct = m[3].length
-    else oct = -m[3].length
-  }
   return {
     accidental: (m[1] as '#' | 'b') || '',
     degree: parseInt(m[2]),
-    octave: oct,
+    octave: octaveFromMarks(m[3]),
   }
 }
 
@@ -346,9 +363,19 @@ function tokenize(text: string, offset: number = 0): TokenWithPos[] {
       continue
     }
 
-    // Note/extension token — read until whitespace or special char
+    // Note/extension token — read until whitespace or special char.
+    // ':' stays inside the token only as a chord joiner (next char is #, b, or a degree),
+    // so `5:3` is one token but `5 :| ` still tokenizes the repeat-end barline.
     let j = i
-    while (j < text.length && !/[\s|:()<>!&\[\]]/.test(text[j])) j++
+    while (j < text.length) {
+      const c = text[j]
+      if (/[\s|()<>!&\[\]]/.test(c)) break
+      if (c === ':') {
+        if (/[#b1-7]/.test(text[j + 1] || '')) { j++; continue }
+        break
+      }
+      j++
+    }
     if (j === i) { i++; continue }
     push(text.slice(i, j), i, j)
     i = j
@@ -428,6 +455,9 @@ export function parseFromText(
   const positions: NotePosition[] = []
   let current: MeasureArray | null = null
   let lastNote: NoteObject | null = null
+  // Last pitched note across measure boundaries — source for tie continuations
+  // (flushMeasure resets lastNote, but a tie needs the previous measure's pitch)
+  let lastRealNote: NoteObject | null = null
   let lastNotePos: { measureIdx: number; noteIdx: number } | null = null
   let pendingRepeatStart = false
   let pendingDynamic = ''
@@ -556,7 +586,8 @@ export function parseFromText(
 
     // Extension token (standalone dashes)
     if (/^-+$/.test(tok)) {
-      if (lastNote && !lastNote.rest) {
+      if (lastNote) {
+        // Extend the previous note or rest by one beat per dash
         const curBeats = durationBeats(lastNote.type, lastNote.dot)
         const newBeats = curBeats + tok.length
         const { type, dot } = beatsToType(newBeats)
@@ -569,25 +600,67 @@ export function parseFromText(
             lastPos.end = end
           }
         }
+      } else {
+        // Dash(es) at measure start = tie continuation of the previous measure's
+        // last pitched note, one beat per dash
+        const src = lastRealNote
+        const { type, dot } = beatsToType(tok.length)
+        const note = emptyNote(src?.degree ?? 1, src?.octave ?? 0, src?.accidental ?? '', type, dot, false)
+        note.tie = true
+        const measureIdx = measures.length
+        const noteIdx = current.length
+        current.push(note)
+        lastNote = note
+        lastRealNote = note
+        lastNotePos = { measureIdx, noteIdx }
+        positions.push({ measureIdx, noteIdx, start, end })
       }
       continue
     }
 
     // Regular note token: [#/b]?digit(octave)?(duration)?
-    const noteMatch = tok.match(/^([#b])?([0-7])('+|,+)?(.*)$/)
-    if (!noteMatch) continue
-    const acc = (noteMatch[1] as '#' | 'b') || ''
-    const deg = parseInt(noteMatch[2])
-    const isRest = deg === 0
+    // Chord variant (double stops): ':'-joined notes, duration at token end — 5:3, 6:#4,:1-
+    let acc: '#' | 'b' | '' = ''
+    let deg = -1
     let oct = 0
-    if (noteMatch[3]) {
-      if (noteMatch[3][0] === "'") oct = noteMatch[3].length
-      else oct = -noteMatch[3].length
+    let suffix = ''
+    let chordNotes: ChordNote[] | undefined
+
+    if (tok.includes(':')) {
+      const mainM = tok.split(':')[0].match(/^([#b])?([1-7])('+|,+)?$/)
+      const parts = tok.split(':')
+      if (mainM) {
+        const cns: ChordNote[] = []
+        let ok = true
+        for (let pi = 1; pi < parts.length; pi++) {
+          const isLast = pi === parts.length - 1
+          const cm = parts[pi].match(/^([#b])?([1-7])('+|,+)?(.*)$/)
+          if (!cm || (!isLast && cm[4])) { ok = false; break }
+          cns.push({ accidental: (cm[1] as '#' | 'b') || '', degree: parseInt(cm[2]), octave: octaveFromMarks(cm[3]) })
+          if (isLast) suffix = cm[4] || ''
+        }
+        if (ok) {
+          acc = (mainM[1] as '#' | 'b') || ''
+          deg = parseInt(mainM[2])
+          oct = octaveFromMarks(mainM[3])
+          chordNotes = cns
+        }
+      }
+      if (deg === -1) continue // malformed chord token → ignore
+    } else {
+      const noteMatch = tok.match(/^([#b])?([0-7])('+|,+)?(.*)$/)
+      if (!noteMatch) continue
+      acc = (noteMatch[1] as '#' | 'b') || ''
+      deg = parseInt(noteMatch[2])
+      oct = octaveFromMarks(noteMatch[3])
+      suffix = noteMatch[4] || ''
     }
-    const suffix = noteMatch[4] || ''
+
+    const isRest = deg === 0
     const { type, dot } = parseDurationSuffix(suffix)
 
     const note = emptyNote(deg, oct, acc, type, dot, isRest)
+    if (chordNotes && chordNotes.length > 0) note.chordNotes = chordNotes
     if (pendingSlurStart && !isRest) {
       note.slurStart = true
       pendingSlurStart = false
@@ -599,6 +672,7 @@ export function parseFromText(
     const noteIdx = current.length
     current.push(note)
     lastNote = note
+    if (!isRest) lastRealNote = note
     lastNotePos = { measureIdx, noteIdx }
     positions.push({ measureIdx, noteIdx, start, end })
   }

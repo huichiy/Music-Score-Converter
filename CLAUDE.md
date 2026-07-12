@@ -18,7 +18,7 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # run scripts/test-roundtrip.ts (Route B serialize/parse coverage, 33 assertions)
+npm run test       # run scripts/test-roundtrip.ts (Route B serialize/parse coverage, 42 assertions)
 ```
 
 - `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`.
@@ -339,6 +339,7 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] Route A click-to-edit popup
 - [x] Route B text editor (toolbar `≡`)
 - [x] Route B format v2 — 番茄式 syntax (`1/` `1.` `1-`), dynamics `&mf`, hairpins `<>!`, repeats `|: :|`, Fine/D.C./D.S., slurs `()`, articulations `1[>]`, grace notes `1[2]` — all round-trip
+- [x] Route B format v2.1 — chords/double stops `5:3`, 32nd notes `1///`, cross-barline ties (measure-start `-` per beat), rest extension `0 - - -`
 - [x] Route B live preview + bidirectional cursor sync
 - [x] Landing/tool layer split (LandingPage is intro-only; CTA enters tool)
 - [x] Mobile responsive (sidebar collapse + EditTextOverlay drawer overlay)
@@ -346,7 +347,7 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] PDF input + page picker (lazy pdfjs-dist)
 - [x] BYOK multi-provider OCR — Gemini / Anthropic / OpenAI / Groq / Custom (OpenAI-compatible)
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with the key off the bundle
-- [x] Round-trip test suite (`npm run test`, 33 assertions)
+- [x] Round-trip test suite (`npm run test`, 42 assertions)
 
 ### Pending
 - [ ] Phase 3 OCR: box-select UI to extract one instrument from a 总谱 PDF
