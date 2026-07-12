@@ -6,6 +6,7 @@
 // fields we care about (ignoring undefined/null defaults).
 
 import { serializeToText, parseFromText } from '../src/lib/editor'
+import { renderJianpuSVG } from '../src/lib/renderer'
 import type { Measure, MeasureArray, NoteObject } from '../src/types/score'
 
 let pass = 0
@@ -318,6 +319,28 @@ describe('32nd notes round-trip', () => {
   console.log(`  text: ${text.split('\n').slice(1).join(' ')}`)
   assertEq('text contains ///', text.includes('///'), true)
   assertEq('32nd measure', asNotes(out[0]), asNotes(input[0]))
+})
+
+describe('Renderer: chord octave dot must not collide with next chord note', () => {
+  // 6:#4,:1 — the #4 (low octave) sits above the 1; its below-dot needs
+  // to land in the gap between the two digits, not on top of the 1
+  const input: Measure[] = [
+    measure([
+      note({ degree: 6, chordNotes: [{ degree: 4, octave: -1, accidental: '#' }, { degree: 1, octave: 0, accidental: '' }] }),
+      note({ degree: 1 }), note({ degree: 2 }), note({ degree: 3 }),
+    ]),
+  ]
+  const svg = renderJianpuSVG(input, 'C', '4/4', 'T', 800, '', false)
+  const chordDigits = [...svg.matchAll(/<text x="[\d.-]+" y="([\d.-]+)"[^>]*font-size="16"[^>]*>(\d)<\/text>/g)]
+    .map(m => ({ y: parseFloat(m[1]), digit: m[2] }))
+  const dots = [...svg.matchAll(/<circle cx="[\d.-]+" cy="([\d.-]+)" r="1.5"/g)].map(m => parseFloat(m[1]))
+  assertEq('two chord digits rendered', chordDigits.length, 2)
+  assertEq('one octave dot rendered', dots.length, 1)
+  const y4 = chordDigits.find(d => d.digit === '4')!.y
+  const y1 = chordDigits.find(d => d.digit === '1')!.y
+  const dotCy = dots[0]
+  assertEq('dot below the #4 digit', dotCy > y4, true)
+  assertEq('dot clear of the 1 digit (above its glyph top)', dotCy < y1 - 12, true)
 })
 
 // ============================================================================

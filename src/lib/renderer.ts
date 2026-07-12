@@ -210,8 +210,13 @@ function renderNote(
   }
 
   if (note.chordNotes && note.chordNotes.length > 0) {
-    note.chordNotes.forEach((cn, idx) => {
-      const chordY = currentY + (idx + 1) * 16
+    // Rows are 16px apart; octave dots need extra 6px per dot so they land in
+    // the gap between digits instead of on the neighbouring chord note
+    let chordY = currentY
+    for (const cn of note.chordNotes) {
+      const aboveDots = cn.octave >= 2 ? 2 : cn.octave >= 1 ? 1 : 0
+      const belowDots = cn.octave <= -2 ? 2 : cn.octave <= -1 ? 1 : 0
+      chordY += 16 + aboveDots * 6
       let chordXOffset = 2
       if (cn.accidental) {
         els.push(`<text x="${currentX}" y="${chordY - 6}" font-family="Inter" font-size="9" fill="${color}">${cn.accidental}</text>`)
@@ -219,11 +224,12 @@ function renderNote(
       }
       els.push(`<text x="${currentX + chordXOffset}" y="${chordY}" font-family="Inter" font-size="16" fill="${color}">${cn.degree}</text>`)
       const dotCx = currentX + chordXOffset + 5
-      if (cn.octave >= 1) els.push(`<circle cx="${dotCx}" cy="${chordY - 16}" r="1.5" fill="${color}"/>`)
-      if (cn.octave >= 2) els.push(`<circle cx="${dotCx}" cy="${chordY - 22}" r="1.5" fill="${color}"/>`)
-      if (cn.octave <= -1) els.push(`<circle cx="${dotCx}" cy="${chordY + 8}" r="1.5" fill="${color}"/>`)
-      if (cn.octave <= -2) els.push(`<circle cx="${dotCx}" cy="${chordY + 14}" r="1.5" fill="${color}"/>`)
-    })
+      if (cn.octave >= 1) els.push(`<circle cx="${dotCx}" cy="${chordY - 14}" r="1.5" fill="${color}"/>`)
+      if (cn.octave >= 2) els.push(`<circle cx="${dotCx}" cy="${chordY - 20}" r="1.5" fill="${color}"/>`)
+      if (cn.octave <= -1) els.push(`<circle cx="${dotCx}" cy="${chordY + 6}" r="1.5" fill="${color}"/>`)
+      if (cn.octave <= -2) els.push(`<circle cx="${dotCx}" cy="${chordY + 12}" r="1.5" fill="${color}"/>`)
+      chordY += belowDots * 6
+    }
   }
   return numXOffset
 }

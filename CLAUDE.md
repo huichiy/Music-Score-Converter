@@ -18,7 +18,7 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # run scripts/test-roundtrip.ts (Route B serialize/parse coverage, 42 assertions)
+npm run test       # run scripts/test-roundtrip.ts (Route B serialize/parse + renderer coverage, 46 assertions)
 ```
 
 - `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`.
@@ -175,6 +175,7 @@ Pre-compute cumulative beat positions per measure. Only connect beaming underlin
 ### Octave dots
 - Above: `octave === 1` → one dot, `octave === 2` → two dots
 - Below: fixed baseline `currentY + 10`, `octave === -1` → one dot, `octave === -2` → two dots
+- Chord notes: rows are 16px apart + **6px per octave dot** (above dots push the row down, below dots push the next row down) — without this the dots land on the neighbouring chord digit
 
 ### Repeat signs
 - `_repeatStart`: thick + thin line + two dots, advances `currentX` by 12px. Record `measureStartX` **before** this block.
@@ -347,7 +348,7 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] PDF input + page picker (lazy pdfjs-dist)
 - [x] BYOK multi-provider OCR — Gemini / Anthropic / OpenAI / Groq / Custom (OpenAI-compatible)
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with the key off the bundle
-- [x] Round-trip test suite (`npm run test`, 42 assertions)
+- [x] Round-trip test suite (`npm run test`, 46 assertions)
 
 ### Pending
 - [ ] Phase 3 OCR: box-select UI to extract one instrument from a 总谱 PDF
