@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Jianpu Converter — Claude Knowledge Base (English)
 
 ## Project Overview
@@ -14,10 +18,15 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # run scripts/test-roundtrip.ts (Route B serialize/parse coverage)
+npm run test       # run scripts/test-roundtrip.ts (Route B serialize/parse coverage, 33 assertions)
 ```
 
-OCR keys: the app reads `VITE_OCR_WORKER_URL` at build time (the Cloudflare Worker URL). Users can also paste a personal API key in the "OCR 设置" modal (BYOK, stored in `localStorage`). Neither path embeds keys in the bundle.
+- `npm run test` shells out to `tsx`, which is **not** in devDependencies. If it fails with `tsx: command not found`, run `npx -y tsx scripts/test-roundtrip.ts` instead (verified working, 33/33 pass).
+- `node scripts/screenshots.mjs` regenerates the README/docs screenshots via Playwright — the dev server must already be running on port 7790 (`npm run dev -- --port 7790`).
+- Imports use the `@/` alias → `src/` (defined in `vite.config.ts`); follow it in new files.
+- Vite `base` is `/Music-Score-Converter/` in production builds (GitHub Pages subpath) and `/` in dev.
+
+OCR keys: the app reads `VITE_OCR_WORKER_URL` at build time (the Cloudflare Worker URL). Users can also paste a personal API key in the "OCR 设置" modal (BYOK, stored in `localStorage` under `jianpu.ocr.config.v1`, see `OCR_CONFIG_KEY` in `src/lib/vision/types.ts`). Neither path embeds keys in the bundle.
 
 ---
 
@@ -26,6 +35,7 @@ OCR keys: the app reads `VITE_OCR_WORKER_URL` at build time (the Cloudflare Work
 Music-Score-Converter/
 ├── docs/JIANPU_FORMAT.md            — Route B text editor format spec
 ├── scripts/test-roundtrip.ts        — Route B round-trip tests (npm run test)
+├── scripts/screenshots.mjs          — README screenshot capture (Playwright, dev server on :7790)
 ├── worker/                          — Optional Cloudflare Worker (OCR proxy)
 │   ├── src/index.ts                 — OpenAI-shape → Gemini translator
 │   ├── wrangler.toml
@@ -59,6 +69,8 @@ Music-Score-Converter/
 │   │       └── adapters/{gemini,anthropic,openai,groq,custom,openaiCompat}.ts
 │   ├── store/scoreStore.ts          — Zustand global state
 │   └── types/score.ts               — NoteObject, MeasureArray, ChordNote, Articulation, GraceNote
+├── js/                              — LEGACY pre-React vanilla app (tracked for history, NOT built or served — src/ is truth; js/config.js is gitignored)
+├── tests/                           — Manual test fixtures: test_scale.mid, test_score.mxl
 ├── .github/workflows/deploy.yml     — Pages auto-deploy, injects VITE_OCR_WORKER_URL
 ├── index.html
 ├── package.json
@@ -152,7 +164,7 @@ Strict check: `measure.length === 1 && measure[0].rest && measure[0].type === "w
 - Mixed-rest measures (partial rests) go through normal note rendering
 
 ### Multi-measure rest collapsing
-`collapseRestRuns()` in renderer.js — collapses 2+ consecutive whole-measure rests into `{ _multiRest: N }` bracket block. Uses the same strict check above.
+`collapseRestRuns()` in `src/lib/renderer.ts` — collapses 2+ consecutive whole-measure rests into `{ _multiRest: N }` bracket block. Uses the same strict check above.
 
 ### Beat-boundary beaming
 Pre-compute cumulative beat positions per measure. Only connect beaming underlines when adjacent notes are in the same beat group (`Math.floor(cumulative[j] / beatUnit)`).
