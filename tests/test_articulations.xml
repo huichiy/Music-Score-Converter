@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Manual verification fixture for MusicXML notations import:
+     M1 accent/staccato/tenuto/strong-accent, M2 grace note + fermata,
+     M3 eighth triplet (time-modification), M4 high-octave whole + fermata. -->
+<score-partwise version="3.1">
+  <work><work-title>表情记号测试</work-title></work>
+  <part-list>
+    <score-part id="P1"><part-name>笛子</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>6</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+      </attributes>
+      <direction placement="below"><direction-type><dynamics><mf/></dynamics></direction-type></direction>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>6</duration><type>quarter</type>
+        <notations><articulations><accent/></articulations></notations></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>6</duration><type>quarter</type>
+        <notations><articulations><staccato/></articulations></notations></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>6</duration><type>quarter</type>
+        <notations><articulations><tenuto/></articulations></notations></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>6</duration><type>quarter</type>
+        <notations><articulations><strong-accent/></articulations></notations></note>
+    </measure>
+    <measure number="2">
+      <note><grace slash="yes"/><pitch><step>A</step><octave>4</octave></pitch><type>eighth</type></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>12</duration><type>half</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>6</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>6</duration><type>quarter</type>
+        <notations><fermata type="upright"/></notations></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type>
+        <time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type>
+        <time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><type>eighth</type>
+        <time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification></note>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>6</duration><type>quarter</type></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>6</duration><type>quarter</type></note>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>6</duration><type>quarter</type></note>
+    </measure>
+    <measure number="4">
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>24</duration><type>whole</type>
+        <notations><fermata type="upright"/></notations></note>
+      <barline location="right"><bar-style>light-heavy</bar-style></barline>
+    </measure>
+  </part>
+</score-partwise>
