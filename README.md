@@ -280,6 +280,7 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 - [x] BYOK multi-provider OCR — Gemini / Claude / GPT-4o / Groq / custom OpenAI-compatible
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with key off the bundle
 - [x] Volta / 跳房子 (`{1}` `{2}`), tuplets (`~3`), and mid-piece time signature changes (`@3/4`) in the text editor
+- [x] MusicXML import of articulations, fermata, grace notes (倚音), and tuplets (`<time-modification>`)
 - [ ] Phase 3 OCR: box-select UI for picking one instrument out of a 总谱 (full score) PDF
 - [ ] Playback (Tone.js) — hear the score as it's converted
 - [ ] Flute-specific ornaments — 颤音 / 波音 / 叠音 / 打音 / 花舌
@@ -478,6 +479,7 @@ VITE_OCR_WORKER_URL=https://你的-worker.你的名字.workers.dev
 - [x] BYOK 多模型 OCR — Gemini / Claude / GPT-4o / Groq / Custom
 - [x] Cloudflare Worker 代理 — 默认走 Gemini 2.5 Flash，key 不进 bundle
 - [x] 跳房子 `{1}` `{2}`、连音 `~3`、中途变拍号 `@3/4`（文本编辑器）
+- [x] MusicXML 导入表情记号、fermata、倚音、连音（`<time-modification>`）
 - [ ] Phase 3 OCR：总谱框选 UI，挑一行（如笛子）单独识别
 - [ ] Playback 播放（Tone.js）
 - [ ] 笛子专属技巧（颤音 / 波音 / 叠音 / 打音 / 花舌）

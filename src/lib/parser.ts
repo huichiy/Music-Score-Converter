@@ -1,4 +1,4 @@
-import type { NoteObject, MeasureArray, Measure, ChordNote } from '@/types/score'
+import type { NoteObject, MeasureArray, Measure, ChordNote, GraceNote, Articulation } from '@/types/score'
 
 export function pitchToSemitones(step: string, alter: number, octave: number): number {
   const stepMap: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
@@ -52,6 +52,10 @@ export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
   let currentDivisions = 1
   let lastNoteWasTieStart = false
   let wedgeType: 'cresc' | 'dim' | null = null
+  // Grace note waiting for its host: attaches to the NEXT pitched note,
+  // surviving measure boundaries (a grace at measure end decorates the next
+  // measure's first note)
+  let pendingGrace: GraceNote | null = null
 
   for (let i = 0; i < measures.length; i++) {
     const measureNotes: MeasureArray = [] as unknown as MeasureArray
@@ -88,7 +92,12 @@ export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
     for (let j = 0; j < notes.length; j++) {
       const note = notes[j]
 
-      if (note.getElementsByTagName('grace').length > 0) continue
+      if (note.getElementsByTagName('grace').length > 0) {
+        // Consecutive graces: keep only the first (renderer draws a single 倚音)
+        const g = parseChordNote(note, baseTonicStep, baseTonicAlter, baseTonicSemi)
+        if (g && !pendingGrace) pendingGrace = g
+        continue
+      }
 
       if (note.getElementsByTagName('chord').length > 0) {
         if (measureNotes.length > 0) {
@@ -173,6 +182,18 @@ export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
         }
       }
 
+      if (!isRest && pendingGrace) {
+        noteObj.graceNote = pendingGrace
+        pendingGrace = null
+      }
+
+      const timeModNode = note.getElementsByTagName('time-modification')[0]
+      if (timeModNode) {
+        const actualNode = timeModNode.getElementsByTagName('actual-notes')[0]
+        const actual = actualNode ? parseInt(actualNode.textContent!) : 0
+        if (actual >= 2) noteObj.tuplet = actual
+      }
+
       const notationsNode = note.getElementsByTagName('notations')[0]
       if (notationsNode) {
         const slurNodes = notationsNode.getElementsByTagName('slur')
@@ -180,6 +201,28 @@ export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
           const slurType = slurNodes[s].getAttribute('type')
           if (slurType === 'start') noteObj.slurStart = true
           if (slurType === 'stop') noteObj.slurStop = true
+        }
+
+        const articulationsNode = notationsNode.getElementsByTagName('articulations')[0]
+        if (articulationsNode) {
+          const articMap: Record<string, Articulation> = {
+            'accent': 'accent',
+            'staccato': 'staccato',
+            'tenuto': 'tenuto',
+            'strong-accent': 'marcato',
+          }
+          for (let a = 0; a < articulationsNode.children.length; a++) {
+            const mapped = articMap[articulationsNode.children[a].tagName.toLowerCase()]
+            if (mapped) {
+              noteObj.articulation = mapped
+              break
+            }
+          }
+        }
+
+        // <fermata> lives directly under <notations>, outside <articulations>
+        if (!noteObj.articulation && notationsNode.getElementsByTagName('fermata').length > 0) {
+          noteObj.articulation = 'fermata'
         }
       }
 
@@ -281,6 +324,10 @@ export function transposeNoteObjects(
         const cnSemi = absSemi(cn.degree, cn.octave, cn.accidental)
         return reexpress(cnSemi)
       })
+    }
+    if (note.graceNote) {
+      const gSemi = absSemi(note.graceNote.degree, note.graceNote.octave, note.graceNote.accidental)
+      result.graceNote = reexpress(gSemi)
     }
     return result
   }

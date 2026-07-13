@@ -18,10 +18,10 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # run scripts/test-roundtrip.ts (Route B serialize/parse + renderer coverage, 86 assertions)
+npm run test       # scripts/test-roundtrip.ts (Route B + renderer, 86 assertions) then scripts/test-parser.ts (MusicXML parsing, 23 assertions)
 ```
 
-- `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`.
+- `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`. `scripts/test-parser.ts` parses inline MusicXML with `linkedom` (devDependency, tests only — never bundled).
 - `node scripts/screenshots.mjs` regenerates the README/docs screenshots via Playwright — the dev server must already be running on port 7790 (`npm run dev -- --port 7790`).
 - Imports use the `@/` alias → `src/` (defined in `vite.config.ts`); follow it in new files.
 - Vite `base` is `/Music-Score-Converter/` in production builds (GitHub Pages subpath) and `/` in dev.
@@ -35,6 +35,7 @@ OCR keys: the app reads `VITE_OCR_WORKER_URL` at build time (the Cloudflare Work
 Music-Score-Converter/
 ├── docs/JIANPU_FORMAT.md            — Route B text editor format spec
 ├── scripts/test-roundtrip.ts        — Route B round-trip tests (npm run test)
+├── scripts/test-parser.ts           — MusicXML parser tests via linkedom (npm run test, 2nd file)
 ├── scripts/screenshots.mjs          — README screenshot capture (Playwright, dev server on :7790)
 ├── worker/                          — Optional Cloudflare Worker (OCR proxy)
 │   ├── src/index.ts                 — OpenAI-shape → Gemini translator
@@ -212,8 +213,17 @@ function transposeNoteObjects(measures: Measure[], fromKeyStr: string, toKeyStr:
 - Re-expresses in `toKey` using the same diatonic arithmetic as the main parser
 - Enharmonic spelling follows toKey character (sharp keys → sharps, flat keys → flats)
 - Handles chord notes, skips rests, passes through `{ _multiRest: N }` blocks
-- All measure-level metadata (`_repeatStart`, `_repeatEnd`, `_direction`, `_dynamic`, `_wedge`, `_volta`, `_timeSig`) copied to new measure arrays; `tuplet` survives via the `{ ...note }` spread
+- All measure-level metadata (`_repeatStart`, `_repeatEnd`, `_direction`, `_dynamic`, `_wedge`, `_volta`, `_timeSig`) copied to new measure arrays; `tuplet` survives via the `{ ...note }` spread; `graceNote` is re-expressed through the same `absSemi`/`reexpress` math as the main pitch (it must transpose, not pass through)
 - Called by `TransposeSelect` via `useFileHandler.transpose()`; `originalMeasures` / `originalKeyStr` in the Zustand store hold the pre-transpose source
+
+---
+
+## MusicXML Notations Import (src/lib/parser.ts)
+- `<notations><articulations>` children map to `NoteObject.articulation`: `accent`→accent, `staccato`→staccato, `tenuto`→tenuto, `strong-accent`→marcato (first mapped child wins)
+- `<notations><fermata>` (direct child, outside `<articulations>`) → `fermata`, only when no articulation was found
+- `<grace>` notes: pitch converted via `parseChordNote` and held in `pendingGrace`, attached to the **next pitched note** (survives measure boundaries; consecutive graces keep only the first)
+- `<time-modification><actual-notes>N</actual-notes>` → `NoteObject.tuplet = N` (rests included) — pairs with the Route B v3 tuplet renderer so imported triplets keep correct beat math
+- `<ornaments>` (trill/mordent/turn) are **not** imported — that's the 笛子 ornaments roadmap item
 
 ---
 
@@ -357,7 +367,8 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] PDF input + page picker (lazy pdfjs-dist)
 - [x] BYOK multi-provider OCR — Gemini / Anthropic / OpenAI / Groq / Custom (OpenAI-compatible)
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with the key off the bundle
-- [x] Round-trip test suite (`npm run test`, 86 assertions)
+- [x] Round-trip test suite (`npm run test`, 86 + 23 assertions across two files)
+- [x] MusicXML import: `<articulations>` / fermata / grace notes (倚音) / `<time-modification>` tuplets — plus graceNote transposition fix
 
 ### Pending
 - [ ] Phase 3 OCR: box-select UI to extract one instrument from a 总谱 PDF
@@ -365,7 +376,6 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [ ] 笛子 ornaments — parse MusicXML `<ornaments>` + render symbols; Route B syntax extension: `1[tr]` 颤音, `1[~]` 波音, `1[又]` 叠音, `1[打]` 打音, `1[*]` 花舌
 - [ ] Multi-voice rendering (long term — architectural change)
 - [ ] Route C: OCR text → Jianpu parser → rendered SVG (close the loop so OCR result becomes a real score)
-- [ ] MusicXML parser: extract `<articulations>` / fermata / grace notes / `<time-modification>` so they survive import (currently dropped)
 - [ ] MusicXML parser: import `<ending>` (volta) into `_volta`
 
 ---
