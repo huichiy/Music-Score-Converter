@@ -18,7 +18,7 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # scripts/test-roundtrip.ts (Route B + renderer, 86 assertions) then scripts/test-parser.ts (MusicXML parsing, 23 assertions)
+npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR text pipeline, 116 assertions) then scripts/test-parser.ts (MusicXML parsing, 23 assertions)
 ```
 
 - `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`. `scripts/test-parser.ts` parses inline MusicXML with `linkedom` (devDependency, tests only — never bundled).
@@ -266,6 +266,8 @@ Resolution order in `buildAdapter(config, env)`:
 
 Anthropic browser-direct calls require the header `anthropic-dangerous-direct-browser-access: true` — already set in the Anthropic adapter.
 
+**Route C loop (OCR → rendered score):** the prompts in `prompts.ts` teach the model to emit exact Route B format (`Title:`/`Key:` headers, `1/` eighths, `1,` low octave, v3 `{N}` `~N` `@N/M`) so the result feeds `parseFromText` directly. `useOcr.runOcr` pipes every result through `normalizeOcrText` (fence-stripping, 全角→半角, legacy `_`→`/`) **before** it reaches the store — the text in the result box is exactly what will be parsed. `extractOcrError` routes `[错误：…]`/`[Error: …]` sentinels to `setOcrError` instead of the result box. The result textarea is editable; `OcrSection.handleUseAsScore` refuses to render when `parseFromText` yields 0 measures.
+
 ---
 
 ## PDF Input (src/lib/pdfTools.ts + src/components/PdfPagePicker.tsx)
@@ -313,6 +315,8 @@ Anthropic browser-direct calls require the header `anthropic-dangerous-direct-br
 | `keyStr` must be `let` in parseXMLToNoteObjects | Needs to update on mid-piece key changes |
 | `totalHeight = currentY + 40` | `+ 20` clips dynamic text at bottom |
 | OCR keys never in the bundle | Either Worker proxy or `localStorage` BYOK; never `import.meta.env.VITE_*_KEY` for real keys |
+| OCR prompts must emit Route B format, verbatim | The result is fed straight into `parseFromText`; prompt syntax drift silently corrupts durations/octaves. Contract tests in `scripts/test-roundtrip.ts` pin the format — keep prompts, `docs/JIANPU_FORMAT.md`, and those tests in lockstep |
+| `normalizeOcrText` runs before the OCR result enters the store | The result box must show exactly what will be parsed; never normalize at render time |
 
 ---
 
@@ -367,15 +371,15 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] PDF input + page picker (lazy pdfjs-dist)
 - [x] BYOK multi-provider OCR — Gemini / Anthropic / OpenAI / Groq / Custom (OpenAI-compatible)
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with the key off the bundle
-- [x] Round-trip test suite (`npm run test`, 86 + 23 assertions across two files)
+- [x] Round-trip test suite (`npm run test`, 116 + 23 assertions across two files)
 - [x] MusicXML import: `<articulations>` / fermata / grace notes (倚音) / `<time-modification>` tuplets — plus graceNote transposition fix
+- [x] Route C: OCR → Route B text → rendered SVG loop — prompts emit exact Route B format (incl. v3), `normalizeOcrText`, editable result box, error sentinels, empty-parse guard
 
 ### Pending
 - [ ] Phase 3 OCR: box-select UI to extract one instrument from a 总谱 PDF
 - [ ] Playback (Tone.js) — hear the score as it's converted
 - [ ] 笛子 ornaments — parse MusicXML `<ornaments>` + render symbols; Route B syntax extension: `1[tr]` 颤音, `1[~]` 波音, `1[又]` 叠音, `1[打]` 打音, `1[*]` 花舌
 - [ ] Multi-voice rendering (long term — architectural change)
-- [ ] Route C: OCR text → Jianpu parser → rendered SVG (close the loop so OCR result becomes a real score)
 - [ ] MusicXML parser: import `<ending>` (volta) into `_volta`
 
 ---

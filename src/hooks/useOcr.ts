@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { useScoreStore } from '@/store/scoreStore'
 import { buildAdapter, buildEnv, loadOcrConfig } from '@/lib/vision'
+import { normalizeOcrText, extractOcrError } from '@/lib/vision/utils'
 
 /**
  * OCR hook — provider-agnostic. The actual model + endpoint comes from the
@@ -33,8 +34,15 @@ export function useOcr() {
     store.setOcrError('')
     store.setOcrResult(null)
     try {
-      const text = await analyzeImage(ocrFile)
-      store.setOcrResult(text)
+      // Normalize BEFORE storing: what the user sees in the result box is
+      // exactly what parseFromText will consume on 渲染为简谱
+      const text = normalizeOcrText(await analyzeImage(ocrFile))
+      const sentinel = extractOcrError(text)
+      if (sentinel) {
+        store.setOcrError(sentinel)
+      } else {
+        store.setOcrResult(text)
+      }
     } catch (err) {
       store.setOcrError((err as Error).message || '识别失败，请重试')
     } finally {

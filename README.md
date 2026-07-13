@@ -54,8 +54,8 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | **Click-to-Edit (Route A)** | Click any number in the rendered score to open a popup and change pitch, duration, accidental, or octave; re-renders instantly |
 | **Text Editor (Route B)** | Toolbar `≡` button opens a dedicated full-screen editor with a 番茄简谱-aligned text format, live preview underneath, and bidirectional cursor sync between text and rendered notes |
 | **PDF Input + Page Picker** | Drop a multi-page PDF into the OCR drop zone — page thumbnails appear, click any page to extract it as an image and feed the existing OCR pipeline |
-| **Image OCR — Jianpu Recognition** | Upload a Jianpu image (`.jpg`, `.png`, `.pdf`) — AI reads and transcribes the numbered notation (Beta) |
-| **Image OCR — Staff to Jianpu** | Upload a Western staff notation image — AI converts it to Jianpu text (Beta) |
+| **Image OCR — Jianpu Recognition** | Upload a Jianpu image (`.jpg`, `.png`, `.pdf`) — AI transcribes it straight into the Route B text format; the result is editable and renders as a real score with one click (Beta) |
+| **Image OCR — Staff to Jianpu** | Upload a Western staff notation image — AI converts it to editable, renderable Jianpu text (Beta) |
 | **BYOK Multi-Provider OCR** | Default OCR runs Gemini 2.5 Flash via a Cloudflare Worker proxy (key stays on the Worker, never in the JS bundle). Power users can paste their own key for Gemini Pro, Claude 3.5 Sonnet, GPT-4o, Groq, or any OpenAI-compatible endpoint — keys live in browser `localStorage` only |
 | **SVG Score Rendering** | Output is a fully scalable SVG with correct measure layout, barlines, line wrapping, and multi-measure rest brackets |
 | **Multiple Export Formats** | `.PNG` and `.JPEG` via Canvas renderer |
@@ -281,11 +281,11 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with key off the bundle
 - [x] Volta / 跳房子 (`{1}` `{2}`), tuplets (`~3`), and mid-piece time signature changes (`@3/4`) in the text editor
 - [x] MusicXML import of articulations, fermata, grace notes (倚音), and tuplets (`<time-modification>`)
+- [x] Route C: OCR output is Route B text — normalized, hand-editable, and rendered as a real score in one click
 - [ ] Phase 3 OCR: box-select UI for picking one instrument out of a 总谱 (full score) PDF
 - [ ] Playback (Tone.js) — hear the score as it's converted
 - [ ] Flute-specific ornaments — 颤音 / 波音 / 叠音 / 打音 / 花舌
 - [ ] Multi-voice rendering — duet parts side by side
-- [ ] Route C: OCR text → Jianpu parser → SVG (close the loop so OCR output renders inline)
 
 ---
 
@@ -342,8 +342,8 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 | **点击编辑（Route A）** | 点击渲染谱面上任何数字，弹出 popup 改音高 / 时值 / 升降号 / 八度 |
 | **文本编辑器（Route B）** | 工具栏 `≡` 按钮打开全屏编辑器：上下分栏，文本在上，实时预览在下，光标双向同步；格式说明可侧滑抽屉显示。文本格式对齐番茄简谱约定 |
 | **PDF 输入 + 页面选择器** | 把多页 PDF 拖进 OCR 区，弹出页面缩略图网格，点任一页即提取为图片送 OCR |
-| **图片识别 — 简谱识别** | 上传简谱图片（JPG / PNG / PDF），AI 自动转录（Beta）|
-| **图片识别 — 五线谱转简谱** | 上传五线谱图片，AI 自动转换（Beta）|
+| **图片识别 — 简谱识别** | 上传简谱图片（JPG / PNG / PDF），AI 直接转录成 Route B 文本格式——识别结果可手改，一键渲染成真谱（Beta）|
+| **图片识别 — 五线谱转简谱** | 上传五线谱图片，AI 转换成可编辑、可渲染的简谱文本（Beta）|
 | **BYOK 多模型 OCR** | 默认走 Cloudflare Worker 代理 Gemini 2.5 Flash（key 在 Worker 里，不进 bundle）。进阶用户可在「OCR 设置」里粘自己的 key，切换 Gemini Pro / Claude 3.5 Sonnet / GPT-4o / Groq / 任意 OpenAI 兼容端点。Key 只存浏览器 localStorage |
 | **SVG 乐谱渲染** | 输出可缩放 SVG，自动换行、多小节休止括号 |
 | **多格式导出** | `.PNG` 与 `.JPEG`（Canvas 渲染） |
@@ -480,11 +480,11 @@ VITE_OCR_WORKER_URL=https://你的-worker.你的名字.workers.dev
 - [x] Cloudflare Worker 代理 — 默认走 Gemini 2.5 Flash，key 不进 bundle
 - [x] 跳房子 `{1}` `{2}`、连音 `~3`、中途变拍号 `@3/4`（文本编辑器）
 - [x] MusicXML 导入表情记号、fermata、倚音、连音（`<time-modification>`）
+- [x] Route C：OCR 结果即 Route B 文本——自动归一化、可手改、一键渲染成真谱
 - [ ] Phase 3 OCR：总谱框选 UI，挑一行（如笛子）单独识别
 - [ ] Playback 播放（Tone.js）
 - [ ] 笛子专属技巧（颤音 / 波音 / 叠音 / 打音 / 花舌）
 - [ ] 多声部并排渲染
-- [ ] Route C：OCR 文本 → Jianpu parser → SVG 闭环渲染
 
 ---
 

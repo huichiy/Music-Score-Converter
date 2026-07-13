@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback } from 'react'
 import { useScoreStore } from '@/store/scoreStore'
 import { useOcr } from '@/hooks/useOcr'
+import { parseFromText } from '@/lib/editor'
 import PdfPagePicker from './PdfPagePicker'
 import OcrSettings from './OcrSettings'
 
@@ -47,6 +48,7 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
   const ocrMode = useScoreStore((s) => s.ocrMode)
   const ocrResult = useScoreStore((s) => s.ocrResult)
   const setOcrMode = useScoreStore((s) => s.setOcrMode)
+  const setOcrResult = useScoreStore((s) => s.setOcrResult)
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
@@ -61,6 +63,12 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
   const handleUseAsScore = () => {
     if (!ocrResult) return
     try {
+      // Guard: refuse to render an empty score when the text has no parseable measures
+      const probe = parseFromText(ocrResult)
+      if (probe.measures.length === 0) {
+        useScoreStore.getState().setOcrError('无法解析简谱文本，请检查格式')
+        return
+      }
       const svgHtml = loadFromText(ocrResult)
       onOcrScore(svgHtml)
     } catch {
@@ -175,20 +183,24 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
             {isOcrAnalyzing ? '识别中…' : '开始识别'}
           </button>
 
-          {/* Result */}
+          {/* Result — editable so small OCR mistakes can be fixed before rendering */}
           {ocrResult && (
             <div className="space-y-2">
               <textarea
-                readOnly
                 value={ocrResult}
+                onChange={(e) => setOcrResult(e.target.value)}
+                spellCheck={false}
                 rows={5}
-                className="w-full rounded-lg px-3 py-2 text-xs font-mono resize-none outline-none"
+                className="w-full rounded-lg px-3 py-2 text-xs font-mono resize-y outline-none"
                 style={{
                   background: 'var(--color-surface-2)',
                   border: '1px solid var(--color-border)',
                   color: 'var(--color-foreground)',
                 }}
               />
+              <p className="text-xs" style={{ color: 'var(--color-muted)', fontSize: 10 }}>
+                识别结果可直接修改，改完点「渲染为简谱」
+              </p>
               <div className="flex gap-2">
                 <button
                   onClick={handleUseAsScore}

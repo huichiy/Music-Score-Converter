@@ -8,6 +8,8 @@
 import { serializeToText, parseFromText } from '../src/lib/editor'
 import { renderJianpuSVG, collapseRestRuns } from '../src/lib/renderer'
 import { transposeNoteObjects } from '../src/lib/parser'
+import { normalizeOcrText, extractOcrError } from '../src/lib/vision/utils'
+import { JIANPU_OCR_PROMPT, WESTERN_TO_JIANPU_PROMPT } from '../src/lib/vision/prompts'
 import type { Measure, MeasureArray, NoteObject } from '../src/types/score'
 
 let pass = 0
@@ -524,6 +526,64 @@ describe('Renderer: temp time signature', () => {
   assertEq('3/4 label drawn', svg.includes('>3/4<'), true)
   const zeros = (svg.match(/>0<\/text>/g) || []).length
   assertEq('whole rest renders 3 zeros under 3/4', zeros, 3)
+})
+
+// ============================================================================
+// OCR loop: normalizeOcrText / error sentinel / prompt format contract
+// ============================================================================
+
+describe('normalizeOcrText cleans OCR output', () => {
+  assertEq('strips markdown code fences',
+    normalizeOcrText('```\nKey: C   Time: 4/4\n| 1 2 3 4 ||\n```'),
+    'Key: C   Time: 4/4\n| 1 2 3 4 ||')
+  assertEq('fullwidth bar and colon',
+    normalizeOcrText('Key： C\n｜ 1 2 3 4 ｜'),
+    'Key: C\n| 1 2 3 4 |')
+  assertEq('fullwidth digits and space',
+    normalizeOcrText('| １ ２　３ ４ |'),
+    '| 1 2 3 4 |')
+  assertEq('fullwidth comma becomes low-octave mark',
+    normalizeOcrText('| 1， 2 3 4 |'),
+    '| 1, 2 3 4 |')
+  assertEq('legacy underscore dialect → slashes',
+    normalizeOcrText('| 1_ 2__ 3 4 |'),
+    '| 1/ 2// 3 4 |')
+  assertEq('does NOT rewrite 1. (dotted quarter stays)',
+    normalizeOcrText('| 1. 2/ 3 4 |'),
+    '| 1. 2/ 3 4 |')
+})
+
+describe('normalize + parse: OCR text becomes real measures', () => {
+  const raw = '```\nKey： G   Time: 4/4\n｜ 1_ 2_ 3 4 ｜ 5 - - - ｜\n```'
+  const parsed = parseFromText(normalizeOcrText(raw))
+  assertEq('key from header', parsed.keyStr, 'G')
+  assertEq('two measures', parsed.measures.length, 2)
+  const m1 = parsed.measures[0] as MeasureArray
+  assertEq('eighths from legacy underscores', [m1[0].type, m1[1].type], ['eighth', 'eighth'])
+  const m2 = parsed.measures[1] as MeasureArray
+  assertEq('rest-extended note is whole', { deg: m2[0].degree, type: m2[0].type }, { deg: 5, type: 'whole' })
+})
+
+describe('OCR error sentinel detection', () => {
+  assertEq('Chinese sentinel', extractOcrError('[错误：图片不是简谱，请切换模式]'), '图片不是简谱，请切换模式')
+  assertEq('English sentinel', extractOcrError('[Error: Image is not staff notation.]'), 'Image is not staff notation.')
+  assertEq('sentinel wrapped in fences (after normalize)', extractOcrError(normalizeOcrText('```\n[错误：识别失败]\n```')), '识别失败')
+  assertEq('normal text is not an error', extractOcrError('Key: C\n| 1 2 3 4 ||'), null)
+})
+
+describe('OCR prompts teach the Route B format', () => {
+  const both: Array<[string, string]> = [['jianpu', JIANPU_OCR_PROMPT], ['western', WESTERN_TO_JIANPU_PROMPT]]
+  for (const [name, p] of both) {
+    assertEq(`${name}: teaches 1/ eighth`, p.includes('1/'), true)
+    assertEq(`${name}: teaches 1, low octave`, p.includes('1,'), true)
+    assertEq(`${name}: no underscore durations`, p.includes('_'), false)
+    assertEq(`${name}: teaches Title: header line`, p.includes('Title:'), true)
+    assertEq(`${name}: teaches volta {1}`, p.includes('{1}'), true)
+    assertEq(`${name}: teaches tuplet ~3`, p.includes('~3'), true)
+    assertEq(`${name}: teaches temp time sig @`, p.includes('@3/4') || p.includes('@2/4'), true)
+  }
+  assertEq('jianpu: keeps 错误 sentinel rule', JIANPU_OCR_PROMPT.includes('[错误：'), true)
+  assertEq('western: keeps Error sentinel rule', WESTERN_TO_JIANPU_PROMPT.includes('[Error:'), true)
 })
 
 // ============================================================================
