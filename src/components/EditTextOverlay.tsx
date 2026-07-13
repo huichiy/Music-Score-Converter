@@ -101,6 +101,14 @@ const GUIDE_SECTIONS: { label: string; items: [string, string][] }[] = [
       ['[N]', 'N 小节休止压缩'],
     ],
   },
+  {
+    label: '跳房子 / 连音 / 变拍号',
+    items: [
+      ['{1}', '第 1 遍结尾（跳房子），写在小节线后'],
+      ['~3', '三连音：其后 3 个音一组'],
+      ['@3/4', '从本小节起变拍号'],
+    ],
+  },
 ]
 
 export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProps) {

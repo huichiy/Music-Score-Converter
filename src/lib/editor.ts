@@ -18,19 +18,23 @@ function computeOrigIdxMap(measures: Measure[]): Map<number, number> {
     }
     const arr = m as MeasureArray
     const isWholeRest = arr.length === 1 && arr[0].rest && arr[0].type === 'whole'
+    // Mirrors collapseRestRuns: measures tagged with _volta/_timeSig never join a rest run
+    const isCollapsibleRest = (mm: Measure): boolean =>
+      Array.isArray(mm) && mm.length === 1 && mm[0].rest && mm[0].type === 'whole'
+      && (mm as MeasureArray)._volta === undefined && !(mm as MeasureArray)._timeSig
     if (isWholeRest) {
-      // Look ahead for run of consecutive whole-rest measures (collapseRestRuns groups 2+)
-      let j = i + 1
-      while (j < measures.length) {
-        const next = measures[j]
-        if (!Array.isArray(next)) break
-        if (next.length !== 1 || !next[0].rest || next[0].type !== 'whole') break
-        j++
+      if (isCollapsibleRest(m)) {
+        // Look ahead for run of consecutive whole-rest measures (collapseRestRuns groups 2+)
+        let j = i + 1
+        while (j < measures.length && isCollapsibleRest(measures[j])) j++
+        const runLen = j - i
+        if (runLen >= 2) origIdx += runLen
+        // single whole-rest: origIdx not incremented (renderer's isWholeMeasureRest path skips it)
+        i = j
+      } else {
+        // v3-tagged whole-rest renders as a single whole-rest measure: no origIdx increment
+        i++
       }
-      const runLen = j - i
-      if (runLen >= 2) origIdx += runLen
-      // single whole-rest: origIdx not incremented (renderer's isWholeMeasureRest path skips it)
-      i = j
     } else {
       map.set(i, origIdx)
       origIdx++
@@ -140,6 +144,7 @@ function isWholeMeasureRest(m: Measure): boolean {
   if (!n.rest || n.type !== 'whole') return false
   // Don't collapse if measure carries metadata that needs preserving
   if (m._repeatStart || m._repeatEnd || m._dynamic || m._wedge || m._direction) return false
+  if (m._volta !== undefined || m._timeSig) return false
   return true
 }
 
@@ -180,6 +185,14 @@ export function serializeToText(
     const m = measure as MeasureArray
     body += m._repeatStart ? '|: ' : '| '
 
+    // v3 measure-head markers, fixed order: {N} → @N/M → &dyn → wedge
+    if (m._volta !== undefined) {
+      body += `{${m._volta}} `
+    }
+    if (m._timeSig) {
+      body += `@${m._timeSig} `
+    }
+
     if (m._dynamic) {
       body += `&${m._dynamic} `
     }
@@ -195,7 +208,24 @@ export function serializeToText(
     }
     prevWedge = currentWedge
 
+    // Tuplet groups: runs of notes sharing tuplet === N are emitted N per group,
+    // each group prefixed with ~N
+    let tupletN = 0
+    let tupletRemaining = 0
+
     for (const note of m) {
+      if (note.tuplet) {
+        if (tupletRemaining === 0 || note.tuplet !== tupletN) {
+          tupletN = note.tuplet
+          tupletRemaining = note.tuplet
+          body += `~${tupletN} `
+        }
+        tupletRemaining--
+      } else {
+        tupletN = 0
+        tupletRemaining = 0
+      }
+
       if (note.slurStart && !note.rest && !inSlur) {
         body += '( '
         inSlur = true
@@ -463,6 +493,9 @@ export function parseFromText(
   let pendingDynamic = ''
   let activeWedge: 'cresc' | 'dim' | null = null
   let pendingSlurStart = false
+  // Tuplet marker ~N: the following N notes (rests included) get tuplet = N
+  let pendingTupletN = 0
+  let pendingTupletRemaining = 0
 
   const flushMeasure = (closeKind?: 'repeat' | 'fine' | 'dc' | 'ds' | 'final') => {
     if (current && current.length > 0) {
@@ -484,6 +517,9 @@ export function parseFromText(
     if (activeWedge) current._wedge = activeWedge
     lastNote = null
     lastNotePos = null
+    // Tuplet groups don't cross barlines
+    pendingTupletN = 0
+    pendingTupletRemaining = 0
   }
 
   for (let ti = 0; ti < tokens.length; ti++) {
@@ -575,6 +611,30 @@ export function parseFromText(
       continue
     }
 
+    // v3: volta {N}
+    const voltaM = tok.match(/^\{(\d+)\}$/)
+    if (voltaM) {
+      if (!current) current = freshMeasure()
+      current._volta = parseInt(voltaM[1])
+      continue
+    }
+
+    // v3: temp time signature @N/M (applies from this measure on)
+    const timeSigM = tok.match(/^@(\d+\/\d+)$/)
+    if (timeSigM) {
+      if (!current) current = freshMeasure()
+      current._timeSig = timeSigM[1]
+      continue
+    }
+
+    // v3: tuplet marker ~N
+    const tupletM = tok.match(/^~(\d+)$/)
+    if (tupletM) {
+      pendingTupletN = parseInt(tupletM[1])
+      pendingTupletRemaining = pendingTupletN
+      continue
+    }
+
     if (tok.startsWith('&')) {
       const dyn = tok.slice(1)
       if (current) current._dynamic = dyn
@@ -661,6 +721,10 @@ export function parseFromText(
 
     const note = emptyNote(deg, oct, acc, type, dot, isRest)
     if (chordNotes && chordNotes.length > 0) note.chordNotes = chordNotes
+    if (pendingTupletRemaining > 0) {
+      note.tuplet = pendingTupletN
+      pendingTupletRemaining--
+    }
     if (pendingSlurStart && !isRest) {
       note.slurStart = true
       pendingSlurStart = false

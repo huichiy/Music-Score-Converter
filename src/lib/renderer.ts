@@ -25,20 +25,20 @@ function escapeSVG(str: string): string {
 }
 
 export function collapseRestRuns(measures: Measure[]): Measure[] {
+  // Whole-rest measures carrying _volta/_timeSig must stay visible as real
+  // measures (the bracket/label would be lost inside a [N] block)
+  const isCollapsibleRest = (m: Measure): boolean => {
+    if (!Array.isArray(m)) return false
+    const arr = m as MeasureArray
+    return arr.length === 1 && arr[0].rest && arr[0].type === 'whole'
+      && arr._volta === undefined && !arr._timeSig
+  }
   const out: Measure[] = []
   let i = 0
   while (i < measures.length) {
-    const m = measures[i]
-    const allRest = Array.isArray(m) && m.length === 1 && m[0].rest && m[0].type === 'whole'
-    if (allRest) {
+    if (isCollapsibleRest(measures[i])) {
       let run = 1
-      while (
-        i + run < measures.length
-        && Array.isArray(measures[i + run])
-        && (measures[i + run] as MeasureArray).length === 1
-        && (measures[i + run] as MeasureArray)[0].rest
-        && (measures[i + run] as MeasureArray)[0].type === 'whole'
-      ) run++
+      while (i + run < measures.length && isCollapsibleRest(measures[i + run])) run++
       out.push(run >= 2 ? { _multiRest: run } : measures[i])
       i += run
     } else {
@@ -47,6 +47,15 @@ export function collapseRestRuns(measures: Measure[]): Measure[] {
     }
   }
   return out
+}
+
+// Tuplet duration correction: N notes in the time of pow2floor(N) (duplet: 2 in 3)
+function tupletFactor(n: number | undefined): number {
+  if (!n || n < 2) return 1
+  if (n === 2) return 3 / 2
+  let p = 1
+  while (p * 2 <= n) p *= 2
+  return p / n
 }
 
 function getBeamingLines(type: string): number {
@@ -186,6 +195,32 @@ function renderGraceNote(els: string[], x: number, y: number, g: { degree: numbe
   return 0
 }
 
+function renderVoltaBracket(
+  els: string[], x1: number, x2: number, y: number,
+  num: number, drawHead: boolean, color: string,
+): void {
+  const vy = y - 44
+  els.push(`<g class="jn-volta">`)
+  els.push(`<line x1="${x1}" y1="${vy}" x2="${x2}" y2="${vy}" stroke="${color}" stroke-width="1"/>`)
+  if (drawHead) {
+    els.push(`<line x1="${x1}" y1="${vy}" x2="${x1}" y2="${vy + 8}" stroke="${color}" stroke-width="1"/>`)
+    els.push(`<text x="${x1 + 4}" y="${vy + 12}" font-family="Inter" font-size="10" font-style="italic" fill="${color}">${num}.</text>`)
+  }
+  els.push(`</g>`)
+}
+
+function renderTupletBracket(els: string[], x1: number, x2: number, y: number, n: number, color: string): void {
+  const by = y - 28
+  const mid = (x1 + x2) / 2
+  els.push(`<g class="jn-tuplet">`)
+  els.push(`<line x1="${x1}" y1="${by}" x2="${mid - 6}" y2="${by}" stroke="${color}" stroke-width="1"/>`)
+  els.push(`<line x1="${mid + 6}" y1="${by}" x2="${x2}" y2="${by}" stroke="${color}" stroke-width="1"/>`)
+  els.push(`<line x1="${x1}" y1="${by}" x2="${x1}" y2="${by + 5}" stroke="${color}" stroke-width="1"/>`)
+  els.push(`<line x1="${x2}" y1="${by}" x2="${x2}" y2="${by + 5}" stroke="${color}" stroke-width="1"/>`)
+  els.push(`<text x="${mid}" y="${by + 3.5}" font-family="Inter" font-size="10" font-style="italic" fill="${color}" text-anchor="middle">${n}</text>`)
+  els.push(`</g>`)
+}
+
 function renderNote(
   els: string[], note: NoteObject, currentX: number, currentY: number,
   color: string, mIdx: number, nIdx: number,
@@ -247,8 +282,10 @@ export function renderJianpuSVG(
   const svgColor = dark ? '#FFFFFF' : '#0A0A0A'
   const { noteWidths, durationBeats, lineHeight, startX } = RENDER_CONFIG
 
-  const beatsPerMeasure = parseInt(timeStr.split('/')[0]) || 4
-  const beatUnit = 4 / (parseInt(timeStr.split('/')[1]) || 4)
+  // Mutable: a measure's _timeSig switches the meter from that measure on
+  let beatsPerMeasure = parseInt(timeStr.split('/')[0]) || 4
+  let beatUnit = 4 / (parseInt(timeStr.split('/')[1]) || 4)
+  const timeSigWidth = 24
   const maxWidth = Math.max(RENDER_CONFIG.minWidth, containerWidth - RENDER_CONFIG.padding)
   const paddingTop = tempoStr ? RENDER_CONFIG.paddingTopWithTempo : RENDER_CONFIG.paddingTopDefault
 
@@ -260,6 +297,8 @@ export function renderJianpuSVG(
 
   let slurStartX: number | null = null
   let slurStartY: number | null = null
+  // Volta continuity: consecutive measures with the same _volta share one bracket
+  let prevVoltaNum: number | null = null
 
   renderHeader(svgElements, maxWidth, startX, svgColor, titleStr, keyStr, timeStr, tempoStr)
   renderBarline(svgElements, startX, currentY, svgColor, false)
@@ -293,15 +332,23 @@ export function renderJianpuSVG(
       }
       if (currentX > maxTotalWidth) maxTotalWidth = currentX
       actualMeasureNum += N
+      prevVoltaNum = null
       continue
     }
 
     const measureArr = measure as MeasureArray
 
+    if (measureArr._timeSig) {
+      const tsParts = measureArr._timeSig.split('/')
+      beatsPerMeasure = parseInt(tsParts[0]) || beatsPerMeasure
+      beatUnit = 4 / (parseInt(tsParts[1]) || 4)
+    }
+
     let measureWidth = 0
     for (const note of measureArr) {
-      measureWidth += (noteWidths[note.type] || 40) * (note.dot ? 1.5 : 1) + (!note.tie && note.accidental ? 6 : 0)
+      measureWidth += (noteWidths[note.type] || 40) * (note.dot ? 1.5 : 1) * tupletFactor(note.tuplet) + (!note.tie && note.accidental ? 6 : 0)
     }
+    if (measureArr._timeSig) measureWidth += timeSigWidth
 
     if (currentX + measureWidth > maxWidth && currentX > startX) {
       if (slurStartX !== null) {
@@ -323,6 +370,11 @@ export function renderJianpuSVG(
     }
 
     const measureStartX = currentX
+
+    if (measureArr._timeSig) {
+      svgElements.push(`<text x="${currentX + 2}" y="${currentY}" font-family="Inter" font-size="13" font-weight="600" fill="${svgColor}">${measureArr._timeSig}</text>`)
+      currentX += timeSigWidth
+    }
 
     if (measureArr._repeatStart) {
       renderRepeatStart(svgElements, currentX, currentY, svgColor)
@@ -350,6 +402,10 @@ export function renderJianpuSVG(
         renderBarline(svgElements, currentX, currentY, svgColor, false)
       }
       if (currentX > maxTotalWidth) maxTotalWidth = currentX
+      if (measureArr._volta !== undefined) {
+        renderVoltaBracket(svgElements, measureStartX, currentX, currentY, measureArr._volta, prevVoltaNum !== measureArr._volta, svgColor)
+      }
+      prevVoltaNum = measureArr._volta ?? null
       actualMeasureNum++
       continue
     }
@@ -359,13 +415,24 @@ export function renderJianpuSVG(
       let acc = 0
       for (const note of measureArr) {
         cumulative.push(acc)
-        acc += (durationBeats[note.type] || 1) * (note.dot ? 1.5 : 1)
+        acc += (durationBeats[note.type] || 1) * (note.dot ? 1.5 : 1) * tupletFactor(note.tuplet)
       }
     }
 
+    let tupletStartX: number | null = null
+    let tupletLeft = 0
+
     for (let j = 0; j < measureArr.length; j++) {
       const note = measureArr[j]
-      const noteWidth = (noteWidths[note.type] || 40) * (note.dot ? 1.5 : 1) + (!note.tie && note.accidental ? 6 : 0)
+      const noteWidth = (noteWidths[note.type] || 40) * (note.dot ? 1.5 : 1) * tupletFactor(note.tuplet) + (!note.tie && note.accidental ? 6 : 0)
+
+      if (note.tuplet && tupletLeft === 0) {
+        tupletStartX = currentX
+        tupletLeft = note.tuplet
+      } else if (!note.tuplet) {
+        tupletStartX = null
+        tupletLeft = 0
+      }
 
       if (note.slurStart && !note.rest) {
         slurStartX = currentX + 2
@@ -393,6 +460,14 @@ export function renderJianpuSVG(
 
       currentX += noteWidth
 
+      if (note.tuplet && tupletLeft > 0) {
+        tupletLeft--
+        if (tupletLeft === 0 && tupletStartX !== null) {
+          renderTupletBracket(svgElements, tupletStartX + 2, currentX - 2, currentY, note.tuplet, svgColor)
+          tupletStartX = null
+        }
+      }
+
       if (note.slurStop && !note.rest && slurStartX !== null) {
         const slurEndX = currentX - noteWidth + numXOffset + 12
         const arcY = currentY - 30
@@ -415,6 +490,11 @@ export function renderJianpuSVG(
     }
 
     if (currentX > maxTotalWidth) maxTotalWidth = currentX
+
+    if (measureArr._volta !== undefined) {
+      renderVoltaBracket(svgElements, measureStartX, currentX, currentY, measureArr._volta, prevVoltaNum !== measureArr._volta, svgColor)
+    }
+    prevVoltaNum = measureArr._volta ?? null
 
     if (measureArr._direction) {
       svgElements.push(`<text x="${currentX - 4}" y="${currentY - 20}" font-family="Inter" font-size="11" font-style="italic" font-weight="500" fill="${svgColor}" text-anchor="end">${escapeSVG(measureArr._direction)}</text>`)

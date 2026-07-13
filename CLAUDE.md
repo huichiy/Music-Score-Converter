@@ -18,7 +18,7 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # run scripts/test-roundtrip.ts (Route B serialize/parse + renderer coverage, 46 assertions)
+npm run test       # run scripts/test-roundtrip.ts (Route B serialize/parse + renderer coverage, 86 assertions)
 ```
 
 - `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`.
@@ -131,6 +131,7 @@ interface NoteObject {
   chordNotes?: ChordNote[]                              // double-stops stacked below the melody
   articulation?: 'accent' | 'staccato' | 'tenuto' | 'marcato' | 'fermata' | ''
   graceNote?: GraceNote | null                          // 倚音 attached to this note
+  tuplet?: number                                       // tuplet group size (3 = triplet); Route B `~N`
 }
 ```
 
@@ -141,6 +142,8 @@ measure._repeatEnd: boolean
 measure._direction: string      // e.g. "Fine", "D.C.", "D.S."
 measure._dynamic: string        // e.g. "mf", "ff"
 measure._wedge: 'cresc' | 'dim' | null
+measure._volta: number | undefined    // 跳房子 ending number; Route B `{N}`
+measure._timeSig: string | undefined  // temp time signature from this measure on, e.g. '3/4'; Route B `@N/M`
 ```
 
 Articulations and grace notes are rendered by `src/lib/renderer.ts` (small text/circle/path above the note number) and round-tripped through Route B as `1[>]`, `1[2]`, etc. — see `docs/JIANPU_FORMAT.md`.
@@ -164,7 +167,7 @@ Strict check: `measure.length === 1 && measure[0].rest && measure[0].type === "w
 - Mixed-rest measures (partial rests) go through normal note rendering
 
 ### Multi-measure rest collapsing
-`collapseRestRuns()` in `src/lib/renderer.ts` — collapses 2+ consecutive whole-measure rests into `{ _multiRest: N }` bracket block. Uses the same strict check above.
+`collapseRestRuns()` in `src/lib/renderer.ts` — collapses 2+ consecutive whole-measure rests into `{ _multiRest: N }` bracket block. Uses the same strict check above, **plus** exclusion of measures tagged `_volta` / `_timeSig` (their bracket/label must stay visible). `editor.ts computeOrigIdxMap` mirrors this logic and must keep the same exclusions, or the text-editor cursor sync (data-m) drifts.
 
 ### Beat-boundary beaming
 Pre-compute cumulative beat positions per measure. Only connect beaming underlines when adjacent notes are in the same beat group (`Math.floor(cumulative[j] / beatUnit)`).
@@ -193,6 +196,11 @@ Rendered at `measureStartX + 2`, `currentY + 22`, italic, font-size 12. `measure
 ### D.C. / D.S. direction text
 Rendered at `currentX - 4`, `currentY - 20`, italic, text-anchor end, after closing barline.
 
+### Route B v3: volta / tuplet / temp time signature (renderer)
+- **Volta `{N}`** — horizontal bracket at `currentY - 44` from `measureStartX` to measure end, wrapped in `<g class="jn-volta">`; hook + `N.` label only drawn when the previous measure's `_volta` differs (consecutive same-number measures join into one visual bracket; line wraps break it naturally).
+- **Tuplet `~N`** — note durations (beam `cumulative` AND pixel widths) are multiplied by `tupletFactor(n)`: `2→3/2`, else `pow2floor(n)/n` (3→2/3, 5→4/5, 6→2/3, 7→4/7). Bracket + italic digit drawn above the group in `<g class="jn-tuplet">` at `currentY - 28`. Groups close after exactly N notes and never cross barlines.
+- **Temp time sig `@N/M`** — `beatsPerMeasure` / `beatUnit` are `let` and update at the top of the measure loop from `_timeSig`; a bold `N/M` label is drawn before the measure (+24px width, added to `measureWidth` too). Affects beat grouping and whole-rest `0` count from that measure on.
+
 ---
 
 ## Transposition (src/lib/parser.ts)
@@ -204,7 +212,7 @@ function transposeNoteObjects(measures: Measure[], fromKeyStr: string, toKeyStr:
 - Re-expresses in `toKey` using the same diatonic arithmetic as the main parser
 - Enharmonic spelling follows toKey character (sharp keys → sharps, flat keys → flats)
 - Handles chord notes, skips rests, passes through `{ _multiRest: N }` blocks
-- All measure-level metadata (`_repeatStart`, `_repeatEnd`, `_direction`, `_dynamic`, `_wedge`) copied to new measure arrays
+- All measure-level metadata (`_repeatStart`, `_repeatEnd`, `_direction`, `_dynamic`, `_wedge`, `_volta`, `_timeSig`) copied to new measure arrays; `tuplet` survives via the `{ ...note }` spread
 - Called by `TransposeSelect` via `useFileHandler.transpose()`; `originalMeasures` / `originalKeyStr` in the Zustand store hold the pre-transpose source
 
 ---
@@ -341,6 +349,7 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] Route B text editor (toolbar `≡`)
 - [x] Route B format v2 — 番茄式 syntax (`1/` `1.` `1-`), dynamics `&mf`, hairpins `<>!`, repeats `|: :|`, Fine/D.C./D.S., slurs `()`, articulations `1[>]`, grace notes `1[2]` — all round-trip
 - [x] Route B format v2.1 — chords/double stops `5:3`, 32nd notes `1///`, cross-barline ties (measure-start `-` per beat), rest extension `0 - - -`
+- [x] Route B format v3 — volta `{N}` 跳房子, tuplets `~N` 连音 (duration-corrected beaming), temp time signatures `@N/M` — all round-trip + render
 - [x] Route B live preview + bidirectional cursor sync
 - [x] Landing/tool layer split (LandingPage is intro-only; CTA enters tool)
 - [x] Mobile responsive (sidebar collapse + EditTextOverlay drawer overlay)
@@ -348,16 +357,16 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] PDF input + page picker (lazy pdfjs-dist)
 - [x] BYOK multi-provider OCR — Gemini / Anthropic / OpenAI / Groq / Custom (OpenAI-compatible)
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with the key off the bundle
-- [x] Round-trip test suite (`npm run test`, 46 assertions)
+- [x] Round-trip test suite (`npm run test`, 86 assertions)
 
 ### Pending
 - [ ] Phase 3 OCR: box-select UI to extract one instrument from a 总谱 PDF
 - [ ] Playback (Tone.js) — hear the score as it's converted
-- [ ] Volta (跳房子) + Tuplets (三连音) + temp time signatures in Route B
 - [ ] 笛子 ornaments — parse MusicXML `<ornaments>` + render symbols; Route B syntax extension: `1[tr]` 颤音, `1[~]` 波音, `1[又]` 叠音, `1[打]` 打音, `1[*]` 花舌
 - [ ] Multi-voice rendering (long term — architectural change)
 - [ ] Route C: OCR text → Jianpu parser → rendered SVG (close the loop so OCR result becomes a real score)
-- [ ] MusicXML parser: extract `<ornaments>` / `<articulations>` so they survive import (currently dropped)
+- [ ] MusicXML parser: extract `<articulations>` / fermata / grace notes / `<time-modification>` so they survive import (currently dropped)
+- [ ] MusicXML parser: import `<ending>` (volta) into `_volta`
 
 ---
 

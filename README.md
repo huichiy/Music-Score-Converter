@@ -186,6 +186,7 @@ The text format is aligned with the 番茄简谱 convention so users familiar wi
 - `|:` `:|` `||&fine` `||&dc` for repeats and directions
 - `(1 2 3)` slurs, `1[>]` `1[.]` articulations, `1[2]` grace notes
 - `[N]` multi-measure rest compression
+- `{1}` `{2}` volta / 跳房子 endings, `~3` triplets (and other tuplets), `@3/4` mid-piece time signature changes
 
 ### 4. SVG Rendering
 
@@ -194,7 +195,7 @@ A custom layout engine in `renderer.ts` iterates over note objects and:
 - Wraps lines when a measure would exceed `maxWidth` (derived from container width)
 - Draws barlines, measure numbers, octave dots, beaming underlines grouped by beat boundary, and extension dashes for held notes
 - Collapses runs of 2+ consecutive whole-measure rests into a numbered bracket block
-- Renders repeat signs, D.C./D.S. direction text, tempo, dynamic markings, hairpins, slur arcs, articulations (accent / staccato / tenuto / marcato / fermata), and grace notes
+- Renders repeat signs, D.C./D.S. direction text, tempo, dynamic markings, hairpins, slur arcs, articulations (accent / staccato / tenuto / marcato / fermata), grace notes, volta brackets, tuplet brackets (duration-corrected beaming), and mid-piece time signature changes
 
 ### 5. Export
 
@@ -253,8 +254,7 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 | **Single melody line only** | Chord voices and harmony notes are intentionally folded into stacked chord notes; full multi-voice rendering is not yet supported |
 | **MIDI triplets approximate** | MIDI has no semantic triplet encoding; durations are snapped to nearest binary value |
 | **MIDI key detection** | Relies on the key signature event in the MIDI header; files exported without this metadata default to C major |
-| **No volta / 跳房子** | First-time / second-time endings (`["1." ... ]`) are not yet parsed or rendered |
-| **No tuplets** | Triplet / quintuplet groupings are not yet supported in the text format |
+| **Volta import from MusicXML** | `{N}` endings work in the text editor; MusicXML `<ending>` elements are not yet imported |
 | **Flute-specific ornaments** | 颤音 / 波音 / 叠音 / 打音 / 花舌 etc. are intentionally not rendered — most are inferred by performers from context |
 
 ---
@@ -279,10 +279,9 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 - [x] PDF input + page picker (lazy-loaded pdfjs)
 - [x] BYOK multi-provider OCR — Gemini / Claude / GPT-4o / Groq / custom OpenAI-compatible
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with key off the bundle
+- [x] Volta / 跳房子 (`{1}` `{2}`), tuplets (`~3`), and mid-piece time signature changes (`@3/4`) in the text editor
 - [ ] Phase 3 OCR: box-select UI for picking one instrument out of a 总谱 (full score) PDF
 - [ ] Playback (Tone.js) — hear the score as it's converted
-- [ ] Volta / 跳房子 (first / second time endings)
-- [ ] Tuplets — triplets, quintuplets, etc.
 - [ ] Flute-specific ornaments — 颤音 / 波音 / 叠音 / 打音 / 花舌
 - [ ] Multi-voice rendering — duet parts side by side
 - [ ] Route C: OCR text → Jianpu parser → SVG (close the loop so OCR output renders inline)
@@ -399,9 +398,10 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 - `|:` `:|` `||&fine` `||&dc` 反复与段落
 - `(1 2 3)` 连线、`1[>]` `1[.]` 表情、`1[2]` 倚音
 - `[N]` 多小节休止压缩
+- `{1}` `{2}` 跳房子、`~3` 三连音（及其他连音）、`@3/4` 中途变拍号
 
 #### 4. SVG 渲染
-自定义排版引擎：预计算小节宽度 → 自动换行 → 绘制纵线、小节编号、八度点、减时线、增时线、连续休止合并括号、反复符号、指示文字、力度、hairpin、连音弧、表情、倚音
+自定义排版引擎：预计算小节宽度 → 自动换行 → 绘制纵线、小节编号、八度点、减时线、增时线、连续休止合并括号、反复符号、指示文字、力度、hairpin、连音弧、表情、倚音、跳房子括号、连音括号（时值修正）、中途变拍号
 
 #### 5. 导出
 SVG 序列化为 Blob → 等 `document.fonts.ready` → 绘制到 2× Canvas → PNG / JPEG
@@ -452,8 +452,7 @@ VITE_OCR_WORKER_URL=https://你的-worker.你的名字.workers.dev
 | **单旋律线** | 和弦折叠为垂直堆叠，完整多声部尚未支持 |
 | **MIDI 三连音近似** | MIDI 无三连音语义，时值对齐至最近二进制 |
 | **MIDI 调号依赖文件头** | 无调号元数据时默认 C 大调 |
-| **暂不支持跳房子** | 第一次/第二次结尾标记暂未解析 |
-| **暂不支持连音/多连音** | 三连音、五连音等暂未支持 |
+| **MusicXML 跳房子导入** | 文本编辑器已支持 `{N}` 语法；MusicXML `<ending>` 元素的导入暂未实现 |
 | **暂不支持笛子专属技巧** | 颤音 / 波音 / 叠音 / 打音 / 花舌等暂不渲染——演奏者按语境补 |
 
 ---
@@ -478,10 +477,9 @@ VITE_OCR_WORKER_URL=https://你的-worker.你的名字.workers.dev
 - [x] PDF 输入 + 页面选择器（pdfjs 懒加载）
 - [x] BYOK 多模型 OCR — Gemini / Claude / GPT-4o / Groq / Custom
 - [x] Cloudflare Worker 代理 — 默认走 Gemini 2.5 Flash，key 不进 bundle
+- [x] 跳房子 `{1}` `{2}`、连音 `~3`、中途变拍号 `@3/4`（文本编辑器）
 - [ ] Phase 3 OCR：总谱框选 UI，挑一行（如笛子）单独识别
 - [ ] Playback 播放（Tone.js）
-- [ ] 跳房子（volta）
-- [ ] 三连音 / 多连音
 - [ ] 笛子专属技巧（颤音 / 波音 / 叠音 / 打音 / 花舌）
 - [ ] 多声部并排渲染
 - [ ] Route C：OCR 文本 → Jianpu parser → SVG 闭环渲染

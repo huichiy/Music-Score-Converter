@@ -25,6 +25,7 @@ export interface NoteObject {
   chordNotes?: ChordNote[]
   articulation?: Articulation
   graceNote?: GraceNote | null
+  tuplet?: number
 }
 
 export interface MeasureArray extends Array<NoteObject> {
@@ -33,6 +34,8 @@ export interface MeasureArray extends Array<NoteObject> {
   _direction?: string
   _dynamic?: string
   _wedge?: 'cresc' | 'dim' | null
+  _volta?: number
+  _timeSig?: string
 }
 
 export interface MultiRestBlock {

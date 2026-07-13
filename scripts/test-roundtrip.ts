@@ -6,7 +6,8 @@
 // fields we care about (ignoring undefined/null defaults).
 
 import { serializeToText, parseFromText } from '../src/lib/editor'
-import { renderJianpuSVG } from '../src/lib/renderer'
+import { renderJianpuSVG, collapseRestRuns } from '../src/lib/renderer'
+import { transposeNoteObjects } from '../src/lib/parser'
 import type { Measure, MeasureArray, NoteObject } from '../src/types/score'
 
 let pass = 0
@@ -35,6 +36,8 @@ function measure(notes: NoteObject[], meta: Partial<MeasureArray> = {}): Measure
   arr._direction = meta._direction || ''
   arr._dynamic = meta._dynamic || ''
   arr._wedge = meta._wedge || null
+  if (meta._volta !== undefined) arr._volta = meta._volta
+  if (meta._timeSig !== undefined) arr._timeSig = meta._timeSig
   return arr
 }
 
@@ -341,6 +344,186 @@ describe('Renderer: chord octave dot must not collide with next chord note', () 
   const dotCy = dots[0]
   assertEq('dot below the #4 digit', dotCy > y4, true)
   assertEq('dot clear of the 1 digit (above its glyph top)', dotCy < y1 - 12, true)
+})
+
+// ============================================================================
+// Route B v3: volta {N} / tuplet ~N / temp time sig @N/M
+// ============================================================================
+
+describe('Volta (跳房子) round-trip', () => {
+  const input: Measure[] = [
+    measure([note({ degree: 1 }), note({ degree: 2 }), note({ degree: 3 }), note({ degree: 4 })], { _repeatStart: true }),
+    measure([note({ degree: 3 }), note({ degree: 4 }), note({ degree: 5 }), note({ degree: 6 })], { _volta: 1, _repeatEnd: true }),
+    measure([note({ degree: 5 }), note({ degree: 6 }), note({ degree: 7 }), note({ degree: 1, octave: 1 })], { _volta: 2 }),
+  ]
+  const { measures: out, text } = roundTrip(input)
+  console.log(`  text: ${text.split('\n').slice(1).join(' ')}`)
+  assertEq('text has {1}', text.includes('{1}'), true)
+  assertEq('text has {2}', text.includes('{2}'), true)
+  assertEq('M1 no volta', (out[0] as MeasureArray)._volta ?? null, null)
+  assertEq('M2 volta 1', (out[1] as MeasureArray)._volta, 1)
+  assertEq('M3 volta 2', (out[2] as MeasureArray)._volta, 2)
+  assertEq('M2 notes intact', asNotes(out[1]), asNotes(input[1]))
+})
+
+describe('Volta parse from text', () => {
+  const parsed = parseFromText("Key: C   Time: 4/4\n|: 1 2 3 4 | {1} 5 6 7 1' :| {2} 1 2 3 4 ||")
+  const ms = parsed.measures as MeasureArray[]
+  assertEq('3 measures', ms.length, 3)
+  assertEq('M1 no volta', ms[0]._volta ?? null, null)
+  assertEq('M2 volta=1 + repeatEnd', { v: ms[1]._volta, r: ms[1]._repeatEnd }, { v: 1, r: true })
+  assertEq('M3 volta=2', ms[2]._volta, 2)
+})
+
+describe('Tuplet (连音) round-trip', () => {
+  const input: Measure[] = [
+    measure([
+      note({ degree: 1, type: 'eighth', tuplet: 3 }),
+      note({ degree: 2, type: 'eighth', tuplet: 3 }),
+      note({ degree: 3, type: 'eighth', tuplet: 3 }),
+      note({ degree: 2 }),
+      note({ degree: 3 }),
+      note({ degree: 4 }),
+    ]),
+  ]
+  const { measures: out, text } = roundTrip(input)
+  console.log(`  text: ${text.split('\n').slice(1).join(' ')}`)
+  assertEq('text has ~3', text.includes('~3'), true)
+  const m = out[0] as MeasureArray
+  assertEq('tuplet flags', [m[0].tuplet ?? null, m[1].tuplet ?? null, m[2].tuplet ?? null, m[3].tuplet ?? null], [3, 3, 3, null])
+  assertEq('measure equal', asNotes(out[0]), asNotes(input[0]))
+})
+
+describe('Tuplet counts rests in group', () => {
+  const parsed = parseFromText('Key: C   Time: 4/4\n| ~3 1/ 0/ 3/ 2 3 4 ||')
+  const m = parsed.measures[0] as MeasureArray
+  assertEq('6 notes', m.length, 6)
+  assertEq('rest inside tuplet', { rest: m[1].rest, tuplet: m[1].tuplet ?? null }, { rest: true, tuplet: 3 })
+  assertEq('4th note out of group', m[3].tuplet ?? null, null)
+})
+
+describe('Two consecutive triplets serialize as two groups', () => {
+  const t = (d: number) => note({ degree: d, type: 'eighth', tuplet: 3 })
+  const input: Measure[] = [
+    measure([t(1), t(2), t(3), t(4), t(5), t(6), note({ degree: 2, type: 'half' })]),
+  ]
+  const { measures: out, text } = roundTrip(input)
+  console.log(`  text: ${text.split('\n').slice(1).join(' ')}`)
+  assertEq('two ~3 markers', (text.match(/~3/g) || []).length, 2)
+  assertEq('round-trips', asNotes(out[0]), asNotes(input[0]))
+})
+
+describe('Temp time signature round-trip', () => {
+  const input: Measure[] = [
+    measure([note({ degree: 1 }), note({ degree: 2 }), note({ degree: 3 }), note({ degree: 4 })]),
+    measure([note({ degree: 1 }), note({ degree: 2 }), note({ degree: 3 })], { _timeSig: '3/4' }),
+    measure([note({ degree: 4 }), note({ degree: 5 }), note({ degree: 6 })]),
+  ]
+  const { measures: out, text } = roundTrip(input)
+  console.log(`  text: ${text.split('\n').slice(1).join(' ')}`)
+  assertEq('text has @3/4', text.includes('@3/4'), true)
+  assertEq('M2 timeSig', (out[1] as MeasureArray)._timeSig, '3/4')
+  assertEq('M1/M3 none', [(out[0] as MeasureArray)._timeSig ?? null, (out[2] as MeasureArray)._timeSig ?? null], [null, null])
+})
+
+describe('Temp time sig parse from text', () => {
+  const parsed = parseFromText('Key: C   Time: 4/4\n| 1 2 3 4 | @3/4 1 2 3 | 4 5 6 ||')
+  const ms = parsed.measures as MeasureArray[]
+  assertEq('M2 timeSig', ms[1]._timeSig, '3/4')
+  assertEq('M1/M3 none', [ms[0]._timeSig ?? null, ms[2]._timeSig ?? null], [null, null])
+})
+
+describe('v3 serialization order: | {N} @N/M &dyn', () => {
+  const input: Measure[] = [
+    measure([note({ degree: 1 }), note({ degree: 2 }), note({ degree: 3 }), note({ degree: 4 })], { _repeatStart: true }),
+    measure([note({ degree: 5 }), note({ degree: 6 }), note({ degree: 7 })], { _volta: 1, _timeSig: '3/4', _dynamic: 'mf', _repeatEnd: true }),
+  ]
+  const { measures: out, text } = roundTrip(input)
+  console.log(`  text: ${text.split('\n').slice(1).join(' ')}`)
+  const i1 = text.indexOf('{1}'), i2 = text.indexOf('@3/4'), i3 = text.indexOf('&mf')
+  assertEq('{1} before @3/4 before &mf', i1 > -1 && i1 < i2 && i2 < i3, true)
+  const m = out[1] as MeasureArray
+  assertEq('all meta round-trips', { v: m._volta, t: m._timeSig, d: m._dynamic, r: m._repeatEnd }, { v: 1, t: '3/4', d: 'mf', r: true })
+})
+
+describe('Whole-rest with v3 metadata not collapsed in text', () => {
+  const input: Measure[] = [
+    measure([note({ degree: 0, type: 'whole', rest: true })], { _timeSig: '3/4' }),
+    measure([note({ degree: 0, type: 'whole', rest: true })]),
+    measure([note({ degree: 1 }), note({ degree: 2 }), note({ degree: 3 })]),
+  ]
+  const { text } = roundTrip(input)
+  console.log(`  text: ${text.split('\n').slice(1).join(' ')}`)
+  assertEq('no [2] block', text.includes('[2]'), false)
+  assertEq('@3/4 in text', text.includes('@3/4'), true)
+})
+
+describe('collapseRestRuns keeps v3-tagged rest measures', () => {
+  const rest = () => measure([note({ degree: 0, type: 'whole', rest: true })])
+  const tagged = measure([note({ degree: 0, type: 'whole', rest: true })], { _timeSig: '3/4' })
+  const out = collapseRestRuns([tagged, rest(), rest()])
+  assertEq('tagged measure stays array', Array.isArray(out[0]), true)
+  assertEq('remaining run of 2 collapsed', (out[1] as { _multiRest: number })._multiRest, 2)
+  const voltaTagged = measure([note({ degree: 0, type: 'whole', rest: true })], { _volta: 1 })
+  const out2 = collapseRestRuns([voltaTagged, rest(), rest()])
+  assertEq('volta-tagged measure stays array', Array.isArray(out2[0]), true)
+})
+
+describe('Transpose preserves v3 metadata', () => {
+  const input: Measure[] = [
+    measure([
+      note({ degree: 1, type: 'eighth', tuplet: 3 }),
+      note({ degree: 2, type: 'eighth', tuplet: 3 }),
+      note({ degree: 3, type: 'eighth', tuplet: 3 }),
+      note({ degree: 5 }),
+    ], { _volta: 2, _timeSig: '3/4' }),
+  ]
+  const out = transposeNoteObjects(input, 'C', 'D')
+  const m = out[0] as MeasureArray
+  assertEq('_volta kept', m._volta, 2)
+  assertEq('_timeSig kept', m._timeSig, '3/4')
+  assertEq('tuplet kept', m[0].tuplet, 3)
+})
+
+describe('Renderer: volta bracket', () => {
+  const input: Measure[] = [
+    measure([note({ degree: 1 }), note({ degree: 2 }), note({ degree: 3 }), note({ degree: 4 })], { _repeatStart: true }),
+    measure([note({ degree: 5 }), note({ degree: 6 }), note({ degree: 7 }), note({ degree: 1, octave: 1 })], { _volta: 1, _repeatEnd: true }),
+    measure([note({ degree: 1 }), note({ degree: 2 }), note({ degree: 3 }), note({ degree: 4 })], { _volta: 2 }),
+  ]
+  const svg = renderJianpuSVG(input, 'C', '4/4', 'T', 900, '', false)
+  assertEq('two volta groups', (svg.match(/class="jn-volta"/g) || []).length, 2)
+  assertEq('volta labels 1. and 2.', svg.includes('>1.</text>') && svg.includes('>2.</text>'), true)
+})
+
+describe('Renderer: tuplet bracket and beat correction', () => {
+  const input: Measure[] = [
+    measure([
+      note({ degree: 1, type: 'eighth', tuplet: 3 }),
+      note({ degree: 2, type: 'eighth', tuplet: 3 }),
+      note({ degree: 3, type: 'eighth', tuplet: 3 }),
+      note({ degree: 2 }), note({ degree: 3 }), note({ degree: 4 }),
+    ]),
+  ]
+  const svg = renderJianpuSVG(input, 'C', '4/4', 'T', 800, '', false)
+  assertEq('tuplet group present', svg.includes('class="jn-tuplet"'), true)
+  // Triplet of eighths = 1 beat total after ×2/3 correction → all three share
+  // beat group 0 → their beaming underlines (y = currentY+4 = 104) must connect.
+  const beams = [...svg.matchAll(/<line x1="([\d.]+)" y1="104" x2="([\d.]+)" y2="104"/g)]
+    .map(b => ({ x1: parseFloat(b[1]), x2: parseFloat(b[2]) }))
+  assertEq('three beam segments', beams.length, 3)
+  assertEq('segments connected', beams.length === 3 && Math.abs(beams[0].x2 - beams[1].x1) < 0.01 && Math.abs(beams[1].x2 - beams[2].x1) < 0.01, true)
+})
+
+describe('Renderer: temp time signature', () => {
+  const input: Measure[] = [
+    measure([note({ degree: 1 }), note({ degree: 2 }), note({ degree: 3 }), note({ degree: 4 })]),
+    measure([note({ degree: 0, type: 'whole', rest: true })], { _timeSig: '3/4' }),
+  ]
+  const svg = renderJianpuSVG(input, 'C', '4/4', 'T', 900, '', false)
+  assertEq('3/4 label drawn', svg.includes('>3/4<'), true)
+  const zeros = (svg.match(/>0<\/text>/g) || []).length
+  assertEq('whole rest renders 3 zeros under 3/4', zeros, 3)
 })
 
 // ============================================================================

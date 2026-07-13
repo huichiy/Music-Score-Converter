@@ -293,6 +293,8 @@ export function transposeNoteObjects(
     newMeasure._direction = measure._direction
     newMeasure._dynamic = measure._dynamic
     newMeasure._wedge = measure._wedge
+    newMeasure._volta = measure._volta
+    newMeasure._timeSig = measure._timeSig
     return newMeasure
   })
 }
