@@ -26,7 +26,9 @@ export function createGeminiAdapter(apiKey: string, model = DEFAULT_MODELS.gemin
               { inline_data: { mime_type: mediaType, data: base64 } },
             ],
           }],
-          generationConfig: { temperature: 0, maxOutputTokens: 2048 },
+          // 8192: Gemini 2.5 thinking tokens count against maxOutputTokens;
+          // 2048 truncated long scores after a few measures
+          generationConfig: { temperature: 0, maxOutputTokens: 8192 },
         }),
       })
 

@@ -10,6 +10,10 @@ export const JIANPU_OCR_PROMPT = `你是简谱专家。仔细分析这张简谱�
 - 只输出简谱文本，不要任何解释、说明、markdown 代码块或其他文字
 - 如果图片不是简谱（例如是五线谱），只回复：[错误：图片不是简谱，请切换到"五线谱→简谱"模式]
 - 看不清的内容跳过，不要编造音符
+- 必须从第一小节完整转录到最后一小节，禁止省略、跳过小节或用文字总结——谱子再长也要全部输出
+- 演奏技巧记号（T、又、颤音波浪线、指法数字等）直接忽略，但**不要**跳过它们所修饰的音符
+- 谱首的弱起占位（如 (X X X X)）忽略
+- 八度点逐个音判断：数字**上方**的点＝高八度（写 1'），**下方**的点＝低八度（写 1,）；同一组音里高低八度经常混在一起，不要整组照抄
 
 头部行（第一行起）：
 Title: 曲名          ← 图里有标题才输出这行
@@ -52,6 +56,8 @@ Strict rules:
 - Output ONLY the Jianpu text. No explanations, no markdown code fences.
 - If the image is not Western staff notation, reply only with: [Error: Image is not staff notation. Please switch to 简谱识别 mode.]
 - Skip anything you cannot read clearly; never invent notes.
+- Transcribe the ENTIRE score, from the first measure to the last measure. Never omit measures or summarize — output everything no matter how long.
+- Ignore playing-technique and ornament marks (trills, fingerings, etc.) but never skip the notes they decorate.
 
 Header lines (from the first line):
 Title: name              ← only if a title is visible

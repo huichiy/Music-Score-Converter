@@ -110,7 +110,9 @@ export default {
           contents: [{ parts }],
           generationConfig: {
             temperature: body.temperature ?? 0,
-            maxOutputTokens: body.max_tokens ?? 2048,
+            // 8192 default: Gemini 2.5 thinking tokens count against this
+            // budget; 2048 truncated long scores (clients also send 8192)
+            maxOutputTokens: body.max_tokens ?? 8192,
           },
         }),
       })

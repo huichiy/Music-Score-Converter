@@ -30,7 +30,10 @@ export function createOpenAICompatAdapter(opts: OpenAICompatOpts): VisionAdapter
         },
         body: JSON.stringify({
           model: opts.model,
-          max_tokens: 2048,
+          // 8192: a dense score needs ~1-2k output tokens, and the default path
+          // (Worker → Gemini 2.5 Flash) counts THINKING tokens against this
+          // budget — 2048 used to truncate long scores after a few measures
+          max_tokens: 8192,
           temperature: 0,
           messages: [
             { role: 'system', content: systemPromptFor(mode) },

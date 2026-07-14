@@ -584,6 +584,11 @@ describe('OCR prompts teach the Route B format', () => {
   }
   assertEq('jianpu: keeps 错误 sentinel rule', JIANPU_OCR_PROMPT.includes('[错误：'), true)
   assertEq('western: keeps Error sentinel rule', WESTERN_TO_JIANPU_PROMPT.includes('[Error:'), true)
+  // Completeness: dense scores must be transcribed to the end, not summarized
+  assertEq('jianpu: demands transcription to the last measure', JIANPU_OCR_PROMPT.includes('最后一小节'), true)
+  assertEq('western: demands transcription to the last measure', WESTERN_TO_JIANPU_PROMPT.includes('last measure'), true)
+  // Ornament-heavy 笛子谱: technique marks are skipped but their notes are kept
+  assertEq('jianpu: ignore technique marks, keep notes', JIANPU_OCR_PROMPT.includes('技巧'), true)
 })
 
 // ============================================================================

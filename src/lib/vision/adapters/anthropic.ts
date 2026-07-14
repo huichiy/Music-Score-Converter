@@ -23,7 +23,9 @@ export function createAnthropicAdapter(apiKey: string, model = DEFAULT_MODELS.an
         },
         body: JSON.stringify({
           model,
-          max_tokens: 2048,
+          // 4096 = safe cap across all Claude vision models (3.x caps at 4096);
+          // 2048 truncated long scores
+          max_tokens: 4096,
           temperature: 0,
           system: systemPromptFor(mode),
           messages: [{
