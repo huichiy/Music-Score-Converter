@@ -28,6 +28,8 @@ npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR text pi
 
 OCR keys: the app reads `VITE_OCR_WORKER_URL` at build time (the Cloudflare Worker URL). Users can also paste a personal API key in the "OCR 设置" modal (BYOK, stored in `localStorage` under `jianpu.ocr.config.v1`, see `OCR_CONFIG_KEY` in `src/lib/vision/types.ts`). Neither path embeds keys in the bundle.
 
+Local OCR dev: put `VITE_OCR_WORKER_URL=<worker url>` in `.env.local` (gitignored) and restart the dev server — otherwise the 默认 provider is disabled locally and OCR needs BYOK. The production worker URL can be recovered from the deployed Pages bundle if forgotten.
+
 ---
 
 ## File Structure
@@ -71,10 +73,12 @@ Music-Score-Converter/
 │   ├── store/scoreStore.ts          — Zustand global state
 │   └── types/score.ts               — NoteObject, MeasureArray, ChordNote, Articulation, GraceNote
 ├── js/                              — LEGACY pre-React vanilla app (tracked for history, NOT built or served — src/ is truth; js/config.js is gitignored)
-├── tests/                           — Manual test fixtures: test_scale.mid, test_score.mxl
+├── tests/                           — Manual test fixtures: test_scale.mid, test_score.mxl, test_articulations.xml (notations-import verification)
 ├── .github/workflows/deploy.yml     — Pages auto-deploy, injects VITE_OCR_WORKER_URL
 ├── index.html
 ├── package.json
+├── tsconfig.json                    — references app / node / scripts projects
+├── tsconfig.scripts.json            — type-checks scripts/ (DOM lib + node types + @/ paths + src/vite-env.d.ts)
 └── vite.config.ts
 ```
 
@@ -317,6 +321,7 @@ Anthropic browser-direct calls require the header `anthropic-dangerous-direct-br
 | OCR keys never in the bundle | Either Worker proxy or `localStorage` BYOK; never `import.meta.env.VITE_*_KEY` for real keys |
 | OCR prompts must emit Route B format, verbatim | The result is fed straight into `parseFromText`; prompt syntax drift silently corrupts durations/octaves. Contract tests in `scripts/test-roundtrip.ts` pin the format — keep prompts, `docs/JIANPU_FORMAT.md`, and those tests in lockstep |
 | Never offer Gemini Pro on the `auto` (Worker) provider | The shared Worker key is free-tier — no Pro quota, instant 429. Pro lives only under BYOK `gemini`. `sanitizeOcrConfig` also drops stale saved model ids on load |
+| OCR adapters send `max_tokens` 8192 (Anthropic: 4096) | Gemini 2.5 Flash counts THINKING tokens against `maxOutputTokens` — 2048 truncated a 16-measure score to 3 measures. Worker passes the client value through, so client-side bumps work without redeploying the Worker |
 | `normalizeOcrText` runs before the OCR result enters the store | The result box must show exactly what will be parsed; never normalize at render time |
 
 ---
