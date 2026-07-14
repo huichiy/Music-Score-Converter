@@ -34,13 +34,24 @@ export default function Sidebar({
         className="flex items-center justify-between px-4 py-4 shrink-0"
         style={{ borderBottom: '1px solid var(--color-border)' }}
       >
-        <div
-          onClick={onBackToLanding}
-          className="cursor-pointer select-none"
-          title="回到首页"
-        >
-          <div className="font-bold text-base">简谱转换</div>
-          <div className="text-xs" style={{ color: 'var(--color-muted)' }}>Jianpu Converter</div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onBackToLanding}
+            className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer shrink-0"
+            style={{
+              background: 'var(--color-surface-2)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-muted)',
+              fontSize: '15px',
+            }}
+            title="回到首页"
+          >
+            ←
+          </button>
+          <div>
+            <div className="font-bold text-base">简谱转换</div>
+            <div className="text-xs" style={{ color: 'var(--color-muted)' }}>Jianpu Converter</div>
+          </div>
         </div>
         <button
           onClick={onThemeToggle}
@@ -81,13 +92,6 @@ export default function Sidebar({
           color: 'var(--color-muted)',
         }}
       >
-        <button
-          onClick={onBackToLanding}
-          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit' }}
-        >
-          首页
-        </button>
-        {' · '}
         <a href="https://github.com/huichiy/Music-Score-Converter" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
           GitHub
         </a>
