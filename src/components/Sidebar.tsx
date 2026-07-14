@@ -13,6 +13,7 @@ interface SidebarProps {
   svgRef: React.RefObject<HTMLDivElement | null>
   isDark: boolean
   onThemeToggle: () => void
+  onBackToLanding: () => void
 }
 
 export default function Sidebar({
@@ -24,6 +25,7 @@ export default function Sidebar({
   svgRef,
   isDark,
   onThemeToggle,
+  onBackToLanding,
 }: SidebarProps) {
   return (
     <aside className="app-sidebar flex flex-col overflow-y-auto scrollbar-hide">
@@ -32,7 +34,11 @@ export default function Sidebar({
         className="flex items-center justify-between px-4 py-4 shrink-0"
         style={{ borderBottom: '1px solid var(--color-border)' }}
       >
-        <div>
+        <div
+          onClick={onBackToLanding}
+          className="cursor-pointer select-none"
+          title="回到首页"
+        >
           <div className="font-bold text-base">简谱转换</div>
           <div className="text-xs" style={{ color: 'var(--color-muted)' }}>Jianpu Converter</div>
         </div>
@@ -75,6 +81,13 @@ export default function Sidebar({
           color: 'var(--color-muted)',
         }}
       >
+        <button
+          onClick={onBackToLanding}
+          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', font: 'inherit' }}
+        >
+          首页
+        </button>
+        {' · '}
         <a href="https://github.com/huichiy/Music-Score-Converter" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>
           GitHub
         </a>

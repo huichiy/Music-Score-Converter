@@ -14,7 +14,8 @@ export default function App() {
   const scoreOutputRef = useRef<HTMLDivElement>(null)
   const [svgHtml, setSvgHtml] = useState('')
   // Two-layer entry: landing pitches the project; clicking 开始使用 lifts user into the tool layer.
-  // Once in the tool layer we stay there even after Reset — going back to landing on every reset is jarring.
+  // Reset keeps you in the tool layer (bouncing to landing on every reset is jarring);
+  // the sidebar title / 首页 link is the explicit way back. Score state survives the trip.
   const [hasEnteredTool, setHasEnteredTool] = useState(false)
   const [dragOver, setDragOver] = useState(false)
 
@@ -59,6 +60,10 @@ export default function App() {
 
   const handleEnterTool = useCallback(() => {
     setHasEnteredTool(true)
+  }, [])
+
+  const handleBackToLanding = useCallback(() => {
+    setHasEnteredTool(false)
   }, [])
 
   // ── Part change ───────────────────────────────────────────────
@@ -179,6 +184,7 @@ export default function App() {
           svgRef={scoreOutputRef}
           isDark={store.isDark}
           onThemeToggle={handleThemeToggle}
+          onBackToLanding={handleBackToLanding}
         />
       )}
 
