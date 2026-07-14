@@ -43,9 +43,10 @@ export const DEFAULT_MODELS: Record<OcrProvider, string> = {
 
 /** Models we let the user pick in the Settings UI. Each list is provider-specific. */
 export const MODEL_OPTIONS: Record<OcrProvider, { id: string; label: string; note?: string }[]> = {
+  // 默认渠道走共享的免费档 Gemini key——免费档没有 Pro 配额，放 Pro 必 429。
+  // 想用 Pro 的用户走 BYOK gemini（自己的付费 key）。
   auto: [
     { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: '默认 · 速度+准确度平衡' },
-    { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   note: '最强，但日限额小' },
   ],
   groq: [
     { id: 'meta-llama/llama-4-scout-17b-16e-instruct',     label: 'Llama 4 Scout 17B' },
@@ -53,7 +54,7 @@ export const MODEL_OPTIONS: Record<OcrProvider, { id: string; label: string; not
   ],
   gemini: [
     { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: '1500 req/day 免费' },
-    { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   note: '50 req/day 免费，更强' },
+    { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   note: '更强，需付费额度（免费档无 Pro 配额）' },
     { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', note: '备用' },
   ],
   anthropic: [

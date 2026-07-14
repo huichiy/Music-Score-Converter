@@ -10,6 +10,8 @@ import { renderJianpuSVG, collapseRestRuns } from '../src/lib/renderer'
 import { transposeNoteObjects } from '../src/lib/parser'
 import { normalizeOcrText, extractOcrError } from '../src/lib/vision/utils'
 import { JIANPU_OCR_PROMPT, WESTERN_TO_JIANPU_PROMPT } from '../src/lib/vision/prompts'
+import { MODEL_OPTIONS } from '../src/lib/vision/types'
+import { sanitizeOcrConfig } from '../src/lib/vision/index'
 import type { Measure, MeasureArray, NoteObject } from '../src/types/score'
 
 let pass = 0
@@ -589,6 +591,21 @@ describe('OCR prompts teach the Route B format', () => {
   assertEq('western: demands transcription to the last measure', WESTERN_TO_JIANPU_PROMPT.includes('last measure'), true)
   // Ornament-heavy 笛子谱: technique marks are skipped but their notes are kept
   assertEq('jianpu: ignore technique marks, keep notes', JIANPU_OCR_PROMPT.includes('技巧'), true)
+})
+
+describe('OCR model options match shared-key quota reality', () => {
+  // The 默认 (worker) provider uses the shared free-tier Gemini key, which has
+  // NO Pro quota — offering Pro there guarantees a 429
+  assertEq('auto (worker) offers no Pro model', MODEL_OPTIONS.auto.some(m => m.id.includes('pro')), false)
+  assertEq('auto still offers Flash', MODEL_OPTIONS.auto.some(m => m.id === 'gemini-2.5-flash'), true)
+})
+
+describe('sanitizeOcrConfig drops stale saved model ids', () => {
+  // localStorage may hold a model the provider no longer offers (auto+pro)
+  assertEq('stale auto+pro model dropped', sanitizeOcrConfig({ provider: 'auto', model: 'gemini-2.5-pro' }).model ?? null, null)
+  assertEq('valid auto+flash kept', sanitizeOcrConfig({ provider: 'auto', model: 'gemini-2.5-flash' }).model, 'gemini-2.5-flash')
+  assertEq('BYOK gemini keeps Pro', sanitizeOcrConfig({ provider: 'gemini', model: 'gemini-2.5-pro', apiKey: 'k' }).model, 'gemini-2.5-pro')
+  assertEq('custom keeps arbitrary model', sanitizeOcrConfig({ provider: 'custom', model: 'llava:13b', apiKey: 'k', customUrl: 'https://x' }).model, 'llava:13b')
 })
 
 // ============================================================================

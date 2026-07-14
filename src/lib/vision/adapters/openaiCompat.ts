@@ -49,6 +49,9 @@ export function createOpenAICompatAdapter(opts: OpenAICompatOpts): VisionAdapter
       })
 
       if (!res.ok) {
+        if (res.status === 429) {
+          throw new Error('识别额度不足或请求太频繁（HTTP 429）——默认渠道只支持 Gemini 2.5 Flash；要用更强的模型请在「OCR 设置」填自己的 API key，或稍后再试')
+        }
         const errBody = await res.json().catch(() => ({}))
         const msg = (errBody as { error?: { message?: string } }).error?.message || `${opts.name} 调用失败：HTTP ${res.status}`
         throw new Error(msg)

@@ -1,7 +1,7 @@
 // Public surface of the vision module — pick an adapter, load/save BYOK config.
 
 import type { OcrConfig, OcrProvider, VisionAdapter } from './types'
-import { DEFAULT_MODELS, OCR_CONFIG_KEY } from './types'
+import { DEFAULT_MODELS, MODEL_OPTIONS, OCR_CONFIG_KEY } from './types'
 
 import { createGroqAdapter } from './adapters/groq'
 import { createGeminiAdapter } from './adapters/gemini'
@@ -63,6 +63,21 @@ export function buildAdapter(config: OcrConfig, env: BuildEnv): VisionAdapter {
 
 const DEFAULT_CONFIG: OcrConfig = { provider: 'auto' }
 
+/**
+ * Drop a saved model id the provider no longer offers (e.g. 默认 channel used
+ * to list Pro — a stale localStorage entry would keep 429ing forever).
+ * `custom` endpoints accept arbitrary model strings, so they're left alone.
+ */
+export function sanitizeOcrConfig(config: OcrConfig): OcrConfig {
+  if (!config.model || config.provider === 'custom') return config
+  const options = MODEL_OPTIONS[config.provider] ?? []
+  if (options.length > 0 && !options.some(o => o.id === config.model)) {
+    const { model: _dropped, ...rest } = config
+    return rest
+  }
+  return config
+}
+
 export function loadOcrConfig(): OcrConfig {
   if (typeof localStorage === 'undefined') return DEFAULT_CONFIG
   try {
@@ -70,7 +85,7 @@ export function loadOcrConfig(): OcrConfig {
     if (!raw) return DEFAULT_CONFIG
     const parsed = JSON.parse(raw) as OcrConfig
     if (!parsed.provider) return DEFAULT_CONFIG
-    return parsed
+    return sanitizeOcrConfig(parsed)
   } catch {
     return DEFAULT_CONFIG
   }

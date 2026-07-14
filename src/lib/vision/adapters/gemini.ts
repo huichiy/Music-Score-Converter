@@ -33,6 +33,9 @@ export function createGeminiAdapter(apiKey: string, model = DEFAULT_MODELS.gemin
       })
 
       if (!res.ok) {
+        if (res.status === 429) {
+          throw new Error('你的 Gemini key 额度不足或请求太频繁（HTTP 429）——免费档没有 Pro 配额，请换 Gemini 2.5 Flash 或绑定付费账号后再试')
+        }
         const errBody = await res.json().catch(() => ({}))
         const msg = (errBody as { error?: { message?: string } }).error?.message || `Gemini 调用失败：HTTP ${res.status}`
         throw new Error(msg)
