@@ -144,7 +144,7 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '13px 18px', borderTop: '1px solid var(--color-border)', background: 'var(--color-surface-2)' }}>
-          <button onClick={onWhole} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, borderRadius: 8, cursor: 'pointer', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}>整张送识别</button>
+          <button onClick={onWhole} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, borderRadius: 8, cursor: 'pointer', background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-muted)' }}>{source instanceof HTMLCanvasElement ? '整页送识别' : '整张送识别'}</button>
           <button onClick={doCrop} disabled={!canCrop} style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, borderRadius: 8, cursor: canCrop ? 'pointer' : 'not-allowed', background: 'var(--color-accent)', color: '#fff', border: 'none', opacity: canCrop ? 1 : 0.4 }}>框选送识别</button>
         </div>
       </div>
