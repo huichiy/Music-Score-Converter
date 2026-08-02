@@ -286,4 +286,4 @@ Key: G   Time: 4/4   Tempo: 100
 
 - **MusicXML 导入后**：力度、反复、渐强、连线、Fine/D.C./D.S.、表情记号、倚音、连音（time-modification）都会保留并可在文本编辑器里看到/修改。
 - **笛子专属技巧**（颤音/波音/叠音/打音/花舌等）：暂不支持（MusicXML `<ornaments>` 也不导入），等用户反馈再加。
-- **MusicXML 跳房子导入**：`{N}` 语法已支持手写；MusicXML `<ending>` 元素的导入暂未实现。
+- **MusicXML 跳房子导入**：`{N}` 手写与 MusicXML `<ending>` 导入均已支持（`<ending type="start/stop/discontinue">` → `_volta`，多小节结尾自动延续）。

@@ -18,7 +18,7 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR text pipeline, 125 assertions) then scripts/test-parser.ts (MusicXML parsing, 23 assertions)
+npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR text pipeline, 125 assertions) then scripts/test-parser.ts (MusicXML parsing, 31 assertions)
 ```
 
 - `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`. `scripts/test-parser.ts` parses inline MusicXML with `linkedom` (devDependency, tests only — never bundled).
@@ -227,6 +227,7 @@ function transposeNoteObjects(measures: Measure[], fromKeyStr: string, toKeyStr:
 - `<notations><fermata>` (direct child, outside `<articulations>`) → `fermata`, only when no articulation was found
 - `<grace>` notes: pitch converted via `parseChordNote` and held in `pendingGrace`, attached to the **next pitched note** (survives measure boundaries; consecutive graces keep only the first)
 - `<time-modification><actual-notes>N</actual-notes>` → `NoteObject.tuplet = N` (rests included) — pairs with the Route B v3 tuplet renderer so imported triplets keep correct beat math
+- `<barline><ending>` → `MeasureArray._volta`: `type="start"` opens (number `"1, 2"` → first int), `type="stop"`/`"discontinue"` closes; the closing measure is still tagged. Carried across measures via an `activeVolta` cursor.
 - `<ornaments>` (trill/mordent/turn) are **not** imported — that's the 笛子 ornaments roadmap item
 
 ---
@@ -377,8 +378,9 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] PDF input + page picker (lazy pdfjs-dist)
 - [x] BYOK multi-provider OCR — Gemini / Anthropic / OpenAI / Groq / Custom (OpenAI-compatible)
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with the key off the bundle
-- [x] Round-trip test suite (`npm run test`, 125 + 23 assertions across two files)
+- [x] Round-trip test suite (`npm run test`, 125 + 31 assertions across two files)
 - [x] MusicXML import: `<articulations>` / fermata / grace notes (倚音) / `<time-modification>` tuplets — plus graceNote transposition fix
+- [x] MusicXML import: `<ending>` (跳房子/volta) → `_volta`
 - [x] Route C: OCR → Route B text → rendered SVG loop — prompts emit exact Route B format (incl. v3), `normalizeOcrText`, editable result box, error sentinels, empty-parse guard
 
 ### Pending
@@ -386,7 +388,6 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [ ] Playback (Tone.js) — hear the score as it's converted
 - [ ] 笛子 ornaments — parse MusicXML `<ornaments>` + render symbols; Route B syntax extension: `1[tr]` 颤音, `1[~]` 波音, `1[又]` 叠音, `1[打]` 打音, `1[*]` 花舌
 - [ ] Multi-voice rendering (long term — architectural change)
-- [ ] MusicXML parser: import `<ending>` (volta) into `_volta`
 
 ---
 

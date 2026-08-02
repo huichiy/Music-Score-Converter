@@ -238,6 +238,56 @@ describe('Transpose C→D: sharp grace stays coherent', () => {
   assertEq('grace #4 in C → 3 in D', m[0].graceNote, { degree: 3, octave: 0, accidental: '' })
 })
 
+describe('Volta <ending> import — single-measure endings', () => {
+  const ms = parseScore(`
+    <measure number="1">${ATTRS}
+      <barline location="left"><repeat direction="forward"/></barline>
+      ${noteXml('C', 4)}${noteXml('D', 4)}${noteXml('E', 4)}${noteXml('F', 4)}
+    </measure>
+    <measure number="2">
+      <barline location="left"><ending number="1" type="start"/></barline>
+      ${noteXml('G', 4)}${noteXml('A', 4)}${noteXml('B', 4)}${noteXml('C', 5)}
+      <barline location="right"><ending number="1" type="stop"/><repeat direction="backward"/></barline>
+    </measure>
+    <measure number="3">
+      <barline location="left"><ending number="2" type="start"/></barline>
+      ${noteXml('C', 4)}${noteXml('D', 4)}${noteXml('E', 4)}${noteXml('F', 4)}
+      <barline location="right"><ending number="2" type="discontinue"/></barline>
+    </measure>`)
+  assertEq('M1 no volta', ms[0]._volta ?? null, null)
+  assertEq('M2 volta 1', ms[1]._volta, 1)
+  assertEq('M2 repeatEnd kept', ms[1]._repeatEnd, true)
+  assertEq('M3 volta 2', ms[2]._volta, 2)
+})
+
+describe('Volta <ending> import — multi-measure ending', () => {
+  const ms = parseScore(`
+    <measure number="1">${ATTRS}
+      <barline location="left"><ending number="1" type="start"/></barline>
+      ${noteXml('C', 4)}${noteXml('D', 4)}${noteXml('E', 4)}${noteXml('F', 4)}
+    </measure>
+    <measure number="2">
+      ${noteXml('G', 4)}${noteXml('A', 4)}${noteXml('B', 4)}${noteXml('C', 5)}
+      <barline location="right"><ending number="1" type="stop"/></barline>
+    </measure>
+    <measure number="3">
+      ${noteXml('C', 4)}${noteXml('D', 4)}${noteXml('E', 4)}${noteXml('F', 4)}
+    </measure>`)
+  assertEq('M1 volta 1 (start)', ms[0]._volta, 1)
+  assertEq('M2 volta 1 (still open, stop here)', ms[1]._volta, 1)
+  assertEq('M3 no volta (closed)', ms[2]._volta ?? null, null)
+})
+
+describe('Volta <ending> import — number "1, 2" takes first', () => {
+  const ms = parseScore(`
+    <measure number="1">${ATTRS}
+      <barline location="left"><ending number="1, 2" type="start"/></barline>
+      ${noteXml('C', 4)}${noteXml('D', 4)}${noteXml('E', 4)}${noteXml('F', 4)}
+      <barline location="right"><ending number="1, 2" type="stop"/></barline>
+    </measure>`)
+  assertEq('M1 volta 1 from "1, 2"', ms[0]._volta, 1)
+})
+
 // ============================================================================
 
 console.log(`\n${'='.repeat(50)}`)

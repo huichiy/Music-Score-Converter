@@ -52,6 +52,8 @@ export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
   let currentDivisions = 1
   let lastNoteWasTieStart = false
   let wedgeType: 'cresc' | 'dim' | null = null
+  // Active volta (跳房子) number, carried across measures until an ending closes it
+  let activeVolta: number | null = null
   // Grace note waiting for its host: attaches to the NEXT pitched note,
   // surviving measure boundaries (a grace at measure end decorates the next
   // measure's first note)
@@ -79,6 +81,8 @@ export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
 
     let repeatStart = false
     let repeatEnd = false
+    let endingStart: number | null = null
+    let endingCloses = false
     const barlineNodes = measures[i].getElementsByTagName('barline')
     for (let b = 0; b < barlineNodes.length; b++) {
       const repeatNode = barlineNodes[b].getElementsByTagName('repeat')[0]
@@ -86,6 +90,16 @@ export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
         const dir = repeatNode.getAttribute('direction')
         if (dir === 'forward') repeatStart = true
         if (dir === 'backward') repeatEnd = true
+      }
+      const endingNode = barlineNodes[b].getElementsByTagName('ending')[0]
+      if (endingNode) {
+        const type = endingNode.getAttribute('type')
+        if (type === 'start') {
+          const num = parseInt((endingNode.getAttribute('number') || '').split(',')[0].trim())
+          if (!Number.isNaN(num)) endingStart = num
+        } else if (type === 'stop' || type === 'discontinue') {
+          endingCloses = true
+        }
       }
     }
 
@@ -231,6 +245,12 @@ export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
 
     measureNotes._repeatStart = repeatStart
     measureNotes._repeatEnd = repeatEnd
+
+    // Volta: a start opens the ending; the measure carrying stop/discontinue is
+    // still part of it, so assign first and clear the cursor afterwards.
+    if (endingStart !== null) activeVolta = endingStart
+    if (activeVolta !== null) measureNotes._volta = activeVolta
+    if (endingCloses) activeVolta = null
 
     let directionText = ''
     const directionNodes = measures[i].getElementsByTagName('direction')
