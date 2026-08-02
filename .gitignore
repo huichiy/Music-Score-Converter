@@ -29,3 +29,6 @@ js/config.js
 worker/.wrangler/
 worker/node_modules/
 worker/dist/
+
+# Playwright CLI scratch (browser automation testing)
+.playwright-cli/
