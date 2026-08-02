@@ -18,7 +18,7 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR text pipeline, 125 assertions) then scripts/test-parser.ts (MusicXML parsing, 31 assertions)
+npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR + crop, 130 assertions) then scripts/test-parser.ts (MusicXML parsing, 31 assertions)
 ```
 
 - `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`. `scripts/test-parser.ts` parses inline MusicXML with `linkedom` (devDependency, tests only — never bundled).
@@ -51,7 +51,8 @@ Music-Score-Converter/
 │   │   ├── LandingPage.tsx          — Marketing/intro layer (no tool widgets)
 │   │   ├── OcrSection.tsx           — OCR drop zone + open settings
 │   │   ├── OcrSettings.tsx          — BYOK provider / model / key modal
-│   │   ├── PdfPagePicker.tsx        — PDF thumbnail grid
+│   │   ├── PdfPagePicker.tsx        — PDF thumbnail grid (page → ImageCropper)
+│   │   ├── ImageCropper.tsx         — box-select crop modal (PDF page / image → cropped PNG)
 │   │   └── …Sidebar / Toolbar / TransposeSelect / ExportButtons / PartSelector / ScoreOutput / FileUpload
 │   ├── hooks/
 │   │   ├── useFileHandler.ts        — File parsing + render orchestration
@@ -61,6 +62,7 @@ Music-Score-Converter/
 │   │   ├── renderer.ts              — SVG layout engine
 │   │   ├── editor.ts                — Route B serialize/parse + token positions
 │   │   ├── pdfTools.ts              — Lazy pdfjs wrapper
+│   │   ├── cropTools.ts             — computeCropRect (display→source pixel mapping, unit-tested)
 │   │   ├── abcParser.ts             — ABC notation parser
 │   │   ├── downloader.ts            — PNG/JPEG export
 │   │   ├── utils.ts
@@ -275,6 +277,9 @@ Anthropic browser-direct calls require the header `anthropic-dangerous-direct-br
 
 ---
 
+## Box-Select Crop (src/components/ImageCropper.tsx + src/lib/cropTools.ts)
+Generic, OCR-agnostic crop step so users can extract one instrument's row from a 总谱 before OCR. `ImageCropper` takes `source: HTMLCanvasElement | File` (PDF page rendered @2.0x, or an uploaded image), shows a draggable/resizable box (pure React pointer events, no library, dim-outside via `box-shadow`), and on confirm maps the display selection to full-resolution pixels via `computeCropRect` (the only logic-bearing piece, unit-tested in test-roundtrip.ts), crops with `drawImage`, and hands back a PNG `File`. Two entry points: PdfPagePicker (clicking a page opens the cropper; 整页 button = whole page) and OcrSection (optional 框选区域 button for images; not shown for PDFs, which route through the picker). The cropper renders as a **sibling** of PdfPagePicker's `onClick={onCancel}` backdrop (via fragment), not a child, so its backdrop click doesn't bubble up and close the picker. Single-box, iterate: the editable OCR result box accumulates multiple crops.
+
 ## PDF Input (src/lib/pdfTools.ts + src/components/PdfPagePicker.tsx)
 - `pdfjs-dist` is dynamically imported (lazy chunk ~280 KB + 1.2 MB worker) only when the user drops a PDF
 - `loadPdf(file)` → `PDFDocumentProxy`
@@ -383,8 +388,9 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] MusicXML import: `<ending>` (跳房子/volta) → `_volta`
 - [x] Route C: OCR → Route B text → rendered SVG loop — prompts emit exact Route B format (incl. v3), `normalizeOcrText`, editable result box, error sentinels, empty-parse guard
 
+- [x] Phase 3 OCR: box-select crop — extract one instrument's row from a 总谱 PDF/image before OCR (single-box, iterate)
+
 ### Pending
-- [ ] Phase 3 OCR: box-select UI to extract one instrument from a 总谱 PDF
 - [ ] Playback (Tone.js) — hear the score as it's converted
 - [ ] 笛子 ornaments — parse MusicXML `<ornaments>` + render symbols; Route B syntax extension: `1[tr]` 颤音, `1[~]` 波音, `1[又]` 叠音, `1[打]` 打音, `1[*]` 花舌
 - [ ] Multi-voice rendering (long term — architectural change)

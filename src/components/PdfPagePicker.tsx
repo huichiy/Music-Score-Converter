@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import { loadPdf, renderPageToCanvas, pageToFile } from '@/lib/pdfTools'
+import { loadPdf, renderPageToCanvas } from '@/lib/pdfTools'
+import ImageCropper from './ImageCropper'
 
 interface PdfPagePickerProps {
   file: File | null         // when non-null, modal is open
@@ -13,6 +14,7 @@ export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePicke
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [extracting, setExtracting] = useState<number | null>(null)
+  const [cropTarget, setCropTarget] = useState<{ canvas: HTMLCanvasElement; page: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Load the PDF whenever a new file is provided
@@ -70,8 +72,8 @@ export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePicke
           card.appendChild(label)
           card.onclick = () => {
             setExtracting(i)
-            pageToFile(pdf, i, file?.name || 'page', 2.0)
-              .then((img) => onSelect(img))
+            renderPageToCanvas(pdf, i, 2.0)
+              .then((canvas) => setCropTarget({ canvas, page: i }))
               .catch((e) => setError((e as Error).message || '提取失败'))
               .finally(() => setExtracting(null))
           }
@@ -99,6 +101,7 @@ export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePicke
   if (!file) return null
 
   return (
+    <>
     <div
       style={{
         position: 'fixed', inset: 0, zIndex: 60,
@@ -207,5 +210,22 @@ export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePicke
         </div>
       </div>
     </div>
+
+    {cropTarget && (
+      <ImageCropper
+        source={cropTarget.canvas}
+        title={`${file.name} · 第 ${cropTarget.page} 页`}
+        onCrop={(img) => { setCropTarget(null); onSelect(img) }}
+        onWhole={() => {
+          const t = cropTarget
+          setCropTarget(null)
+          t.canvas.toBlob((b) => {
+            if (b) onSelect(new File([b], `${file.name.replace(/\.pdf$/i, '')}_page${t.page}.png`, { type: 'image/png' }))
+          }, 'image/png')
+        }}
+        onCancel={() => setCropTarget(null)}
+      />
+    )}
+    </>
   )
 }

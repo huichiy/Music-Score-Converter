@@ -12,6 +12,7 @@ import { normalizeOcrText, extractOcrError } from '../src/lib/vision/utils'
 import { JIANPU_OCR_PROMPT, WESTERN_TO_JIANPU_PROMPT } from '../src/lib/vision/prompts'
 import { MODEL_OPTIONS } from '../src/lib/vision/types'
 import { sanitizeOcrConfig } from '../src/lib/vision/index'
+import { computeCropRect } from '../src/lib/cropTools'
 import type { Measure, MeasureArray, NoteObject } from '../src/types/score'
 
 let pass = 0
@@ -606,6 +607,19 @@ describe('sanitizeOcrConfig drops stale saved model ids', () => {
   assertEq('valid auto+flash kept', sanitizeOcrConfig({ provider: 'auto', model: 'gemini-2.5-flash' }).model, 'gemini-2.5-flash')
   assertEq('BYOK gemini keeps Pro', sanitizeOcrConfig({ provider: 'gemini', model: 'gemini-2.5-pro', apiKey: 'k' }).model, 'gemini-2.5-pro')
   assertEq('custom keeps arbitrary model', sanitizeOcrConfig({ provider: 'custom', model: 'llava:13b', apiKey: 'k', customUrl: 'https://x' }).model, 'llava:13b')
+})
+
+describe('computeCropRect maps display selection to source pixels', () => {
+  // 1:1 — display size equals source size → selection unchanged
+  assertEq('1:1 identity', computeCropRect({ x: 10, y: 20, w: 100, h: 40 }, { w: 200, h: 100 }, { w: 200, h: 100 }), { x: 10, y: 20, w: 100, h: 40 })
+  // 2.0x — source is twice the display (PDF page rendered at 2.0x)
+  assertEq('2x scale', computeCropRect({ x: 0, y: 0, w: 300, h: 30 }, { w: 300, h: 150 }, { w: 600, h: 300 }), { x: 0, y: 0, w: 600, h: 60 })
+  // clamp — selection runs past the right/bottom edge, sw/sh shrink to fit
+  assertEq('clamp to source bounds', computeCropRect({ x: 80, y: 0, w: 40, h: 50 }, { w: 100, h: 100 }, { w: 100, h: 100 }), { x: 80, y: 0, w: 20, h: 50 })
+  // rounding — fractional display coords round to whole source pixels (Math.round: 20.5→21)
+  assertEq('rounds to integers', computeCropRect({ x: 10.4, y: 10.6, w: 20.5, h: 20.4 }, { w: 100, h: 100 }, { w: 100, h: 100 }), { x: 10, y: 11, w: 21, h: 20 })
+  // never zero — a sliver still yields at least 1px
+  assertEq('min 1px', computeCropRect({ x: 0, y: 0, w: 0, h: 0 }, { w: 100, h: 100 }, { w: 100, h: 100 }), { x: 0, y: 0, w: 1, h: 1 })
 })
 
 // ============================================================================

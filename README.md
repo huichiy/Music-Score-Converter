@@ -54,6 +54,7 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | **Click-to-Edit (Route A)** | Click any number in the rendered score to open a popup and change pitch, duration, accidental, or octave; re-renders instantly |
 | **Text Editor (Route B)** | Toolbar `≡` button opens a dedicated full-screen editor with a 番茄简谱-aligned text format, live preview underneath, and bidirectional cursor sync between text and rendered notes |
 | **PDF Input + Page Picker** | Drop a multi-page PDF into the OCR drop zone — page thumbnails appear, click any page to extract it as an image and feed the existing OCR pipeline |
+| **Box-Select Crop** | On a 总谱 (full score) page or photo, drag a box around one instrument's row (e.g. 笛子) and send just that strip to OCR — crop images too via the 框选区域 button; iterate row by row into the editable result box |
 | **Image OCR — Jianpu Recognition** | Upload a Jianpu image (`.jpg`, `.png`, `.pdf`) — AI transcribes it straight into the Route B text format; the result is editable and renders as a real score with one click (Beta) |
 | **Image OCR — Staff to Jianpu** | Upload a Western staff notation image — AI converts it to editable, renderable Jianpu text (Beta) |
 | **BYOK Multi-Provider OCR** | Default OCR runs Gemini 2.5 Flash via a Cloudflare Worker proxy (key stays on the Worker, never in the JS bundle). Power users can paste their own key for Gemini Pro, Claude 3.5 Sonnet, GPT-4o, Groq, or any OpenAI-compatible endpoint — keys live in browser `localStorage` only |
@@ -282,7 +283,8 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 - [x] Volta / 跳房子 (`{1}` `{2}`), tuplets (`~3`), and mid-piece time signature changes (`@3/4`) in the text editor
 - [x] MusicXML import of articulations, fermata, grace notes (倚音), and tuplets (`<time-modification>`)
 - [x] Route C: OCR output is Route B text — normalized, hand-editable, and rendered as a real score in one click
-- [ ] Phase 3 OCR: box-select UI for picking one instrument out of a 总谱 (full score) PDF
+- [x] Box-select crop — extract one instrument's row from a 总谱 PDF/image before OCR
+- [x] MusicXML volta (跳房子) import via `<ending>`
 - [ ] Playback (Tone.js) — hear the score as it's converted
 - [ ] Flute-specific ornaments — 颤音 / 波音 / 叠音 / 打音 / 花舌
 - [ ] Multi-voice rendering — duet parts side by side
@@ -479,9 +481,9 @@ VITE_OCR_WORKER_URL=https://你的-worker.你的名字.workers.dev
 - [x] BYOK 多模型 OCR — Gemini / Claude / GPT-4o / Groq / Custom
 - [x] Cloudflare Worker 代理 — 默认走 Gemini 2.5 Flash，key 不进 bundle
 - [x] 跳房子 `{1}` `{2}`、连音 `~3`、中途变拍号 `@3/4`（文本编辑器）
-- [x] MusicXML 导入表情记号、fermata、倚音、连音（`<time-modification>`）
+- [x] MusicXML 导入表情记号、fermata、倚音、连音（`<time-modification>`）、跳房子（`<ending>`）
+- [x] 总谱框选裁剪 — 在 PDF 页/照片上框一行声部（如笛子）单独送识别
 - [x] Route C：OCR 结果即 Route B 文本——自动归一化、可手改、一键渲染成真谱
-- [ ] Phase 3 OCR：总谱框选 UI，挑一行（如笛子）单独识别
 - [ ] Playback 播放（Tone.js）
 - [ ] 笛子专属技巧（颤音 / 波音 / 叠音 / 打音 / 花舌）
 - [ ] 多声部并排渲染

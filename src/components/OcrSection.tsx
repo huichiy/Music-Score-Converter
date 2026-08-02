@@ -3,6 +3,7 @@ import { useScoreStore } from '@/store/scoreStore'
 import { useOcr } from '@/hooks/useOcr'
 import { parseFromText } from '@/lib/editor'
 import PdfPagePicker from './PdfPagePicker'
+import ImageCropper from './ImageCropper'
 import OcrSettings from './OcrSettings'
 
 interface OcrSectionProps {
@@ -19,6 +20,7 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
   const [isDragging, setIsDragging] = useState(false)
   const [pendingPdf, setPendingPdf] = useState<File | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [cropOpen, setCropOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const { handleOcrFile, runOcr, resetOcr } = useOcr()
 
@@ -169,19 +171,27 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
             </p>
           )}
 
-          {/* Analyze button */}
-          <button
-            onClick={runOcr}
-            disabled={!ocrFile || isOcrAnalyzing}
-            className="w-full rounded-lg py-2 text-sm font-medium transition-colors cursor-pointer disabled:opacity-40"
-            style={{
-              background: 'var(--color-accent)',
-              color: '#fff',
-              border: 'none',
-            }}
-          >
-            {isOcrAnalyzing ? '识别中…' : '开始识别'}
-          </button>
+          {/* Analyze row: optional crop (images only) + start */}
+          <div className="flex gap-2">
+            {ocrFile && !isPdf(ocrFile) && (
+              <button
+                onClick={() => setCropOpen(true)}
+                disabled={isOcrAnalyzing}
+                className="rounded-lg py-2 px-3 text-sm font-medium transition-colors cursor-pointer disabled:opacity-40 shrink-0"
+                style={{ background: 'var(--color-surface-2)', color: 'var(--color-accent)', border: '1px solid var(--color-accent)' }}
+              >
+                框选区域
+              </button>
+            )}
+            <button
+              onClick={runOcr}
+              disabled={!ocrFile || isOcrAnalyzing}
+              className="flex-1 rounded-lg py-2 text-sm font-medium transition-colors cursor-pointer disabled:opacity-40"
+              style={{ background: 'var(--color-accent)', color: '#fff', border: 'none' }}
+            >
+              {isOcrAnalyzing ? '识别中…' : '开始识别'}
+            </button>
+          </div>
 
           {/* Result — editable so small OCR mistakes can be fixed before rendering */}
           {ocrResult && (
@@ -220,6 +230,16 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
             </div>
           )}
         </div>
+      )}
+
+      {cropOpen && ocrFile && (
+        <ImageCropper
+          source={ocrFile}
+          title={ocrFile.name}
+          onCrop={(img) => { setCropOpen(false); handleOcrFile(img) }}
+          onWhole={() => setCropOpen(false)}
+          onCancel={() => setCropOpen(false)}
+        />
       )}
 
       <PdfPagePicker
