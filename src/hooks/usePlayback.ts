@@ -165,7 +165,10 @@ export function usePlayback(scoreRef: React.RefObject<HTMLDivElement | null>) {
     pause,
     seekBeat,
     seekToNote,
-    setRate: (r: number) => setRateState(r),
+    setRate: (r: number) => {
+      setRateState(r)
+      playerRef.current?.setRate(r)   // takes effect mid-playback
+    },
     scoreRef,
   }
 }

@@ -10,7 +10,7 @@ React + TypeScript web app that converts MusicXML / MIDI / ABC into Chinese Numb
 **Live:** https://huichiy.github.io/Music-Score-Converter/
 **Repo:** https://github.com/huichiy/Music-Score-Converter/
 
-**Stack:** React 18 · TypeScript · Vite 6 · Tailwind CSS v4 · Zustand · Radix UI · pdfjs-dist · @tonejs/midi · JSZip · Cloudflare Workers (OCR proxy).
+**Stack:** React 18 · TypeScript · Vite 6 · Tailwind CSS v4 · Zustand · Radix UI · pdfjs-dist · @tonejs/midi · Tone.js (lazy, playback) · JSZip · Cloudflare Workers (OCR proxy).
 
 ## Local Dev
 ```bash
@@ -18,12 +18,12 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR + crop, 130 assertions) then scripts/test-parser.ts (MusicXML parsing, 31 assertions)
+npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR + crop + playback, 178 assertions) then scripts/test-parser.ts (MusicXML parsing, 31 assertions)
 ```
 
 - `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`. `scripts/test-parser.ts` parses inline MusicXML with `linkedom` (devDependency, tests only — never bundled).
 - `node scripts/screenshots.mjs` regenerates the README/docs screenshots via Playwright — the dev server must already be running on port 7790 (`npm run dev -- --port 7790`).
-- Imports use the `@/` alias → `src/` (defined in `vite.config.ts`); follow it in new files.
+- Imports use the `@/` alias → `src/` (defined in `vite.config.ts`); follow it in new files, with one caveat: **value** imports between files under `src/lib/` must be relative (`./parser`), because the tsx test runner doesn't resolve the alias for value imports. Type-only imports (`import type … from '@/types/score'`) are always fine.
 - Vite `base` is `/Music-Score-Converter/` in production builds (GitHub Pages subpath) and `/` in dev.
 
 OCR keys: the app reads `VITE_OCR_WORKER_URL` at build time (the Cloudflare Worker URL). Users can also paste a personal API key in the "OCR 设置" modal (BYOK, stored in `localStorage` under `jianpu.ocr.config.v1`, see `OCR_CONFIG_KEY` in `src/lib/vision/types.ts`). Neither path embeds keys in the bundle.
@@ -53,16 +53,20 @@ Music-Score-Converter/
 │   │   ├── OcrSettings.tsx          — BYOK provider / model / key modal
 │   │   ├── PdfPagePicker.tsx        — PDF thumbnail grid (page → ImageCropper)
 │   │   ├── ImageCropper.tsx         — box-select crop modal (PDF page / image → cropped PNG)
+│   │   ├── PlaybackBar.tsx          — transport strip (play/pause/stop, seek, speed)
 │   │   └── …Sidebar / Toolbar / TransposeSelect / ExportButtons / PartSelector / ScoreOutput / FileUpload
 │   ├── hooks/
 │   │   ├── useFileHandler.ts        — File parsing + render orchestration
-│   │   └── useOcr.ts                — OCR runner, delegates to vision adapter
+│   │   ├── useOcr.ts                — OCR runner, delegates to vision adapter
+│   │   └── usePlayback.ts           — playback orchestration + rAF highlight/progress loop
 │   ├── lib/
 │   │   ├── parser.ts                — MusicXML parser, pitch conversion, transposition
 │   │   ├── renderer.ts              — SVG layout engine
 │   │   ├── editor.ts                — Route B serialize/parse + token positions
 │   │   ├── pdfTools.ts              — Lazy pdfjs wrapper
 │   │   ├── cropTools.ts             — computeCropRect (display→source pixel mapping, unit-tested)
+│   │   ├── playback.ts              — pure scheduler: expandRepeats + buildPlaybackEvents (beats, unit-tested)
+│   │   ├── tonePlayer.ts            — lazy Tone.js audio layer (only file importing tone)
 │   │   ├── abcParser.ts             — ABC notation parser
 │   │   ├── downloader.ts            — PNG/JPEG export
 │   │   ├── utils.ts
@@ -277,6 +281,15 @@ Anthropic browser-direct calls require the header `anthropic-dangerous-direct-br
 
 ---
 
+## Playback (src/lib/playback.ts + src/lib/tonePlayer.ts + src/hooks/usePlayback.ts)
+Two layers, deliberately split so the audio backend is replaceable:
+
+- **Pure scheduler** (`playback.ts`, unit-tested): `expandRepeats()` unrolls `|:` `:|` + `{N}` voltas into performance order (two passes; pass 1 takes `{1}`, pass 2 takes `{2}`; `_volta >= 3` never plays). **The `justJumped` flag is load-bearing** — without it the section's `|:` resets the pass counter on the jump back and playback loops forever. Output carries original measure indices; a runaway guard caps expansion at 4× score length. `buildPlaybackEvents()` then emits `PlaybackEvent[]` with times in **beats** (quarter = 1), handling dots, tuplets, rests as silent time, ties (extend the still-sounding events, never re-attack), chords (same `startBeat`), multi-rests, temp time signatures, and grace notes (`GRACE_BEATS = 0.125`, borrowed from the front of the main note).
+- **Audio layer** (`tonePlayer.ts`): the ONLY file that imports `tone`, and it does so lazily (`await import('tone')`, same pattern as pdfjs in pdfTools) so the main bundle is unaffected. Events are scheduled in **Transport ticks**, which is what makes the speed slider (`Transport.bpm`) and seeking work without rebuilding the event list. `PolySynth(FMSynth)` so chords sound together. `Tone.start()` must run inside a user gesture (the play button).
+- **Orchestration** (`usePlayback.ts`): one `requestAnimationFrame` loop serves both the follow highlight and the progress bar. Auto-stops and resets at the end. Changing scores or unmounting disposes the player — otherwise old audio outlives its score.
+
+Times are in beats everywhere except inside the player: tempo belongs to playback, not to the music. Highlight uses `.jn-note-playing` (a separate class from the text editor's `jn-note-current`) and falls back to the `data-rest-m` group for whole-rest measures. Clicking a note seeks there only when `editModeA` is off, so edit mode keeps owning the click.
+
 ## Box-Select Crop (src/components/ImageCropper.tsx + src/lib/cropTools.ts)
 Generic, OCR-agnostic crop step so users can extract one instrument's row from a 总谱 before OCR. `ImageCropper` takes `source: HTMLCanvasElement | File` (PDF page rendered @2.0x, or an uploaded image), shows a draggable/resizable box (pure React pointer events, no library, dim-outside via `box-shadow`), and on confirm maps the display selection to full-resolution pixels via `computeCropRect` (the only logic-bearing piece, unit-tested in test-roundtrip.ts), crops with `drawImage`, and hands back a PNG `File`. Two entry points: PdfPagePicker (clicking a page opens the cropper; 整页 button = whole page) and OcrSection (optional 框选区域 button for images; not shown for PDFs, which route through the picker). The cropper renders as a **sibling** of PdfPagePicker's `onClick={onCancel}` backdrop (via fragment), not a child, so its backdrop click doesn't bubble up and close the picker. Single-box, iterate: the editable OCR result box accumulates multiple crops.
 
@@ -305,7 +318,7 @@ Generic, OCR-agnostic crop step so users can extract one instrument's row from a
 ## CSS / Theme
 - Light + dark themes driven by `document.documentElement.getAttribute('data-theme')`; CSS variables defined in `src/index.css`
 - Theme toggle in Toolbar (tool layer) and LandingPage top bar
-- Mobile breakpoint: `@media (max-width: 600px)` — sidebar collapses to top panel; EditTextOverlay drawer becomes a fullscreen overlay
+- Mobile-first CSS: base rules are the narrow-screen layout; `@media (min-width: 640px)` scales up to desktop (sidebar becomes a fixed 256px column). There is no `max-width` mobile query — put narrow-screen styles in the base and undo them at 640px (see `.app-sidebar` and `.playback-clock`)
 - SVG scaling: `.score-output svg { max-width: 100%; height: auto; display: block; }`
 
 ---
@@ -329,6 +342,11 @@ Generic, OCR-agnostic crop step so users can extract one instrument's row from a
 | Never offer Gemini Pro on the `auto` (Worker) provider | The shared Worker key is free-tier — no Pro quota, instant 429. Pro lives only under BYOK `gemini`. `sanitizeOcrConfig` also drops stale saved model ids on load |
 | OCR adapters send `max_tokens` 8192 (Anthropic: 4096) | Gemini 2.5 Flash counts THINKING tokens against `maxOutputTokens` — 2048 truncated a 16-measure score to 3 measures. Worker passes the client value through, so client-side bumps work without redeploying the Worker |
 | `normalizeOcrText` runs before the OCR result enters the store | The result box must show exactly what will be parsed; never normalize at render time |
+| Pitch math, `tupletFactor`, `computeOrigIdxMap`, `durationBeats` have exactly ONE copy | Playback reuses all four via exports. A second copy drifts — see the `collapseRestRuns` lesson above |
+| Playback times are in beats; only `tonePlayer` knows seconds/BPM | Lets the speed slider change `Transport.bpm` without re-deriving the music, and keeps the scheduler unit-testable without tempo |
+| `expandRepeats` must keep the `justJumped` flag | Without it `|:` resets the pass counter on the jump back → infinite loop |
+| Playback accumulates written durations; it never pads a short measure to the bar | Padding would fill a dropped/misread note with phantom silence — the exact error playback exists to expose. An under-filled measure just compresses |
+| **Value** imports inside `src/lib/` must be relative (`./parser`), not `@/lib/parser` | The tsx test runner doesn't resolve Vite's alias for value imports, so `@/lib/*` breaks `npm run test`. Type-only `@/types/score` imports are fine (erased). Precedent: `src/lib/vision/index.ts` |
 
 ---
 
@@ -383,7 +401,8 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] PDF input + page picker (lazy pdfjs-dist)
 - [x] BYOK multi-provider OCR — Gemini / Anthropic / OpenAI / Groq / Custom (OpenAI-compatible)
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with the key off the bundle
-- [x] Round-trip test suite (`npm run test`, 125 + 31 assertions across two files)
+- [x] Round-trip test suite (`npm run test`, 178 + 31 assertions across two files)
+- [x] Playback (Tone.js) — full repeat/volta expansion, follow highlight, pause/seek/click-a-note/speed slider
 - [x] MusicXML import: `<articulations>` / fermata / grace notes (倚音) / `<time-modification>` tuplets — plus graceNote transposition fix
 - [x] MusicXML import: `<ending>` (跳房子/volta) → `_volta`
 - [x] Route C: OCR → Route B text → rendered SVG loop — prompts emit exact Route B format (incl. v3), `normalizeOcrText`, editable result box, error sentinels, empty-parse guard
@@ -391,7 +410,7 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] Phase 3 OCR: box-select crop — extract one instrument's row from a 总谱 PDF/image before OCR (single-box, iterate)
 
 ### Pending
-- [ ] Playback (Tone.js) — hear the score as it's converted
+- [ ] Playback: real dizi samples instead of a synth (needs hosted audio files)
 - [ ] 笛子 ornaments — parse MusicXML `<ornaments>` + render symbols; Route B syntax extension: `1[tr]` 颤音, `1[~]` 波音, `1[又]` 叠音, `1[打]` 打音, `1[*]` 花舌
 - [ ] Multi-voice rendering (long term — architectural change)
 

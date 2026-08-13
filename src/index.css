@@ -63,6 +63,16 @@
   }
 }
 
+/* Playback bar — mobile-first: on narrow screens drop the clock and shrink the
+   speed slider so the buttons and progress bar stay usable. */
+.playback-clock { display: none; }
+.playback-speed input[type="range"] { width: 48px; }
+
+@media (min-width: 640px) {
+  .playback-clock { display: inline; }
+  .playback-speed input[type="range"] { width: 76px; }
+}
+
 @layer utilities {
   .score-output svg {
     max-width: 100%;

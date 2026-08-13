@@ -10,7 +10,7 @@ function fmt(beats: number, effectiveBpm: number): string {
 }
 
 export default function PlaybackBar({ playback }: PlaybackBarProps) {
-  const { status, canPlay, error, play, pause, stop, positionBeats, totalBeats, seekBeat, bpm, rate } = playback
+  const { status, canPlay, error, play, pause, stop, positionBeats, totalBeats, seekBeat, bpm, rate, setRate } = playback
   const isPlaying = status === 'playing'
   // Wall-clock at the current speed: the score's own tempo scaled by the slider
   const bpmForClock = bpm * rate
@@ -67,6 +67,23 @@ export default function PlaybackBar({ playback }: PlaybackBarProps) {
       >
         {fmt(positionBeats, bpmForClock)} / {fmt(totalBeats, bpmForClock)}
       </span>
+
+      <div className="flex items-center gap-1.5 shrink-0 playback-speed">
+        <span className="text-xs font-mono" style={{ color: 'var(--color-muted)' }}>
+          {rate.toFixed(1)}×
+        </span>
+        <input
+          type="range"
+          min={0.5}
+          max={1.5}
+          step={0.1}
+          value={rate}
+          onChange={(e) => setRate(parseFloat(e.target.value))}
+          disabled={!canPlay}
+          title="播放速度"
+          style={{ width: 76, accentColor: 'var(--color-accent)', cursor: 'pointer' }}
+        />
+      </div>
 
       {error && <span className="text-xs shrink-0" style={{ color: 'var(--color-accent)' }}>{error}</span>}
     </div>
