@@ -7,7 +7,7 @@
 
 import { serializeToText, parseFromText } from '../src/lib/editor'
 import { renderJianpuSVG, collapseRestRuns } from '../src/lib/renderer'
-import { transposeNoteObjects } from '../src/lib/parser'
+import { transposeNoteObjects, noteToMidi } from '../src/lib/parser'
 import { normalizeOcrText, extractOcrError } from '../src/lib/vision/utils'
 import { JIANPU_OCR_PROMPT, WESTERN_TO_JIANPU_PROMPT } from '../src/lib/vision/prompts'
 import { MODEL_OPTIONS } from '../src/lib/vision/types'
@@ -620,6 +620,24 @@ describe('computeCropRect maps display selection to source pixels', () => {
   assertEq('rounds to integers', computeCropRect({ x: 10.4, y: 10.6, w: 20.5, h: 20.4 }, { w: 100, h: 100 }, { w: 100, h: 100 }), { x: 10, y: 11, w: 21, h: 20 })
   // never zero — a sliver still yields at least 1px
   assertEq('min 1px', computeCropRect({ x: 0, y: 0, w: 0, h: 0 }, { w: 100, h: 100 }, { w: 100, h: 100 }), { x: 0, y: 0, w: 1, h: 1 })
+})
+
+describe('noteToMidi: degree/octave/accidental + key → MIDI', () => {
+  // C major: degree 1 octave 0 is middle C = MIDI 60
+  assertEq('C key, 1 → 60 (middle C)', noteToMidi(1, 0, '', 'C'), 60)
+  assertEq('C key, 5 → 67 (G4)', noteToMidi(5, 0, '', 'C'), 67)
+  assertEq('C key, 1 octave +1 → 72', noteToMidi(1, 1, '', 'C'), 72)
+  assertEq('C key, 1 octave -1 → 48', noteToMidi(1, -1, '', 'C'), 48)
+  assertEq('C key, #4 → 66 (F#4)', noteToMidi(4, 0, '#', 'C'), 66)
+  assertEq('C key, b7 → 70 (Bb4)', noteToMidi(7, 0, 'b', 'C'), 70)
+  // F major: tonic F4 = MIDI 65
+  assertEq('F key, 1 → 65 (F4)', noteToMidi(1, 0, '', 'F'), 65)
+  assertEq('F key, 6 → 74 (D5)', noteToMidi(6, 0, '', 'F'), 74)
+  // G major: tonic G4 = 67; degree 5 is D5 = 74
+  assertEq('G key, 1 → 67 (G4)', noteToMidi(1, 0, '', 'G'), 67)
+  assertEq('G key, 5 → 74 (D5)', noteToMidi(5, 0, '', 'G'), 74)
+  // Bb major: tonic Bb4 = 70
+  assertEq('Bb key, 1 → 70 (Bb4)', noteToMidi(1, 0, '', 'Bb'), 70)
 })
 
 // ============================================================================

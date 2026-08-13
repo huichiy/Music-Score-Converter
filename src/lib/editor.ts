@@ -5,7 +5,7 @@ import type { Articulation, ChordNote, GraceNote, Measure, MeasureArray, NoteObj
 // Returns a Map: originalMeasureIdx -> origIdx (only for measures that contribute
 // to data-m on note elements; whole-rest measures are absent since their `0`s
 // have no data-m).
-function computeOrigIdxMap(measures: Measure[]): Map<number, number> {
+export function computeOrigIdxMap(measures: Measure[]): Map<number, number> {
   const map = new Map<number, number>()
   let origIdx = 0
   let i = 0
@@ -297,7 +297,7 @@ function parseDurationSuffix(suffix: string): { type: NoteObject['type']; dot: b
   return { type: 'quarter', dot: false }
 }
 
-function durationBeats(type: NoteObject['type'], dot: boolean): number {
+export function durationBeats(type: NoteObject['type'], dot: boolean): number {
   const base: Record<string, number> = { whole: 4, half: 2, quarter: 1, eighth: 0.5, '16th': 0.25, '32nd': 0.125 }
   const b = base[type] || 1
   return dot ? b * 1.5 : b

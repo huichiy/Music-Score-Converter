@@ -50,7 +50,7 @@ export function collapseRestRuns(measures: Measure[]): Measure[] {
 }
 
 // Tuplet duration correction: N notes in the time of pow2floor(N) (duplet: 2 in 3)
-function tupletFactor(n: number | undefined): number {
+export function tupletFactor(n: number | undefined): number {
   if (!n || n < 2) return 1
   if (n === 2) return 3 / 2
   let p = 1

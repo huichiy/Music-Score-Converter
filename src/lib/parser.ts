@@ -12,6 +12,19 @@ export const keyMap: Record<string, string> = {
   '0': 'C', '1': 'G', '2': 'D', '3': 'A', '4': 'E', '5': 'B', '6': 'F#', '7': 'C#',
 }
 
+/**
+ * Absolute MIDI note number for a Jianpu note in a given key.
+ * Shared by playback (and available to anything else needing real pitch):
+ * this is the same arithmetic `transposeNoteObjects`'s internal `absSemi` uses,
+ * plus the +12 that converts our semitone space (where C4 = 48) to MIDI (C4 = 60).
+ */
+export function noteToMidi(degree: number, octave: number, accidental: string, keyStr: string): number {
+  const keyAlter = keyStr.includes('#') ? 1 : keyStr.includes('b') ? -1 : 0
+  const tonicSemi = pitchToSemitones(keyStr[0], keyAlter, 4)
+  const accVal = accidental === '#' ? 1 : accidental === 'b' ? -1 : 0
+  return tonicSemi + octave * 12 + scaleDegrees[degree - 1] + accVal + 12
+}
+
 function parseChordNote(
   noteEl: Element,
   baseTonicStep: string,
