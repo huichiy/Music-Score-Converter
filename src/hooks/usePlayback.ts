@@ -5,6 +5,22 @@ import { createPlayer, type Player } from '@/lib/tonePlayer'
 
 const DEFAULT_BPM = 90
 
+function clearHighlight(root: HTMLElement | null) {
+  if (!root) return
+  root.querySelectorAll('.jn-note-playing').forEach((el) => el.classList.remove('jn-note-playing'))
+  root.querySelectorAll('.jn-rest-playing').forEach((el) => el.classList.remove('jn-rest-playing'))
+}
+
+function paintHighlight(root: HTMLElement | null, measureIdx: number, noteIdx: number) {
+  if (!root) return
+  clearHighlight(root)
+  const note = root.querySelector(`[data-m="${measureIdx}"][data-n="${noteIdx}"]`)
+  if (note) { note.classList.add('jn-note-playing'); return }
+  // Whole-rest measures have no per-note data-m; outline the rest group instead
+  const rest = root.querySelector(`[data-rest-m="${measureIdx}"]`)
+  rest?.classList.add('jn-rest-playing')
+}
+
 export function usePlayback(scoreRef: React.RefObject<HTMLDivElement | null>) {
   const currentMeasures = useScoreStore((s) => s.currentMeasures)
   const currentKeyStr = useScoreStore((s) => s.currentKeyStr)
@@ -36,7 +52,8 @@ export function usePlayback(scoreRef: React.RefObject<HTMLDivElement | null>) {
     playerRef.current?.stop()
     setStatus('idle')
     setPositionBeats(0)
-  }, [stopLoop])
+    clearHighlight(scoreRef.current)
+  }, [stopLoop, scoreRef])
 
   // rAF loop: single source for progress (and, in the next task, the highlight)
   const startLoop = useCallback(() => {
@@ -47,10 +64,19 @@ export function usePlayback(scoreRef: React.RefObject<HTMLDivElement | null>) {
       const pos = p.positionBeats()
       setPositionBeats(pos)
       if (pos >= totalBeats) { stop(); return }   // auto-stop and reset at the end
+
+      // Latest event that has already started is the one sounding now
+      let cur = -1
+      for (let i = 0; i < events.length; i++) {
+        if (events[i].startBeat <= pos + 1e-6) cur = i
+        else break
+      }
+      if (cur >= 0) paintHighlight(scoreRef.current, events[cur].measureIdx, events[cur].noteIdx)
+
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
-  }, [stop, stopLoop, totalBeats])
+  }, [stop, stopLoop, totalBeats, events, scoreRef])
 
   // `fromBeat` lets "click a note to start there" begin at that note instead of
   // starting at 0 and immediately jumping (which would blip the first note).
