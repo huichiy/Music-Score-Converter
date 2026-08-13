@@ -32,3 +32,6 @@ worker/dist/
 
 # Playwright CLI scratch (browser automation testing)
 .playwright-cli/
+
+# Subagent-driven-development scratch workspace
+.superpowers/
