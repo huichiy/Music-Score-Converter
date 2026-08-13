@@ -5,6 +5,8 @@ import Sidebar from '@/components/Sidebar'
 import LandingPage from '@/components/LandingPage'
 import Toolbar from '@/components/Toolbar'
 import ScoreOutput from '@/components/ScoreOutput'
+import PlaybackBar from '@/components/PlaybackBar'
+import { usePlayback } from '@/hooks/usePlayback'
 import EditNotePopup from '@/components/EditNotePopup'
 import EditTextOverlay from '@/components/EditTextOverlay'
 import type { NoteObject, Measure, MeasureArray } from '@/types/score'
@@ -21,6 +23,7 @@ export default function App() {
 
   const store = useScoreStore()
   const { convert, transpose, loadSample, changePartAndRender, rerenderWithStore, loadFromText } = useFileHandler(mainContentRef)
+  const playback = usePlayback(scoreOutputRef)
 
   // Sync isDark to document data-theme attribute + re-render SVG with new theme colors
   useEffect(() => {
@@ -268,6 +271,7 @@ export default function App() {
               onEditModeB={handleEditModeB}
               onReset={handleReset}
             />
+            <PlaybackBar playback={playback} />
             <div className="flex-1 overflow-y-auto">
               <ScoreOutput
                 svgHtml={svgHtml}
