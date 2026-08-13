@@ -83,8 +83,14 @@ export function usePlayback(scoreRef: React.RefObject<HTMLDivElement | null>) {
   const play = useCallback(async (fromBeat?: number) => {
     if (events.length === 0) return
     setError('')
-    // Resuming from pause: the schedule is still loaded, just start the clock
+    // Resuming from pause: the schedule is still loaded, just start the clock.
+    // Honor an explicit fromBeat (click-a-note while paused) instead of
+    // resuming at the pause point.
     if (status === 'paused' && playerRef.current) {
+      if (fromBeat !== undefined) {
+        playerRef.current.seekBeat(fromBeat)
+        setPositionBeats(fromBeat)
+      }
       playerRef.current.play()
       setStatus('playing')
       startLoop()
