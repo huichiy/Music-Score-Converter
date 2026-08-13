@@ -13,7 +13,7 @@ import { JIANPU_OCR_PROMPT, WESTERN_TO_JIANPU_PROMPT } from '../src/lib/vision/p
 import { MODEL_OPTIONS } from '../src/lib/vision/types'
 import { sanitizeOcrConfig } from '../src/lib/vision/index'
 import { computeCropRect } from '../src/lib/cropTools'
-import { expandRepeats } from '../src/lib/playback'
+import { expandRepeats, buildPlaybackEvents } from '../src/lib/playback'
 import type { Measure, MeasureArray, NoteObject } from '../src/types/score'
 
 let pass = 0
@@ -713,6 +713,122 @@ describe('expandRepeats: repeats and voltas unroll into a linear measure list', 
     measure([note({ degree: 1 })], { _repeatStart: true, _repeatEnd: true }))
   const out = expandRepeats(pathological)
   assertEq('runaway guard caps output', out.length <= 6 * 4, true)
+})
+
+describe('buildPlaybackEvents: linear measures → timed events (beats)', () => {
+  const build = (ms: Measure[], key = 'C', time = '4/4') =>
+    buildPlaybackEvents(expandRepeats(ms), ms, key, time)
+
+  // Durations: quarter=1, eighth=0.5, dotted quarter=1.5, half=2
+  const durs: Measure[] = [
+    measure([
+      note({ degree: 1 }),
+      note({ degree: 2, type: 'eighth' }),
+      note({ degree: 3, dot: true }),
+      note({ degree: 4, type: 'half' }),
+    ]),
+  ]
+  const dEv = build(durs)
+  assertEq('4 events', dEv.length, 4)
+  assertEq('start beats accumulate', dEv.map(e => e.startBeat), [0, 1, 1.5, 3])
+  assertEq('durations', dEv.map(e => e.durBeats), [1, 0.5, 1.5, 2])
+  assertEq('midi pitches in C', dEv.map(e => e.midi), [60, 62, 64, 65])
+
+  // Rests advance time but emit nothing
+  const withRest: Measure[] = [
+    measure([note({ degree: 1 }), note({ degree: 0, rest: true }), note({ degree: 3 })]),
+  ]
+  const rEv = build(withRest)
+  assertEq('rest emits no event', rEv.length, 2)
+  assertEq('rest still advances time', rEv.map(e => e.startBeat), [0, 2])
+
+  // Tie extends the previous event instead of re-attacking
+  const tied: Measure[] = [
+    measure([note({ degree: 1, type: 'whole' })]),
+    measure([note({ degree: 1, tie: true, type: 'whole' })]),
+  ]
+  const tEv = build(tied)
+  assertEq('tie does not add an event', tEv.length, 1)
+  assertEq('tie extends duration to 8 beats', tEv[0].durBeats, 8)
+
+  // Chord notes sound together
+  const chord: Measure[] = [
+    measure([note({ degree: 5, chordNotes: [{ degree: 3, octave: 0, accidental: '' }] }), note({ degree: 1 })]),
+  ]
+  const cEv = build(chord)
+  assertEq('chord yields 3 events total', cEv.length, 3)
+  assertEq('chord pair shares startBeat', cEv[0].startBeat === cEv[1].startBeat, true)
+  assertEq('chord pitches 5 and 3 in C', [cEv[0].midi, cEv[1].midi].sort((a, b) => a - b), [64, 67])
+
+  // Triplet: three eighths under ~3 occupy one beat (x 2/3 each)
+  const trip: Measure[] = [
+    measure([
+      note({ degree: 1, type: 'eighth', tuplet: 3 }),
+      note({ degree: 2, type: 'eighth', tuplet: 3 }),
+      note({ degree: 3, type: 'eighth', tuplet: 3 }),
+      note({ degree: 5 }),
+    ]),
+  ]
+  const trEv = build(trip)
+  assertEq('triplet total is one beat', trEv[3].startBeat, 1)
+  assertEq('each triplet eighth is 1/3 beat', Math.abs(trEv[0].durBeats - 1 / 3) < 1e-9, true)
+
+  // multiRest advances 4 measures of silence in 4/4
+  const mr: Measure[] = [
+    measure([note({ degree: 1, type: 'whole' })]),
+    { _multiRest: 4 },
+    measure([note({ degree: 2 })]),
+  ]
+  const mrEv = build(mr)
+  assertEq('multiRest emits nothing', mrEv.length, 2)
+  assertEq('multiRest advances 4 measures', mrEv[1].startBeat, 4 + 16)
+
+  // Temp time signature changes the multiRest measure length
+  const ts: Measure[] = [
+    measure([note({ degree: 1 })], { _timeSig: '3/4' }),
+    { _multiRest: 2 },
+    measure([note({ degree: 2 })]),
+  ]
+  const tsEv = build(ts)
+  assertEq('3/4 multiRest advances 2x3 beats', tsEv[1].startBeat, 1 + 6)
+
+  // Grace note: short event before the main, main shifted and shortened
+  const grace: Measure[] = [
+    measure([note({ degree: 1, graceNote: { degree: 2, octave: 0, accidental: '' } })]),
+  ]
+  const gEv = build(grace)
+  assertEq('grace adds an event', gEv.length, 2)
+  assertEq('grace is first and short', [gEv[0].startBeat, gEv[0].durBeats], [0, 0.125])
+  assertEq('grace pitch is degree 2', gEv[0].midi, 62)
+  assertEq('main note shifted after grace', gEv[1].startBeat, 0.125)
+  assertEq('main note shortened', gEv[1].durBeats, 0.875)
+
+  // Repeats are honored end-to-end: a full 4/4 measure under |: :| plays twice
+  const rep: Measure[] = [
+    measure([note({ degree: 1 }), note({ degree: 2 }), note({ degree: 3 }), note({ degree: 4 })], { _repeatStart: true, _repeatEnd: true }),
+  ]
+  const repEv = build(rep)
+  assertEq('repeat plays all four notes twice', repEv.length, 8)
+  assertEq('second pass starts one measure later', repEv[4].startBeat, 4)
+
+  // Key is honored (F major tonic = MIDI 65)
+  const inF = build([measure([note({ degree: 1 })])], 'F')
+  assertEq('key F tonic is 65', inF[0].midi, 65)
+})
+
+describe('buildPlaybackEvents: measureIdx matches renderer data-m', () => {
+  // A whole-rest measure gets no data-m of its own and does not advance origIdx,
+  // so the following measure's events must carry origIdx 1, not 2.
+  const ms: Measure[] = [
+    measure([note({ degree: 1 })]),
+    measure([note({ degree: 0, type: 'whole', rest: true })]),
+    measure([note({ degree: 2 })]),
+  ]
+  const ev = buildPlaybackEvents(expandRepeats(ms), ms, 'C', '4/4')
+  assertEq('two sounding events', ev.length, 2)
+  assertEq('first measure origIdx 0', ev[0].measureIdx, 0)
+  assertEq('measure after a whole rest keeps origIdx 1', ev[1].measureIdx, 1)
+  assertEq('noteIdx is the within-measure index', [ev[0].noteIdx, ev[1].noteIdx], [0, 0])
 })
 
 // ============================================================================
