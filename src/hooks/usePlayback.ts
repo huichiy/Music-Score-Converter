@@ -83,6 +83,13 @@ export function usePlayback(scoreRef: React.RefObject<HTMLDivElement | null>) {
   const play = useCallback(async (fromBeat?: number) => {
     if (events.length === 0) return
     setError('')
+    // Resuming from pause: the schedule is still loaded, just start the clock
+    if (status === 'paused' && playerRef.current) {
+      playerRef.current.play()
+      setStatus('playing')
+      startLoop()
+      return
+    }
     try {
       if (!playerRef.current) playerRef.current = await createPlayer()
       await playerRef.current.load(events, bpm)
@@ -98,7 +105,7 @@ export function usePlayback(scoreRef: React.RefObject<HTMLDivElement | null>) {
       setError('音频加载失败，请重试')
       setStatus('idle')
     }
-  }, [events, bpm, rate, startLoop])
+  }, [events, bpm, rate, startLoop, status])
 
   // Re-loading the score, resetting, or unmounting must silence any running audio
   useEffect(() => {
@@ -111,6 +118,34 @@ export function usePlayback(scoreRef: React.RefObject<HTMLDivElement | null>) {
     playerRef.current = null
   }, [stopLoop])
 
+  const pause = useCallback(() => {
+    if (status !== 'playing') return
+    stopLoop()
+    playerRef.current?.pause()
+    setStatus('paused')
+  }, [status, stopLoop])
+
+  // Seek works whether we're playing, paused, or stopped. If audio hasn't been
+  // created yet (nothing played so far) we only move the visual position; the
+  // next play() starts from there.
+  const seekBeat = useCallback((beat: number) => {
+    const clamped = Math.max(0, Math.min(beat, totalBeats))
+    setPositionBeats(clamped)
+    playerRef.current?.seekBeat(clamped)
+    if (status === 'playing') startLoop()
+  }, [status, startLoop, totalBeats])
+
+  const seekToNote = useCallback(async (measureIdx: number, noteIdx: number) => {
+    const target = events.find((e) => e.measureIdx === measureIdx && e.noteIdx === noteIdx)
+    if (!target) return
+    if (status === 'playing') {
+      seekBeat(target.startBeat)
+      return
+    }
+    // Not playing (idle or paused): start fresh from the clicked note
+    await play(target.startBeat)
+  }, [events, status, seekBeat, play])
+
   return {
     status,
     positionBeats,
@@ -121,10 +156,9 @@ export function usePlayback(scoreRef: React.RefObject<HTMLDivElement | null>) {
     canPlay: events.length > 0,
     play,
     stop,
-    // Filled in by later tasks; declared now so PlaybackBar's props never change shape
-    pause: () => {},
-    seekBeat: (_b: number) => {},
-    seekToNote: (_m: number, _n: number) => {},
+    pause,
+    seekBeat,
+    seekToNote,
     setRate: (r: number) => setRateState(r),
     scoreRef,
   }

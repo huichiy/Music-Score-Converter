@@ -277,6 +277,7 @@ export default function App() {
                 svgHtml={svgHtml}
                 outputRef={scoreOutputRef}
                 onNoteClick={handleNoteClick}
+                onNoteSeek={playback.seekToNote}
               />
             </div>
           </>
