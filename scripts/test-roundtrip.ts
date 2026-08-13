@@ -13,6 +13,7 @@ import { JIANPU_OCR_PROMPT, WESTERN_TO_JIANPU_PROMPT } from '../src/lib/vision/p
 import { MODEL_OPTIONS } from '../src/lib/vision/types'
 import { sanitizeOcrConfig } from '../src/lib/vision/index'
 import { computeCropRect } from '../src/lib/cropTools'
+import { expandRepeats } from '../src/lib/playback'
 import type { Measure, MeasureArray, NoteObject } from '../src/types/score'
 
 let pass = 0
@@ -638,6 +639,80 @@ describe('noteToMidi: degree/octave/accidental + key → MIDI', () => {
   assertEq('G key, 5 → 74 (D5)', noteToMidi(5, 0, '', 'G'), 74)
   // Bb major: tonic Bb4 = 70
   assertEq('Bb key, 1 → 70 (Bb4)', noteToMidi(1, 0, '', 'Bb'), 70)
+})
+
+describe('expandRepeats: repeats and voltas unroll into a linear measure list', () => {
+  const idxs = (ms: Measure[]) => expandRepeats(ms).map(e => e.measureIdx)
+
+  // No repeats → identity
+  const plain: Measure[] = [
+    measure([note({ degree: 1 })]),
+    measure([note({ degree: 2 })]),
+    measure([note({ degree: 3 })]),
+  ]
+  assertEq('no repeats → identity', idxs(plain), [0, 1, 2])
+
+  // |: A B :| → A B A B
+  const simple: Measure[] = [
+    measure([note({ degree: 1 })], { _repeatStart: true }),
+    measure([note({ degree: 2 })], { _repeatEnd: true }),
+  ]
+  assertEq('simple repeat doubles the section', idxs(simple), [0, 1, 0, 1])
+
+  // |: M1 | {1} M2 :| {2} M3 ||  →  M1 M2 M1 M3
+  const volta: Measure[] = [
+    measure([note({ degree: 1 })], { _repeatStart: true }),
+    measure([note({ degree: 2 })], { _volta: 1, _repeatEnd: true }),
+    measure([note({ degree: 3 })], { _volta: 2 }),
+  ]
+  assertEq('volta 1/2 chooses per pass', idxs(volta), [0, 1, 0, 2])
+
+  // :| with no preceding |: → repeat from the very beginning
+  const noStart: Measure[] = [
+    measure([note({ degree: 1 })]),
+    measure([note({ degree: 2 })], { _repeatEnd: true }),
+  ]
+  assertEq('repeatEnd without repeatStart repeats from index 0', idxs(noStart), [0, 1, 0, 1])
+
+  // Multi-measure volta: |: M1 | {1} M2 | {1} M3 :| {2} M4
+  const multiVolta: Measure[] = [
+    measure([note({ degree: 1 })], { _repeatStart: true }),
+    measure([note({ degree: 2 })], { _volta: 1 }),
+    measure([note({ degree: 3 })], { _volta: 1, _repeatEnd: true }),
+    measure([note({ degree: 4 })], { _volta: 2 }),
+  ]
+  assertEq('multi-measure volta', idxs(multiVolta), [0, 1, 2, 0, 3])
+
+  // volta 3 never matches either pass → skipped (documented v1 limitation)
+  const volta3: Measure[] = [
+    measure([note({ degree: 1 })], { _repeatStart: true }),
+    measure([note({ degree: 2 })], { _volta: 1, _repeatEnd: true }),
+    measure([note({ degree: 3 })], { _volta: 3 }),
+  ]
+  assertEq('volta 3 is skipped', idxs(volta3), [0, 1, 0])
+
+  // multiRest blocks pass through
+  const withMultiRest: Measure[] = [
+    measure([note({ degree: 1 })]),
+    { _multiRest: 4 },
+    measure([note({ degree: 2 })]),
+  ]
+  assertEq('multiRest passes through', idxs(withMultiRest), [0, 1, 2])
+
+  // Two independent repeat sections each double
+  const twoSections: Measure[] = [
+    measure([note({ degree: 1 })], { _repeatStart: true }),
+    measure([note({ degree: 2 })], { _repeatEnd: true }),
+    measure([note({ degree: 3 })], { _repeatStart: true }),
+    measure([note({ degree: 4 })], { _repeatEnd: true }),
+  ]
+  assertEq('two sections', idxs(twoSections), [0, 1, 0, 1, 2, 3, 2, 3])
+
+  // Runaway guard: every measure both opens and closes a repeat
+  const pathological: Measure[] = Array.from({ length: 6 }, () =>
+    measure([note({ degree: 1 })], { _repeatStart: true, _repeatEnd: true }))
+  const out = expandRepeats(pathological)
+  assertEq('runaway guard caps output', out.length <= 6 * 4, true)
 })
 
 // ============================================================================
