@@ -8,17 +8,13 @@ const DEFAULT_BPM = 90
 function clearHighlight(root: HTMLElement | null) {
   if (!root) return
   root.querySelectorAll('.jn-note-playing').forEach((el) => el.classList.remove('jn-note-playing'))
-  root.querySelectorAll('.jn-rest-playing').forEach((el) => el.classList.remove('jn-rest-playing'))
 }
 
 function paintHighlight(root: HTMLElement | null, measureIdx: number, noteIdx: number) {
   if (!root) return
   clearHighlight(root)
   const note = root.querySelector(`[data-m="${measureIdx}"][data-n="${noteIdx}"]`)
-  if (note) { note.classList.add('jn-note-playing'); return }
-  // Whole-rest measures have no per-note data-m; outline the rest group instead
-  const rest = root.querySelector(`[data-rest-m="${measureIdx}"]`)
-  rest?.classList.add('jn-rest-playing')
+  note?.classList.add('jn-note-playing')
 }
 
 export function usePlayback(scoreRef: React.RefObject<HTMLDivElement | null>) {
@@ -55,7 +51,7 @@ export function usePlayback(scoreRef: React.RefObject<HTMLDivElement | null>) {
     clearHighlight(scoreRef.current)
   }, [stopLoop, scoreRef])
 
-  // rAF loop: single source for progress (and, in the next task, the highlight)
+  // rAF loop: single source for both the progress bar and the follow highlight
   const startLoop = useCallback(() => {
     stopLoop()
     const tick = () => {
@@ -169,6 +165,5 @@ export function usePlayback(scoreRef: React.RefObject<HTMLDivElement | null>) {
       setRateState(r)
       playerRef.current?.setRate(r)   // takes effect mid-playback
     },
-    scoreRef,
   }
 }

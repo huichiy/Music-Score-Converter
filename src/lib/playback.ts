@@ -98,22 +98,39 @@ export function buildPlaybackEvents(
   const origIdxMap = computeOrigIdxMap(measures)
   const events: PlaybackEvent[] = []
   let beat = 0
-  let beatsPerMeasure = parseInt(timeStr.split('/')[0]) || 4
+  // Bar length in quarter notes (event times are quarters), matching the
+  // renderer's beatUnit = 4 / denominator convention. The raw numerator only
+  // agrees with this when the denominator is 4.
+  const barBeatsOf = (time: string): number => {
+    const [numStr, denStr] = time.split('/')
+    const num = parseInt(numStr) || 4
+    const den = parseInt(denStr) || 4
+    return (num * 4) / den
+  }
+  let barBeats = barBeatsOf(timeStr)
 
   for (const entry of expanded) {
     const m = measures[entry.measureIdx]
 
     // Multi-measure rest: silence for N measures at the current meter
     if (!Array.isArray(m)) {
-      beat += ((m as MultiRestBlock)._multiRest || 0) * beatsPerMeasure
+      beat += ((m as MultiRestBlock)._multiRest || 0) * barBeats
       continue
     }
 
     const arr = m as MeasureArray
     if (arr._timeSig) {
-      beatsPerMeasure = parseInt(arr._timeSig.split('/')[0]) || beatsPerMeasure
+      barBeats = barBeatsOf(arr._timeSig)
     }
     const origIdx = origIdxMap.get(entry.measureIdx) ?? -1
+
+    // A lone whole rest is the notation for a fully silent bar (the renderer
+    // draws it as such) — advance one bar rather than a literal whole note.
+    // A partially filled measure is NOT padded: written durations only.
+    if (arr.length === 1 && arr[0].rest && arr[0].type === 'whole') {
+      beat += barBeats
+      continue
+    }
 
     for (let j = 0; j < arr.length; j++) {
       const noteObj = arr[j]

@@ -81,7 +81,7 @@ export default function PlaybackBar({ playback }: PlaybackBarProps) {
           onChange={(e) => setRate(parseFloat(e.target.value))}
           disabled={!canPlay}
           title="播放速度"
-          style={{ width: 76, accentColor: 'var(--color-accent)', cursor: 'pointer' }}
+          style={{ accentColor: 'var(--color-accent)', cursor: 'pointer' }}
         />
       </div>
 

@@ -95,11 +95,6 @@
     font-weight: 700;
   }
 
-  .score-output .jn-rest-playing .jn-rest-rect {
-    stroke: var(--color-accent) !important;
-    stroke-width: 1.5;
-  }
-
   /* Hide scrollbar but keep scroll */
   .scrollbar-hide::-webkit-scrollbar {
     display: none;

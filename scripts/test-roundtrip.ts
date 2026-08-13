@@ -831,6 +831,56 @@ describe('buildPlaybackEvents: measureIdx matches renderer data-m', () => {
   assertEq('noteIdx is the within-measure index', [ev[0].noteIdx, ev[1].noteIdx], [0, 0])
 })
 
+describe('buildPlaybackEvents: bar length honors the time-signature denominator', () => {
+  const build = (ms: Measure[], time: string) =>
+    buildPlaybackEvents(expandRepeats(ms), ms, 'C', time)
+
+  // A lone whole rest is the notation for a silent BAR, so it advances one bar —
+  // 3 quarters in 3/4, not the 4 that a literal whole note would last.
+  const emptyBar34: Measure[] = [
+    measure([note({ degree: 1 })]),
+    measure([note({ degree: 0, rest: true, type: 'whole' })]),
+    measure([note({ degree: 2 })]),
+  ]
+  assertEq('3/4 empty bar advances 3 beats', build(emptyBar34, '3/4')[1].startBeat, 4)
+
+  // 6/8: a bar is 6 eighths = 3 quarters, so the numerator alone is wrong
+  const emptyBar68: Measure[] = [
+    measure([note({ degree: 1 })]),
+    measure([note({ degree: 0, rest: true, type: 'whole' })]),
+    measure([note({ degree: 2 })]),
+  ]
+  assertEq('6/8 empty bar advances 3 beats', build(emptyBar68, '6/8')[1].startBeat, 4)
+
+  const multiRest: Measure[] = [
+    measure([note({ degree: 1 })]),
+    { _multiRest: 2 },
+    measure([note({ degree: 2 })]),
+  ]
+  assertEq('4/4 multiRest x2 advances 8 beats', build(multiRest, '4/4')[1].startBeat, 9)
+  assertEq('6/8 multiRest x2 advances 6 beats', build(multiRest, '6/8')[1].startBeat, 7)
+  assertEq('3/4 multiRest x2 advances 6 beats', build(multiRest, '3/4')[1].startBeat, 7)
+
+  // _timeSig mid-score switches the bar length too (6/8 bar = 3 quarters)
+  const switched: Measure[] = [
+    measure([note({ degree: 1 })]),
+    { _multiRest: 2 },
+    measure([note({ degree: 2 })], { _timeSig: '6/8' }),
+    { _multiRest: 2 },
+    measure([note({ degree: 3 })]),
+  ]
+  const sw = build(switched, '4/4')
+  assertEq('before switch: 4/4 bars', sw[1].startBeat, 9)
+  assertEq('after switch to 6/8: 3-quarter bars', sw[2].startBeat, 9 + 1 + 6)
+
+  // The no-padding rule still holds: a partially filled bar advances only its written notes
+  const shortBar: Measure[] = [
+    measure([note({ degree: 1 }), note({ degree: 2 })]),
+    measure([note({ degree: 3 })]),
+  ]
+  assertEq('short bar is NOT padded to the bar', build(shortBar, '4/4')[2].startBeat, 2)
+})
+
 // ============================================================================
 
 console.log(`\n${'='.repeat(50)}`)
