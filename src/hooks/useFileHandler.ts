@@ -28,9 +28,15 @@ const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 </part>
 </score-partwise>`
 
+// Melodic parts, scored up. Chinese orchestras are not just 笛子 — plucked
+// strings (琵琶/柳琴/古筝) carry the tune as often as the winds and bowed
+// strings do, and were previously unrecognised entirely.
+// NOTE: matching is substring-based, so never add a bare '阮' here — it would
+// also match 大阮/中阮 in PENALTY_KEYWORDS below and score them twice.
 const KEYWORDS = [
   '笛','flute','dizi','箫','xiao','唢呐','suona','管子','guanzi','笙','sheng','巴乌','bawu',
   '二胡','erhu','高胡','gaohu','中胡','zhonghu','板胡','banhu','京胡','jinghu',
+  '琵琶','pipa','柳琴','liuqin','古筝','筝','guzheng','三弦','sanxian',
   'violin','soprano','melody','oboe','clarinet','trumpet','horn',
   'solo','主旋律','lead','主音','旋律',
 ]

@@ -97,16 +97,13 @@ function renderRepeatEnd(els: string[], x: number, y: number, color: string): vo
   els.push(`<line x1="${x}" y1="${y - 15}" x2="${x}" y2="${y + 5}" stroke="${color}" stroke-width="3"/>`)
 }
 
+// One dot per octave, stacked 6px apart. Deliberately NOT capped at 2: a
+// 大提琴 / 革胡 / 大阮 part sits three octaves below the tonic often enough that
+// capping silently drew the wrong pitch (a C2 looked like a mid-register note).
 function renderOctaveDots(els: string[], cx: number, y: number, octave: number, color: string): void {
-  if (octave === 1) els.push(`<circle cx="${cx}" cy="${y - 18}" r="1.5" fill="${color}"/>`)
-  else if (octave === 2) {
-    els.push(`<circle cx="${cx}" cy="${y - 18}" r="1.5" fill="${color}"/>`)
-    els.push(`<circle cx="${cx}" cy="${y - 24}" r="1.5" fill="${color}"/>`)
-  } else if (octave === -1) {
-    els.push(`<circle cx="${cx}" cy="${y + 10}" r="1.5" fill="${color}"/>`)
-  } else if (octave === -2) {
-    els.push(`<circle cx="${cx}" cy="${y + 10}" r="1.5" fill="${color}"/>`)
-    els.push(`<circle cx="${cx}" cy="${y + 16}" r="1.5" fill="${color}"/>`)
+  for (let i = 0; i < Math.abs(octave); i++) {
+    const cy = octave > 0 ? y - 18 - i * 6 : y + 10 + i * 6
+    els.push(`<circle cx="${cx}" cy="${cy}" r="1.5" fill="${color}"/>`)
   }
 }
 
@@ -189,9 +186,13 @@ function renderGraceNote(els: string[], x: number, y: number, g: { degree: numbe
     offset = 3
   }
   els.push(`<text x="${gx + offset}" y="${gy}" font-family="Inter" font-size="11" font-style="italic" fill="${color}">${g.degree}</text>`)
-  // Octave dot for grace
-  if (g.octave >= 1) els.push(`<circle cx="${gx + offset + 3}" cy="${gy - 11}" r="1.2" fill="${color}"/>`)
-  if (g.octave <= -1) els.push(`<circle cx="${gx + offset + 3}" cy="${gy + 4}" r="1.2" fill="${color}"/>`)
+  // Octave dots for the grace note — one per octave (5px apart, the glyph is
+  // smaller than a melody note). Previously drew at most one, so a 倚音 two
+  // octaves out was already displayed at the wrong pitch.
+  for (let d = 0; d < Math.abs(g.octave); d++) {
+    const cy = g.octave > 0 ? gy - 11 - d * 5 : gy + 4 + d * 5
+    els.push(`<circle cx="${gx + offset + 3}" cy="${cy}" r="1.2" fill="${color}"/>`)
+  }
   return 0
 }
 
@@ -249,8 +250,8 @@ function renderNote(
     // the gap between digits instead of on the neighbouring chord note
     let chordY = currentY
     for (const cn of note.chordNotes) {
-      const aboveDots = cn.octave >= 2 ? 2 : cn.octave >= 1 ? 1 : 0
-      const belowDots = cn.octave <= -2 ? 2 : cn.octave <= -1 ? 1 : 0
+      const aboveDots = Math.max(0, cn.octave)
+      const belowDots = Math.max(0, -cn.octave)
       chordY += 16 + aboveDots * 6
       let chordXOffset = 2
       if (cn.accidental) {
@@ -258,11 +259,12 @@ function renderNote(
         chordXOffset = 7
       }
       els.push(`<text x="${currentX + chordXOffset}" y="${chordY}" font-family="Inter" font-size="16" fill="${color}">${cn.degree}</text>`)
+      // Same uncapped rule as the melody line above
       const dotCx = currentX + chordXOffset + 5
-      if (cn.octave >= 1) els.push(`<circle cx="${dotCx}" cy="${chordY - 14}" r="1.5" fill="${color}"/>`)
-      if (cn.octave >= 2) els.push(`<circle cx="${dotCx}" cy="${chordY - 20}" r="1.5" fill="${color}"/>`)
-      if (cn.octave <= -1) els.push(`<circle cx="${dotCx}" cy="${chordY + 6}" r="1.5" fill="${color}"/>`)
-      if (cn.octave <= -2) els.push(`<circle cx="${dotCx}" cy="${chordY + 12}" r="1.5" fill="${color}"/>`)
+      for (let d = 0; d < Math.abs(cn.octave); d++) {
+        const cy = cn.octave > 0 ? chordY - 14 - d * 6 : chordY + 6 + d * 6
+        els.push(`<circle cx="${dotCx}" cy="${cy}" r="1.5" fill="${color}"/>`)
+      }
       chordY += belowDots * 6
     }
   }

@@ -187,9 +187,9 @@ Pre-compute cumulative beat positions per measure. Only connect beaming underlin
 `dashStep = (noteWidth - numXOffset) / (extraBeats + 1)` — evenly spaced, accounts for accidental offset.
 
 ### Octave dots
-- Above: `octave === 1` → one dot, `octave === 2` → two dots
-- Below: fixed baseline `currentY + 10`, `octave === -1` → one dot, `octave === -2` → two dots
-- Chord notes: rows are 16px apart + **6px per octave dot** (above dots push the row down, below dots push the next row down) — without this the dots land on the neighbouring chord digit
+- **One dot per octave, never capped.** Above: start `currentY - 18`, step −6 per dot. Below: start `currentY + 10`, step +6. Chord notes use the same rule from their own baselines (−14 / +6); grace notes too, at 5px spacing since the glyph is smaller.
+- The cap used to be ±2 in all three places, which **silently drew the wrong pitch**: a 大提琴 / 革胡 / 大阮 part sits three octaves below the tonic routinely, and `octave: -3` rendered zero dots — indistinguishable from the tonic octave. Grace notes were worse: capped at one dot, so even ±2 was wrong. Don't reintroduce a cap.
+- Chord notes: rows are 16px apart + **6px per octave dot** (`Math.max(0, cn.octave)` above / `Math.max(0, -cn.octave)` below) — without this the dots land on the neighbouring chord digit
 
 ### Repeat signs
 - `_repeatStart`: thick + thin line + two dots, advances `currentX` by 12px. Record `measureStartX` **before** this block.

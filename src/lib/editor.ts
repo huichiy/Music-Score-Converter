@@ -75,11 +75,13 @@ function durationSuffix(type: NoteObject['type'], dot: boolean): string {
   return ''
 }
 
+// One mark per octave, no cap. Anything outside ±2 used to serialize to an
+// empty string, so a 大提琴 / 革胡 part at octave -3 silently jumped three
+// octaves the moment the text editor round-tripped it. `octaveFromMarks`
+// already parsed arbitrary run lengths — only this side was truncating.
 function octaveSuffix(oct: number): string {
-  if (oct === 2) return "''"
-  if (oct === 1) return "'"
-  if (oct === -1) return ','
-  if (oct === -2) return ',,'
+  if (oct > 0) return "'".repeat(oct)
+  if (oct < 0) return ','.repeat(-oct)
   return ''
 }
 

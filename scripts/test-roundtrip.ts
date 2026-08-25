@@ -881,6 +881,53 @@ describe('buildPlaybackEvents: bar length honors the time-signature denominator'
   assertEq('short bar is NOT padded to the bar', build(shortBar, '4/4')[2].startBeat, 2)
 })
 
+describe('Route B: octaves beyond ±2 survive the round-trip', () => {
+  // A 大提琴 / 革胡 part reaches octave -3. octaveSuffix used to emit nothing
+  // outside ±2, so opening the text editor and saving silently transposed
+  // those notes up three octaves.
+  const input: Measure[] = [
+    measure([
+      note({ degree: 1, octave: -3 }),
+      note({ degree: 5, octave: 3 }),
+      note({ degree: 2, octave: -4 }),
+    ]),
+  ]
+  const { measures: out, text } = roundTrip(input)
+  console.log(`  text: ${text.split('\n').slice(1).join(' ')}`)
+  assertEq('text carries 3 low marks', text.includes('1,,,'), true)
+  assertEq("text carries 3 high marks", text.includes("5'''"), true)
+  assertEq('octaves round-trip losslessly', asNotes(out[0]), asNotes(input[0]))
+})
+
+describe('Renderer: octave dots beyond ±2 (low/high orchestra parts)', () => {
+  const one = (octave: number, extra: Partial<NoteObject> = {}) =>
+    [measure([note({ degree: 1, octave, ...extra })])] as Measure[]
+  const dotsIn = (svg: string) => (svg.match(/<circle cx="[\d.-]+" cy="[\d.-]+" r="1\.5"/g) || []).length
+  const render = (ms: Measure[]) => renderJianpuSVG(ms, 'C', '4/4', 'T', 800, '', false)
+
+  // A cello / 革胡 / 大阮 part routinely reaches 3 octaves below the tonic.
+  // Drawing no dots there silently displays the wrong pitch.
+  assertEq('octave -1 → 1 dot', dotsIn(render(one(-1))), 1)
+  assertEq('octave -2 → 2 dots', dotsIn(render(one(-2))), 2)
+  assertEq('octave -3 → 3 dots', dotsIn(render(one(-3))), 3)
+  assertEq('octave +3 → 3 dots', dotsIn(render(one(3))), 3)
+  assertEq('octave -4 → 4 dots (never silently dropped)', dotsIn(render(one(-4))), 4)
+
+  // Dots must stay evenly stacked, not pile up on one another
+  const belowYs = [...render(one(-3)).matchAll(/<circle cx="[\d.-]+" cy="([\d.-]+)" r="1\.5"/g)]
+    .map(m => parseFloat(m[1])).sort((a, b) => a - b)
+  assertEq('3 below-dots are distinct', new Set(belowYs).size, 3)
+  assertEq('below-dots evenly spaced', Math.abs((belowYs[1] - belowYs[0]) - (belowYs[2] - belowYs[1])) < 0.01, true)
+
+  // Chord notes (double stops) use their own dot code — same bug class
+  const chord = [measure([note({ degree: 5, chordNotes: [{ degree: 1, octave: -3, accidental: '' }] })])] as Measure[]
+  assertEq('chord note at octave -3 → 3 dots', dotsIn(render(chord)), 3)
+
+  // Grace notes draw their own dot too
+  const grace = [measure([note({ degree: 1, graceNote: { degree: 5, octave: -2, accidental: '' } })])] as Measure[]
+  assertEq('grace note at octave -2 → 2 dots', (render(grace).match(/r="1\.2"/g) || []).length, 2)
+})
+
 // ============================================================================
 
 console.log(`\n${'='.repeat(50)}`)

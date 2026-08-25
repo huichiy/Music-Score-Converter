@@ -48,7 +48,7 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | Feature | Details |
 |---|---|
 | **MusicXML, MIDI & ABC Support** | Accepts `.xml`, `.mxl`, `.mid`, `.midi`, `.abc` |
-| **Auto Melody Detection** | Scores multi-part files by instrument name keywords, note density, and average pitch. Recognises Chinese instrument names (笛, 二胡, 高胡, 琵琶) and penalizes accompaniment parts (大阮, 低音, 扬琴) |
+| **Auto Melody Detection** | Scores multi-part files by instrument name keywords, note density, and average pitch. Recognises winds (笛, 箫, 唢呐, 笙, 管子), bowed strings (二胡, 高胡, 中胡, 板胡, 京胡) and plucked strings (琵琶, 柳琴, 古筝, 三弦), and deprioritises typical accompaniment parts (大阮, 中阮, 扬琴, 革胡, 低音, 打击). **Playing one of the deprioritised parts?** Pick it directly from the part selector — auto-detection only chooses the default |
 | **Accurate Music Theory** | Handles key signatures, mid-piece key changes, accidentals, flat/sharp contexts, ties across measures, dotted notes, and all standard rhythmic durations |
 | **Authentic Jianpu Output** | Renders proper 延音线 (extension dashes), 减时线 (beaming underlines with beat-boundary grouping), and octave dots above/below numbers |
 | **Tempo & Dynamic Markings** | Extracts BPM from MusicXML `<metronome>` and MIDI header; renders fixed dynamics (`p`, `f`, `mf`, `ff`, `sfz`, etc.) and hairpin dynamics (cresc/dim) |
@@ -349,7 +349,7 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 | 功能 | 说明 |
 |---|---|
 | **支持 MusicXML、MIDI 与 ABC** | 接受 `.xml`、`.mxl`、`.mid`、`.midi`、`.abc` |
-| **智能旋律识别** | 综合乐器名称关键词、音符密度与平均音高自动评分选择主旋律声部 |
+| **智能旋律识别** | 综合乐器名称关键词、音符密度与平均音高自动评分选择主旋律声部。认得吹管（笛、箫、唢呐、笙、管子）、拉弦（二胡、高胡、中胡、板胡、京胡）与弹拨（琵琶、柳琴、古筝、三弦）；大阮、中阮、扬琴、革胡、低音、打击等通常作伴奏的声部会降权。**你就是拉这些声部的？** 用声部选择器直接选——自动识别只决定默认值 |
 | **精准乐理解析** | 处理调号、中途变调、临时升降号、跨小节延音线、附点音符及所有标准时值 |
 | **标准简谱输出** | 输出包含增时线、按拍分组的减时线与高低八度点 |
 | **速度与力度** | 提取 BPM；渲染固定力度（`p` `f` `mf` `ff` `sfz` 等）与渐强渐弱 hairpin |

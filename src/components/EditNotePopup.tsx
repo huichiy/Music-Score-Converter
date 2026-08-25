@@ -134,8 +134,10 @@ export default function EditNotePopup({ onConfirm, onClose }: EditNotePopupProps
             {/* Octave */}
             <div>
               <span style={labelStyle}>八度</span>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                {([-2, -1, 0, 1, 2] as const).map((o) => (
+              {/* ±3 so low parts (大提琴 / 革胡 / 大阮) are reachable — they sit
+                  three octaves below the tonic often enough to matter */}
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {([-3, -2, -1, 0, 1, 2, 3] as const).map((o) => (
                   <button
                     key={o}
                     onClick={() => setOctave(o)}
@@ -146,7 +148,7 @@ export default function EditNotePopup({ onConfirm, onClose }: EditNotePopupProps
                       border: `1px solid ${octave === o ? 'var(--color-accent)' : 'var(--color-border)'}`,
                       background: octave === o ? 'var(--color-accent)' : 'var(--color-surface-2)',
                       color: octave === o ? '#fff' : 'var(--color-foreground)',
-                      fontSize: '12px',
+                      fontSize: '11px',
                       cursor: 'pointer',
                     }}
                   >
