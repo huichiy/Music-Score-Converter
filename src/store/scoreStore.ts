@@ -20,6 +20,7 @@ interface ScoreStore {
   selectedPartIdx: number
   showPartSelector: boolean
   showAutoDetect: boolean
+  matchedMyPart: boolean   // the selected part came from the user's remembered instrument
 
   // Conversion UI
   isConverted: boolean
@@ -59,6 +60,7 @@ interface ScoreStore {
   setSelectedPartIdx: (idx: number) => void
   setShowPartSelector: (v: boolean) => void
   setShowAutoDetect: (v: boolean) => void
+  setMatchedMyPart: (v: boolean) => void
   setIsConverted: (v: boolean) => void
   setIsConverting: (v: boolean) => void
   setErrorMsg: (msg: string) => void
@@ -89,6 +91,7 @@ const initialState = {
   selectedPartIdx: 0,
   showPartSelector: false,
   showAutoDetect: false,
+  matchedMyPart: false,
   isConverted: false,
   isConverting: false,
   errorMsg: '',
@@ -116,6 +119,7 @@ export const useScoreStore = create<ScoreStore>()((set) => ({
   setSelectedPartIdx: (idx) => set({ selectedPartIdx: idx }),
   setShowPartSelector: (v) => set({ showPartSelector: v }),
   setShowAutoDetect: (v) => set({ showAutoDetect: v }),
+  setMatchedMyPart: (v) => set({ matchedMyPart: v }),
   setIsConverted: (v) => set({ isConverted: v }),
   setIsConverting: (v) => set({ isConverting: v }),
   setErrorMsg: (msg) => set({ errorMsg: msg }),

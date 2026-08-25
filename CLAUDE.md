@@ -18,7 +18,7 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR + crop + playback, 186 assertions) then scripts/test-parser.ts (MusicXML parsing, 31 assertions)
+npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR + crop + playback + my-part, 208 assertions) then scripts/test-parser.ts (MusicXML parsing, 31 assertions)
 ```
 
 - `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`. `scripts/test-parser.ts` parses inline MusicXML with `linkedom` (devDependency, tests only — never bundled).
@@ -65,6 +65,7 @@ Music-Score-Converter/
 │   │   ├── editor.ts                — Route B serialize/parse + token positions
 │   │   ├── pdfTools.ts              — Lazy pdfjs wrapper
 │   │   ├── cropTools.ts             — computeCropRect (display→source pixel mapping, unit-tested)
+│   │   ├── partMatch.ts             — "which part is mine": remembered-instrument matching + localStorage
 │   │   ├── playback.ts              — pure scheduler: expandRepeats + buildPlaybackEvents (beats, unit-tested)
 │   │   ├── tonePlayer.ts            — lazy Tone.js audio layer (only file importing tone)
 │   │   ├── abcParser.ts             — ABC notation parser
@@ -290,6 +291,9 @@ Two layers, deliberately split so the audio backend is replaceable:
 
 Times are in beats everywhere except inside the player: tempo belongs to playback, not to the music. Highlight uses `.jn-note-playing`, deliberately a separate class from the text editor's `jn-note-current` so the two features never fight over styling. There is no rest-measure highlight: rests emit no events, so nothing ever targets one (an earlier `data-rest-m` fallback was removed as unreachable — it also mixed index spaces, since `data-rest-m` is the renderer's loop index while events carry `origIdx`). Clicking a note seeks there only when `editModeA` is off, so edit mode keeps owning the click.
 
+## My Part (src/lib/partMatch.ts + src/components/PartSelector.tsx)
+Auto-detection can only guess ONE default — the melody — and that guess is wrong for everyone playing an inner or bass voice (大提琴, 中阮, 扬琴, 革胡). Rather than asking up front (most uploads are single-part, so a first-run question is pure friction), the app **learns from behaviour**: whatever part the user picks by hand is saved to `localStorage` under `jianpu.myPart.v1`, and `matchPartIndex()` selects it on every later score, ahead of melody scoring. Exact name matches beat substring matches — otherwise a remembered `二胡 II` settles on `二胡 I`. No match returns -1 and the melody scoring stands. The selector then shows 「已记住你的声部：X」 with a 忘记 link that restores auto-detection.
+
 ## Box-Select Crop (src/components/ImageCropper.tsx + src/lib/cropTools.ts)
 Generic, OCR-agnostic crop step so users can extract one instrument's row from a 总谱 before OCR. `ImageCropper` takes `source: HTMLCanvasElement | File` (PDF page rendered @2.0x, or an uploaded image), shows a draggable/resizable box (pure React pointer events, no library, dim-outside via `box-shadow`), and on confirm maps the display selection to full-resolution pixels via `computeCropRect` (the only logic-bearing piece, unit-tested in test-roundtrip.ts), crops with `drawImage`, and hands back a PNG `File`. Two entry points: PdfPagePicker (clicking a page opens the cropper; 整页 button = whole page) and OcrSection (optional 框选区域 button for images; not shown for PDFs, which route through the picker). The cropper renders as a **sibling** of PdfPagePicker's `onClick={onCancel}` backdrop (via fragment), not a child, so its backdrop click doesn't bubble up and close the picker. Single-box, iterate: the editable OCR result box accumulates multiple crops.
 
@@ -401,7 +405,7 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] PDF input + page picker (lazy pdfjs-dist)
 - [x] BYOK multi-provider OCR — Gemini / Anthropic / OpenAI / Groq / Custom (OpenAI-compatible)
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with the key off the bundle
-- [x] Round-trip test suite (`npm run test`, 186 + 31 assertions across two files)
+- [x] Round-trip test suite (`npm run test`, 208 + 31 assertions across two files)
 - [x] Playback (Tone.js) — full repeat/volta expansion, follow highlight, pause/seek/click-a-note/speed slider
 - [x] MusicXML import: `<articulations>` / fermata / grace notes (倚音) / `<time-modification>` tuplets — plus graceNote transposition fix
 - [x] MusicXML import: `<ending>` (跳房子/volta) → `_volta`

@@ -13,6 +13,7 @@ import { JIANPU_OCR_PROMPT, WESTERN_TO_JIANPU_PROMPT } from '../src/lib/vision/p
 import { MODEL_OPTIONS } from '../src/lib/vision/types'
 import { sanitizeOcrConfig } from '../src/lib/vision/index'
 import { computeCropRect } from '../src/lib/cropTools'
+import { matchPartIndex } from '../src/lib/partMatch'
 import { expandRepeats, buildPlaybackEvents } from '../src/lib/playback'
 import type { Measure, MeasureArray, NoteObject } from '../src/types/score'
 
@@ -879,6 +880,25 @@ describe('buildPlaybackEvents: bar length honors the time-signature denominator'
     measure([note({ degree: 3 })]),
   ]
   assertEq('short bar is NOT padded to the bar', build(shortBar, '4/4')[2].startBeat, 2)
+})
+
+describe('matchPartIndex: remembering which part is mine', () => {
+  const m = matchPartIndex
+  // The whole point: a 大提琴 player picks their part once and never again
+  assertEq('finds the remembered instrument', m(['笛子', '二胡', '大提琴'], '大提琴'), 2)
+  assertEq('matches inside a longer part name', m(['Flute 笛子', 'Cello 大提琴'], '大提琴'), 1)
+  assertEq('matches when the score name is shorter', m(['大提琴'], 'Cello 大提琴'), 0)
+  assertEq('case-insensitive', m(['Erhu', 'Pipa'], 'pipa'), 1)
+  assertEq('ignores surrounding whitespace', m(['  二胡  '], '二胡'), 0)
+
+  // Exact match must beat a substring match, or 二胡 II lands on 二胡 I
+  assertEq('exact match wins over substring', m(['二胡 I', '二胡 II'], '二胡 II'), 1)
+
+  // No match → -1, so the caller falls back to melody scoring
+  assertEq('no remembered instrument → -1', m(['笛子', '二胡'], null), -1)
+  assertEq('remembered instrument absent → -1', m(['笛子', '二胡'], '唢呐'), -1)
+  assertEq('empty part list → -1', m([], '二胡'), -1)
+  assertEq('empty remembered string → -1', m(['二胡'], '   '), -1)
 })
 
 describe('Route B: octaves beyond ±2 survive the round-trip', () => {

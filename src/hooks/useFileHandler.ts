@@ -6,6 +6,7 @@ import { parseXMLToNoteObjects, transposeNoteObjects, keyMap, scaleDegrees, step
 import { renderJianpuSVG } from '@/lib/renderer'
 import { parseABC } from '@/lib/abcParser'
 import { parseFromText } from '@/lib/editor'
+import { matchPartIndex, loadMyPart } from '@/lib/partMatch'
 import type { MeasureArray, NoteObject } from '@/types/score'
 
 const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -216,12 +217,19 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
       if (score > highestScore) { highestScore = score; bestPartIndex = i }
     }
 
-    store.setPartNames(names)
-    store.setSelectedPartIdx(bestPartIndex)
-    store.setShowPartSelector(parts.length > 1)
-    store.setShowAutoDetect(parts.length > 1)
+    // The user's own instrument beats melody scoring. Scoring can only guess at
+    // one default (the melody), which is wrong for everyone playing an inner or
+    // bass voice — so once they've picked their part by hand, honour it.
+    const mine = matchPartIndex(names, loadMyPart())
+    const chosenIdx = mine !== -1 ? mine : bestPartIndex
 
-    return renderSelectedPart(xmlDoc, bestPartIndex, file, '')
+    store.setPartNames(names)
+    store.setSelectedPartIdx(chosenIdx)
+    store.setMatchedMyPart(mine !== -1)
+    store.setShowPartSelector(parts.length > 1)
+    store.setShowAutoDetect(parts.length > 1 && mine === -1)
+
+    return renderSelectedPart(xmlDoc, chosenIdx, file, '')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store, renderSelectedPart])
 
