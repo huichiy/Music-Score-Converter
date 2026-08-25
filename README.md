@@ -18,7 +18,12 @@
     <td><img src="docs/screenshots/07-text-editor-format-light.png" alt="Route B text editor with format reference" /></td>
     <td><img src="docs/screenshots/08-ocr-settings-light.png" alt="OCR settings panel" /></td>
   </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/11-playback-light.png" alt="Playback in progress — the sounding note is highlighted in red while the progress bar, clock and speed slider track the performance" /></td>
+  </tr>
 </table>
+
+<p align="center"><em>Playback mid-performance: the sounding note turns red as it plays, with a seekable progress bar and a 0.5×–1.5× speed slider.</em></p>
 
 ---
 
@@ -82,6 +87,7 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | [Zustand](https://zustand-demo.pmnd.rs/) | Lightweight global state |
 | [Radix UI](https://www.radix-ui.com/) | Accessible primitives (dialog, select, tooltip) |
 | [@tonejs/midi](https://github.com/Tonejs/Midi) | MIDI file parsing |
+| [Tone.js](https://tonejs.github.io/) | Playback engine — lazy-loaded, only downloaded when you press play |
 | [JSZip](https://stuk.github.io/jszip/) | `.mxl` compressed file extraction |
 | [pdfjs-dist](https://github.com/mozilla/pdf.js/) | Render PDF pages to image for OCR (lazy-loaded) |
 | [Google Gemini](https://ai.google.dev/) | Vision AI for image OCR (default, via Worker proxy) |
@@ -101,7 +107,10 @@ Music-Score-Converter/
 │   ├── JIANPU_FORMAT.md          — Route B text editor format spec
 │   └── screenshots/              — README screenshots
 ├── scripts/
-│   └── test-roundtrip.ts         — Route B serialize/parse round-trip tests
+│   ├── test-roundtrip.ts         — Route B + renderer + OCR + crop + playback tests
+│   ├── test-parser.ts            — MusicXML import tests (via linkedom)
+│   └── screenshots.mjs           — README screenshot capture (Playwright)
+├── tests/                        — Sample scores used for manual verification
 ├── worker/                       — Optional Cloudflare Worker (OCR proxy)
 │   ├── src/index.ts              — OpenAI-shape → Gemini translator
 │   ├── wrangler.toml
@@ -112,23 +121,29 @@ Music-Score-Converter/
 │   │   ├── EditTextOverlay.tsx   — Route B full-screen text editor
 │   │   ├── ExportButtons.tsx     — PNG / JPEG export
 │   │   ├── FileUpload.tsx        — Drag & drop / file picker
+│   │   ├── ImageCropper.tsx      — Box-select crop (PDF page / image → cropped PNG)
 │   │   ├── LandingPage.tsx       — Pre-conversion welcome screen
 │   │   ├── OcrSection.tsx        — AI image OCR panel
 │   │   ├── OcrSettings.tsx       — BYOK provider / model / API key modal
 │   │   ├── PartSelector.tsx      — Multi-part MusicXML selector
 │   │   ├── PdfPagePicker.tsx     — PDF thumbnail grid for picking a page
+│   │   ├── PlaybackBar.tsx       — Transport strip (play/pause/stop, seek, speed)
 │   │   ├── ScoreOutput.tsx       — Rendered SVG container
 │   │   ├── Sidebar.tsx           — Upload + options + export sidebar
 │   │   ├── Toolbar.tsx           — Top toolbar with editor entry points
 │   │   └── TransposeSelect.tsx   — Key transposition dropdown
 │   ├── hooks/
 │   │   ├── useFileHandler.ts     — File parsing + render orchestration
-│   │   └── useOcr.ts             — OCR runner (delegates to vision adapter)
+│   │   ├── useOcr.ts             — OCR runner (delegates to vision adapter)
+│   │   └── usePlayback.ts        — Playback orchestration + highlight/progress loop
 │   ├── lib/
 │   │   ├── abcParser.ts          — ABC notation parser
+│   │   ├── cropTools.ts          — Display → source pixel mapping for the cropper
 │   │   ├── editor.ts             — Route B text serialize / parse + position tracking
 │   │   ├── parser.ts             — MusicXML parser + pitch conversion + transposition
 │   │   ├── pdfTools.ts           — Lazy-loaded pdfjs wrapper
+│   │   ├── playback.ts           — Pure scheduler: repeat/volta expansion → timed events
+│   │   ├── tonePlayer.ts         — Lazy Tone.js audio layer (only file importing tone)
 │   │   ├── renderer.ts           — SVG layout engine
 │   │   ├── downloader.ts         — PNG / JPEG export
 │   │   ├── utils.ts              — Shared helpers

@@ -410,7 +410,6 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] Phase 3 OCR: box-select crop — extract one instrument's row from a 总谱 PDF/image before OCR (single-box, iterate)
 
 ### Pending
-- [ ] Playback: real dizi samples instead of a synth (needs hosted audio files)
 - [ ] 笛子 ornaments — parse MusicXML `<ornaments>` + render symbols; Route B syntax extension: `1[tr]` 颤音, `1[~]` 波音, `1[又]` 叠音, `1[打]` 打音, `1[*]` 花舌
 - [ ] Multi-voice rendering (long term — architectural change)
 

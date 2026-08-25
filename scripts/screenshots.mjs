@@ -34,7 +34,9 @@ async function fullPageShot(page, name) {
 }
 
 ;(async () => {
-  const browser = await chromium.launch()
+  // Autoplay must be allowed so the playback shot can capture a real mid-play
+  // state (Tone.start() otherwise refuses in headless and nothing highlights).
+  const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] })
   const context = await browser.newContext({ viewport: VIEWPORT_DESKTOP, deviceScaleFactor: 2 })
   const page = await context.newPage()
 
@@ -77,6 +79,38 @@ async function fullPageShot(page, name) {
   await setTheme(page, true)
   await delay(500)
   await shot(page, '05-tool-dark.png')
+
+  // ─── 5b. Playback mid-play — highlighted note + progress underway ──
+  // Captured while actually playing: the sounding note carries
+  // .jn-note-playing and the progress bar has advanced, which shows the
+  // feature far better than an idle transport strip would.
+  console.log('Playback mid-play (light)...')
+  await setTheme(page, false)
+  await delay(300)
+  {
+    const playBtn = page.locator('button').filter({ hasText: /^▶$/ }).first()
+    await playBtn.click()
+    try {
+      // Wait for playback to actually start (play() awaits the lazy Tone import)
+      await page.waitForFunction(() => {
+        const b = [...document.querySelectorAll('button')].find(x => ['▶', '❙❙'].includes(x.textContent))
+        return b && b.textContent === '❙❙'
+      }, null, { timeout: 15000 })
+      // Let it run a couple of beats so the highlight and progress are visibly underway
+      await delay(2500)
+      const painted = await page.evaluate(() => !!document.querySelector('.jn-note-playing'))
+      if (!painted) console.warn('  ! no .jn-note-playing found — capturing anyway')
+      await shot(page, '11-playback-light.png')
+      // Stop so later shots start from a clean state
+      await page.evaluate(() => {
+        const stop = [...document.querySelectorAll('button')].find(b => b.textContent === '■' && !b.disabled)
+        stop?.click()
+      })
+      await delay(300)
+    } catch {
+      console.warn('  ! playback did not start (audio blocked?) — skipping 11-playback-light.png')
+    }
+  }
 
   // ─── 6. Text editor with live preview + cursor sync ─────────────
   console.log('Text editor (dark)...')
