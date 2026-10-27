@@ -288,6 +288,67 @@ describe('Volta <ending> import — number "1, 2" takes first', () => {
   assertEq('M1 volta 1 from "1, 2"', ms[0]._volta, 1)
 })
 
+// Noteflight exports a phrase mark drawn with the tie tool as a dangling
+// <tie type="start"/> (no stop) on a note whose neighbour has a different pitch.
+const TIE_START = '<tie type="start"/><notations><tied type="start"/></notations>'
+
+describe('Dangling tie start before a different pitch keeps the note (issue #1)', () => {
+  const ms = parseScore(`<measure number="1">${ATTRS}
+    ${noteXml('C', 4, TIE_START)}
+    ${noteXml('D', 4)}
+    ${noteXml('E', 4)}
+    ${noteXml('F', 4)}
+  </measure>`)
+  const m = ms[0]
+  assertEq('D is not a tie continuation', m[1].tie, false)
+  assertEq('D keeps its pitch', { degree: m[1].degree, octave: m[1].octave }, { degree: 2, octave: 0 })
+})
+
+describe('Tie start with a missing stop still ties at the same pitch', () => {
+  const ms = parseScore(`<measure number="1">${ATTRS}
+    ${noteXml('C', 4, TIE_START)}
+    ${noteXml('C', 4)}
+    ${noteXml('E', 4)}
+    ${noteXml('F', 4)}
+  </measure>`)
+  assertEq('second C continues the tie', ms[0][1].tie, true)
+})
+
+describe('Rest after a dangling tie start stays a rest', () => {
+  const ms = parseScore(`<measure number="1">${ATTRS}
+    ${noteXml('C', 4, TIE_START)}
+    <note><rest/><duration>1</duration><type>quarter</type></note>
+    ${noteXml('E', 4)}
+    ${noteXml('F', 4)}
+  </measure>`)
+  assertEq('rest is not a tie continuation', ms[0][1].tie, false)
+})
+
+describe('Tie start before a different pitch becomes a slur', () => {
+  const ms = parseScore(`<measure number="1">${ATTRS}
+    ${noteXml('C', 4, TIE_START)}
+    ${noteXml('D', 4)}
+    ${noteXml('E', 4)}
+    ${noteXml('F', 4)}
+  </measure>`)
+  const m = ms[0]
+  assertEq('slur starts on C', m[0].slurStart, true)
+  assertEq('slur stops on D', m[1].slurStop, true)
+})
+
+// A note can't both stop one slur and start the next: the renderer and the
+// text editor handle start before stop, so the first arc would be lost.
+describe('Consecutive pitch-changing ties become one slur', () => {
+  const ms = parseScore(`<measure number="1">${ATTRS}
+    ${noteXml('C', 4, TIE_START)}
+    ${noteXml('D', 4, TIE_START)}
+    ${noteXml('E', 4)}
+    ${noteXml('F', 4)}
+  </measure>`)
+  const m = ms[0]
+  assertEq('slur flags C D E', m.slice(0, 3).map(n => [n.slurStart, n.slurStop]), [[true, false], [false, false], [false, true]])
+})
+
 // ============================================================================
 
 console.log(`\n${'='.repeat(50)}`)

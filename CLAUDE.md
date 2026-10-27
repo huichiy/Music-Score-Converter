@@ -18,7 +18,7 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR + crop + playback + my-part, 208 assertions) then scripts/test-parser.ts (MusicXML parsing, 31 assertions)
+npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR + crop + playback + my-part, 208 assertions) then scripts/test-parser.ts (MusicXML parsing, 38 assertions)
 ```
 
 - `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`. `scripts/test-parser.ts` parses inline MusicXML with `linkedom` (devDependency, tests only — never bundled).
@@ -235,6 +235,7 @@ function transposeNoteObjects(measures: Measure[], fromKeyStr: string, toKeyStr:
 - `<grace>` notes: pitch converted via `parseChordNote` and held in `pendingGrace`, attached to the **next pitched note** (survives measure boundaries; consecutive graces keep only the first)
 - `<time-modification><actual-notes>N</actual-notes>` → `NoteObject.tuplet = N` (rests included) — pairs with the Route B v3 tuplet renderer so imported triplets keep correct beat math
 - `<barline><ending>` → `MeasureArray._volta`: `type="start"` opens (number `"1, 2"` → first int), `type="stop"`/`"discontinue"` closes; the closing measure is still tagged. Carried across measures via an `activeVolta` cursor.
+- `<tie>`: an explicit `type="stop"` marks a tie continuation. A `type="start"` with no stop continues into the next note **only at the same semitone** (exporters omit stops). Before a different pitch it becomes a slur instead (`slurStart` on the first note, `slurStop` on the second), and a run of these merges into one slur, tracked by the `tieFrom` cursor. Rests never continue a tie.
 - `<ornaments>` (trill/mordent/turn) are **not** imported — that's the 笛子 ornaments roadmap item
 
 ---
@@ -340,6 +341,8 @@ Generic, OCR-agnostic crop step so users can extract one instrument's row from a
 | `measureStartX` captured before `_repeatStart` | `_repeatStart` advances `currentX` by 12px |
 | Skip normal barline when `_repeatEnd` is true | Prevents double barline + repeat sign overlap |
 | `keyStr` must be `let` in parseXMLToNoteObjects | Needs to update on mid-piece key changes |
+| A tie only continues into a note of the same pitch; otherwise it becomes a slur | Noteflight exports phrase marks drawn with the tie tool as a dangling `<tie type="start"/>` before a different pitch. The old rule (any note after a tie start is a tie) drew those notes as `-` and lost their pitch everywhere: renderer, text editor and playback. A tester's score lost 14 notes this way (issue #1) |
+| A note never carries both `slurStop` and `slurStart` from the tie conversion | The renderer and `editor.ts` handle slur start before slur stop, so such a note overwrites the open arc and draws a zero-length one. Consecutive pitch-changing ties extend one slur instead |
 | `totalHeight = currentY + 40` | `+ 20` clips dynamic text at bottom |
 | OCR keys never in the bundle | Either Worker proxy or `localStorage` BYOK; never `import.meta.env.VITE_*_KEY` for real keys |
 | OCR prompts must emit Route B format, verbatim | The result is fed straight into `parseFromText`; prompt syntax drift silently corrupts durations/octaves. Contract tests in `scripts/test-roundtrip.ts` pin the format — keep prompts, `docs/JIANPU_FORMAT.md`, and those tests in lockstep |
@@ -405,7 +408,7 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] PDF input + page picker (lazy pdfjs-dist)
 - [x] BYOK multi-provider OCR — Gemini / Anthropic / OpenAI / Groq / Custom (OpenAI-compatible)
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with the key off the bundle
-- [x] Round-trip test suite (`npm run test`, 208 + 31 assertions across two files)
+- [x] Round-trip test suite (`npm run test`, 208 + 38 assertions across two files)
 - [x] Playback (Tone.js) — full repeat/volta expansion, follow highlight, pause/seek/click-a-note/speed slider
 - [x] MusicXML import: `<articulations>` / fermata / grace notes (倚音) / `<time-modification>` tuplets — plus graceNote transposition fix
 - [x] MusicXML import: `<ending>` (跳房子/volta) → `_volta`

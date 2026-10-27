@@ -63,7 +63,9 @@ export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
   const jianpuMeasures: MeasureArray[] = []
   const measures = xmlDoc.getElementsByTagName('measure')
   let currentDivisions = 1
-  let lastNoteWasTieStart = false
+  // The previous note (and its semitone) when it carried <tie type="start">;
+  // endsTieSlur = its slurStop came from a converted pitch-changing tie
+  let tieFrom: { note: NoteObject; semi: number; endsTieSlur: boolean } | null = null
   let wedgeType: 'cresc' | 'dim' | null = null
   // Active volta (跳房子) number, carried across measures until an ending closes it
   let activeVolta: number | null = null
@@ -168,9 +170,6 @@ export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
 
       const isRest = note.getElementsByTagName('rest').length > 0
 
-      if (lastNoteWasTieStart) isTieStop = true
-      lastNoteWasTieStart = isTieStart && !isRest
-
       const noteObj: NoteObject = {
         degree: 0,
         octave: 0,
@@ -183,6 +182,7 @@ export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
         slurStop: false,
       }
 
+      let pitchSemi: number | null = null
       if (!isRest) {
         const pitchNode = note.getElementsByTagName('pitch')[0]
         if (pitchNode) {
@@ -206,8 +206,29 @@ export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
           noteObj.degree = degree + 1
           noteObj.octave = shift
           noteObj.accidental = acc
+          pitchSemi = noteSemi
         }
       }
+
+      // Exporters sometimes omit <tie type="stop"/>, so a tie start continues
+      // into the next note — but only at the same pitch. A tie never joins two
+      // different pitches; treating one as a tie drew the note as "-". Noteflight
+      // exports phrase marks drawn with the tie tool exactly this way, so a
+      // pitch change turns the arc into a slur instead.
+      let endsTieSlur = false
+      if (tieFrom && pitchSemi !== null && !isTieStop) {
+        if (pitchSemi === tieFrom.semi) {
+          noteObj.tie = true
+        } else {
+          // A chain of these ties is one slur: extend it rather than stopping
+          // and restarting on the same note, which the renderer can't draw
+          if (tieFrom.endsTieSlur) tieFrom.note.slurStop = false
+          else tieFrom.note.slurStart = true
+          noteObj.slurStop = true
+          endsTieSlur = true
+        }
+      }
+      tieFrom = isTieStart && pitchSemi !== null ? { note: noteObj, semi: pitchSemi, endsTieSlur } : null
 
       if (!isRest && pendingGrace) {
         noteObj.graceNote = pendingGrace
