@@ -33,6 +33,13 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.isDark])
 
+  // Re-layout when the measures-per-line setting changes
+  useEffect(() => {
+    const svg = rerenderWithStore()
+    if (svg) setSvgHtml(svg)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.measuresPerLine])
+
   // ── File conversion ──────────────────────────────────────────
   const handleFile = useCallback(async (file: File) => {
     store.setIsConverting(true)

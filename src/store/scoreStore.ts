@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Measure, NoteObject } from '@/types/score'
+import { loadMeasuresPerLine } from '@/lib/layoutPrefs'
 
 interface ScoreStore {
   // File
@@ -27,6 +28,7 @@ interface ScoreStore {
   isConverting: boolean
   errorMsg: string
   transposeKey: string
+  measuresPerLine: number   // 0 = auto (wrap by width)
 
   // Editor A (click-to-edit)
   editModeA: boolean
@@ -65,6 +67,7 @@ interface ScoreStore {
   setIsConverting: (v: boolean) => void
   setErrorMsg: (msg: string) => void
   setTransposeKey: (key: string) => void
+  setMeasuresPerLine: (n: number) => void
   setEditModeA: (on: boolean) => void
   setPopupNote: (note: { m: number; n: number; note: NoteObject } | null) => void
   setEditTextVisible: (v: boolean) => void
@@ -96,6 +99,7 @@ const initialState = {
   isConverting: false,
   errorMsg: '',
   transposeKey: '',
+  measuresPerLine: loadMeasuresPerLine(),
   editModeA: false,
   popupNote: null,
   editTextVisible: false,
@@ -124,6 +128,7 @@ export const useScoreStore = create<ScoreStore>()((set) => ({
   setIsConverting: (v) => set({ isConverting: v }),
   setErrorMsg: (msg) => set({ errorMsg: msg }),
   setTransposeKey: (key) => set({ transposeKey: key }),
+  setMeasuresPerLine: (n) => set({ measuresPerLine: n }),
   setEditModeA: (on) => set({ editModeA: on }),
   setPopupNote: (note) => set({ popupNote: note }),
   setEditTextVisible: (v) => set({ editTextVisible: v }),

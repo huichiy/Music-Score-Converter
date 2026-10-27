@@ -56,6 +56,7 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | **Slurs & Chord Stacks** | Curved slur lines above connected notes; double-stop chord notes stacked under the melody |
 | **Articulations & Grace Notes** | Renders accent, staccato, tenuto, marcato, fermata, and grace notes (倚音) above the corresponding number |
 | **Transposition** | Dropdown selector transposes the score to any target key — essential for 笛子 players switching instrument lengths |
+| **Measures per Line** | Four measures per line by default, the way Chinese orchestra parts are printed (or 2 / 3 / 5 / 6, or auto-wrap by width). Lines are stretched edge to edge so barlines line up; on a narrow screen a line holds fewer measures instead of shrinking the score. Your choice is remembered |
 | **Click-to-Edit (Route A)** | Click any number in the rendered score to open a popup and change pitch, duration, accidental, or octave; re-renders instantly |
 | **Text Editor (Route B)** | Toolbar `≡` button opens a dedicated full-screen editor with a 番茄简谱-aligned text format, live preview underneath, and bidirectional cursor sync between text and rendered notes |
 | **PDF Input + Page Picker** | Drop a multi-page PDF into the OCR drop zone — page thumbnails appear, click any page to extract it as an image and feed the existing OCR pipeline |
@@ -125,6 +126,7 @@ Music-Score-Converter/
 │   │   ├── LandingPage.tsx       — Pre-conversion welcome screen
 │   │   ├── OcrSection.tsx        — AI image OCR panel
 │   │   ├── OcrSettings.tsx       — BYOK provider / model / API key modal
+│   │   ├── MeasuresPerLineSelect.tsx — Measures-per-line selector
 │   │   ├── PartSelector.tsx      — Multi-part MusicXML selector
 │   │   ├── PdfPagePicker.tsx     — PDF thumbnail grid for picking a page
 │   │   ├── PlaybackBar.tsx       — Transport strip (play/pause/stop, seek, speed)
@@ -141,6 +143,7 @@ Music-Score-Converter/
 │   │   ├── cropTools.ts          — Display → source pixel mapping for the cropper
 │   │   ├── editor.ts             — Route B text serialize / parse + position tracking
 │   │   ├── parser.ts             — MusicXML parser + pitch conversion + transposition
+│   │   ├── layoutPrefs.ts        — Measures-per-line options + remembered choice
 │   │   ├── partMatch.ts          — Remembers which part is yours across scores
 │   │   ├── pdfTools.ts           — Lazy-loaded pdfjs wrapper
 │   │   ├── playback.ts           — Pure scheduler: repeat/volta expansion → timed events
@@ -210,7 +213,7 @@ The text format is aligned with the 番茄简谱 convention so users familiar wi
 
 A custom layout engine in `renderer.ts` iterates over note objects and:
 - Pre-calculates each measure's pixel width based on note durations
-- Wraps lines when a measure would exceed `maxWidth` (derived from container width)
+- Lays out a fixed number of measures per line (default 4), stretching each line to the full width so barlines align, and starting a new line early when the next measure won't fit; in auto mode it simply wraps when a measure would exceed `maxWidth` (derived from container width)
 - Draws barlines, measure numbers, octave dots, beaming underlines grouped by beat boundary, and extension dashes for held notes
 - Collapses runs of 2+ consecutive whole-measure rests into a numbered bracket block
 - Renders repeat signs, D.C./D.S. direction text, tempo, dynamic markings, hairpins, slur arcs, articulations (accent / staccato / tenuto / marcato / fermata), grace notes, volta brackets, tuplet brackets (duration-corrected beaming), and mid-piece time signature changes
@@ -303,6 +306,7 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 - [x] Box-select crop — extract one instrument's row from a 总谱 PDF/image before OCR
 - [x] MusicXML volta (跳房子) import via `<ending>`
 - [x] Playback (Tone.js) — repeat expansion, follow highlight, seek, speed control
+- [x] Measures-per-line setting (default 4, lines justified) and an export hint on the upload area — from orchestra pilot feedback
 - [ ] Flute-specific ornaments — 颤音 / 波音 / 叠音 / 打音 / 花舌
 - [ ] Multi-voice rendering — duet parts side by side
 
@@ -358,6 +362,7 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 | **连线与和弦** | 连音线弧形；双音/和弦垂直堆叠在主旋律下方 |
 | **表情记号与倚音** | 重音、staccato、tenuto、marcato、fermata、倚音 |
 | **转调** | 下拉菜单一键转到目标调——笛子换调必备 |
+| **每行小节数** | 默认每行 4 小节，跟华乐团分谱的排法一样（也可选 2 / 3 / 5 / 6，或「自动」按宽度换行）。每行左右撑满、小节线对齐；屏幕太窄时自动少放几个小节，不会把谱缩小。会记住你的选择 |
 | **点击编辑（Route A）** | 点击渲染谱面上任何数字，弹出 popup 改音高 / 时值 / 升降号 / 八度 |
 | **文本编辑器（Route B）** | 工具栏 `≡` 按钮打开全屏编辑器：上下分栏，文本在上，实时预览在下，光标双向同步；格式说明可侧滑抽屉显示。文本格式对齐番茄简谱约定 |
 | **PDF 输入 + 页面选择器** | 把多页 PDF 拖进 OCR 区，弹出页面缩略图网格，点任一页即提取为图片送 OCR |
@@ -503,6 +508,7 @@ VITE_OCR_WORKER_URL=https://你的-worker.你的名字.workers.dev
 - [x] 总谱框选裁剪 — 在 PDF 页/照片上框一行声部（如笛子）单独送识别
 - [x] 播放（Tone.js）— 按反复完整展开、跟随高亮、暂停/进度条/点音起播/变速
 - [x] Route C：OCR 结果即 Route B 文本——自动归一化、可手改、一键渲染成真谱
+- [x] 每行小节数设置（默认 4 小节、左右对齐）与上传区导出提示——来自乐团试用反馈
 - [ ] 笛子专属技巧（颤音 / 波音 / 叠音 / 打音 / 花舌）
 - [ ] 多声部并排渲染
 

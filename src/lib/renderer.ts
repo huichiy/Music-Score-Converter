@@ -107,9 +107,11 @@ function renderOctaveDots(els: string[], cx: number, y: number, octave: number, 
   }
 }
 
+// naturalWidth = noteWidth before line stretching: an underline that ends here
+// keeps that length, so a stretched lone eighth doesn't look beamed to its neighbour
 function renderBeamingUnderlines(
   els: string[], measure: MeasureArray, j: number,
-  currentX: number, noteWidth: number, currentY: number,
+  currentX: number, noteWidth: number, naturalWidth: number, currentY: number,
   cumulative: number[], beatUnit: number, color: string,
 ): void {
   const linesCnt = getBeamingLines(measure[j].type)
@@ -120,7 +122,7 @@ function renderBeamingUnderlines(
     const connectLeft = j > 0 && getBeamingLines(measure[j - 1].type) >= l && prevBeat === noteBeat
     const connectRight = j < measure.length - 1 && getBeamingLines(measure[j + 1].type) >= l && nextBeat === noteBeat
     const x1 = connectLeft ? currentX : currentX + 2
-    const x2 = connectRight ? currentX + noteWidth : currentX + noteWidth - 2
+    const x2 = connectRight ? currentX + noteWidth : currentX + naturalWidth - 2
     els.push(`<line x1="${x1}" y1="${currentY + l * 4}" x2="${x2}" y2="${currentY + l * 4}" stroke="${color}" stroke-width="1"/>`)
   }
 }
@@ -144,9 +146,8 @@ function renderExtensionDashes(
 
 function renderMultiRestBracket(
   els: string[], currentX: number, currentY: number,
-  N: number, maxWidth: number, color: string,
+  N: number, blockW: number, color: string,
 ): number {
-  const blockW = Math.min(RENDER_CONFIG.multiRestMaxWidth, maxWidth * 0.4)
   const lineY = currentY - 8
   const lx1 = currentX + 4
   const lx2 = currentX + blockW - 4
@@ -271,6 +272,50 @@ function renderNote(
   return numXOffset
 }
 
+function noteWidthOf(note: NoteObject): number {
+  const { noteWidths } = RENDER_CONFIG
+  return (noteWidths[note.type] || 40) * (note.dot ? 1.5 : 1) * tupletFactor(note.tuplet) + (!note.tie && note.accidental ? 6 : 0)
+}
+
+// A layout item's width before stretching: `flex` stretches when a line is
+// justified (notes, multi-rest block), `fixed` doesn't (time-sig label, repeat sign)
+interface ItemWidth { flex: number; fixed: number }
+
+interface LinePlan { lineStart: boolean[]; scale: number[] }
+
+// Fixed measures per line: start a new line every `perLine` items, or earlier
+// when the next item would overflow the width (narrow screens stay readable
+// instead of shrinking the whole score). Each line's flex widths are then
+// stretched to fill the width so barlines end flush right; a short last line
+// keeps the previous line's stretch rather than spreading a few measures out.
+function planLines(widths: ItemWidth[], available: number, perLine: number): LinePlan {
+  const lineStart = widths.map(() => false)
+  const scale = widths.map(() => 1)
+  let prevScale = 1
+  let i = 0
+  while (i < widths.length) {
+    lineStart[i] = true
+    let flex = 0
+    let fixed = 0
+    let j = i
+    while (j < widths.length && j - i < perLine) {
+      if (j > i && flex + fixed + widths[j].flex + widths[j].fixed > available) break
+      flex += widths[j].flex
+      fixed += widths[j].fixed
+      j++
+    }
+    const full = j < widths.length || j - i === perLine
+    let s = flex > 0 ? (available - fixed) / flex : 1
+    if (!full) s = Math.min(s, prevScale)
+    // A lone measure wider than the line overflows as before; never squash notes
+    s = Math.max(1, s)
+    for (let k = i; k < j; k++) scale[k] = s
+    prevScale = s
+    i = j
+  }
+  return { lineStart, scale }
+}
+
 export function renderJianpuSVG(
   measures: Measure[],
   keyStr: string,
@@ -279,6 +324,7 @@ export function renderJianpuSVG(
   containerWidth = 540,
   tempoStr = '',
   isDark?: boolean,
+  measuresPerLine = 0,
 ): string {
   const dark = isDark ?? document.documentElement.getAttribute('data-theme') === 'dark'
   const svgColor = dark ? '#FFFFFF' : '#0A0A0A'
@@ -307,17 +353,31 @@ export function renderJianpuSVG(
 
   measures = collapseRestRuns(measures)
 
+  const itemWidth = (m: Measure): ItemWidth => {
+    if (!Array.isArray(m) && m._multiRest) {
+      return { flex: Math.min(RENDER_CONFIG.multiRestMaxWidth, maxWidth * 0.4), fixed: 0 }
+    }
+    const arr = m as MeasureArray
+    return {
+      flex: arr.reduce((sum, note) => sum + noteWidthOf(note), 0),
+      fixed: (arr._timeSig ? timeSigWidth : 0) + (arr._repeatStart ? RENDER_CONFIG.repeatSignWidth : 0),
+    }
+  }
+  // 0 = auto: wrap whenever the next measure doesn't fit (ragged right edge)
+  const plan = measuresPerLine > 0 ? planLines(measures.map(itemWidth), maxWidth - startX, measuresPerLine) : null
+
   let actualMeasureNum = 1
   let origIdx = 0
 
   for (let i = 0; i < measures.length; i++) {
     const measure = measures[i]
+    const lineScale = plan ? plan.scale[i] : 1
 
     if (!Array.isArray(measure) && measure._multiRest) {
       const N = measure._multiRest
       const blockW = Math.min(RENDER_CONFIG.multiRestMaxWidth, maxWidth * 0.4)
       origIdx += N
-      if (currentX + blockW > maxWidth && currentX > startX) {
+      if (plan ? plan.lineStart[i] && i > 0 : currentX + blockW > maxWidth && currentX > startX) {
         currentX = startX
         currentY += lineHeight
       }
@@ -325,7 +385,7 @@ export function renderJianpuSVG(
         svgElements.push(`<text x="${currentX}" y="${currentY - 30}" font-family="Inter" font-size="10" font-style="italic" fill="${svgColor}">${actualMeasureNum}</text>`)
         renderBarline(svgElements, currentX, currentY, svgColor, false)
       }
-      currentX += renderMultiRestBracket(svgElements, currentX, currentY, N, maxWidth, svgColor)
+      currentX += renderMultiRestBracket(svgElements, currentX, currentY, N, blockW * lineScale, svgColor)
       if (i === measures.length - 1) {
         renderBarline(svgElements, currentX, currentY, svgColor, true)
         if (currentX + 4 > maxTotalWidth) maxTotalWidth = currentX + 4
@@ -347,12 +407,10 @@ export function renderJianpuSVG(
     }
 
     let measureWidth = 0
-    for (const note of measureArr) {
-      measureWidth += (noteWidths[note.type] || 40) * (note.dot ? 1.5 : 1) * tupletFactor(note.tuplet) + (!note.tie && note.accidental ? 6 : 0)
-    }
+    for (const note of measureArr) measureWidth += noteWidthOf(note)
     if (measureArr._timeSig) measureWidth += timeSigWidth
 
-    if (currentX + measureWidth > maxWidth && currentX > startX) {
+    if (plan ? plan.lineStart[i] && i > 0 : currentX + measureWidth > maxWidth && currentX > startX) {
       if (slurStartX !== null) {
         const midX = (slurStartX + currentX) / 2
         const arcY = slurStartY! - 30
@@ -385,7 +443,7 @@ export function renderJianpuSVG(
 
     const isWholeMeasureRest = measureArr.length === 1 && measureArr[0].rest && measureArr[0].type === 'whole'
     if (isWholeMeasureRest) {
-      const wmWidth = noteWidths['whole']
+      const wmWidth = noteWidths['whole'] * lineScale
       const step = wmWidth / beatsPerMeasure
       // Wrap the 4 rest "0"s in a <g> with data-rest-m so text-editor cursor sync
       // can outline the whole group when caret is in the matching 0--- token.
@@ -426,7 +484,8 @@ export function renderJianpuSVG(
 
     for (let j = 0; j < measureArr.length; j++) {
       const note = measureArr[j]
-      const noteWidth = (noteWidths[note.type] || 40) * (note.dot ? 1.5 : 1) * tupletFactor(note.tuplet) + (!note.tie && note.accidental ? 6 : 0)
+      const naturalWidth = noteWidthOf(note)
+      const noteWidth = naturalWidth * lineScale
 
       if (note.tuplet && tupletLeft === 0) {
         tupletStartX = currentX
@@ -458,7 +517,7 @@ export function renderJianpuSVG(
         renderOctaveDots(svgElements, cx, currentY, note.octave, svgColor)
       }
 
-      renderBeamingUnderlines(svgElements, measureArr, j, currentX, noteWidth, currentY, cumulative, beatUnit, svgColor)
+      renderBeamingUnderlines(svgElements, measureArr, j, currentX, noteWidth, naturalWidth, currentY, cumulative, beatUnit, svgColor)
 
       currentX += noteWidth
 
@@ -529,7 +588,8 @@ export function renderJianpuSVG(
   }
 
   const totalHeight = Math.max(currentY + 40, maxBottomY + 8)
-  const finalWidth = Math.max(maxWidth, maxTotalWidth + 20)
+  // Stretched lines leave float noise (1194.0000000000002) in the width
+  const finalWidth = Math.ceil(Math.max(maxWidth, maxTotalWidth + 20))
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${finalWidth}" height="${totalHeight}" viewBox="0 0 ${finalWidth} ${totalHeight}">
     ${svgElements.join('\n')}

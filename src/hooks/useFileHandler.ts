@@ -7,7 +7,7 @@ import { renderJianpuSVG } from '@/lib/renderer'
 import { parseABC } from '@/lib/abcParser'
 import { parseFromText } from '@/lib/editor'
 import { matchPartIndex, loadMyPart } from '@/lib/partMatch'
-import type { MeasureArray, NoteObject } from '@/types/score'
+import type { Measure, MeasureArray, NoteObject } from '@/types/score'
 
 const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
@@ -70,6 +70,10 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
   const store = useScoreStore()
 
   const getContainerWidth = () => mainContentRef.current?.clientWidth ?? 540
+
+  // Every score render goes through here so the layout settings apply everywhere
+  const renderScore = (measures: Measure[], keyStr: string, timeStr: string, titleStr: string, tempoStr: string) =>
+    renderJianpuSVG(measures, keyStr, timeStr, titleStr, getContainerWidth(), tempoStr, undefined, useScoreStore.getState().measuresPerLine)
 
   const showOutput = useCallback((
     svgResult: string,
@@ -135,7 +139,7 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
     const displayMeasures = transposeNoteObjects(svgMeasures, keyStr, targetKey)
     store.setCurrent(displayMeasures, targetKey)
 
-    const svgResult = renderJianpuSVG(displayMeasures, targetKey, timeStr, titleStr, getContainerWidth(), tempoStr)
+    const svgResult = renderScore(displayMeasures, targetKey, timeStr, titleStr, tempoStr)
     store.setIsConverted(true)
     return svgResult
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -357,7 +361,7 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
     store.setShowPartSelector(false)
     store.setShowAutoDetect(false)
 
-    const svgResult = renderJianpuSVG(jianpuMeasures, keyStr, timeStr, titleStr, getContainerWidth(), tempoStr)
+    const svgResult = renderScore(jianpuMeasures, keyStr, timeStr, titleStr, tempoStr)
     store.setIsConverted(true)
     return svgResult
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -377,7 +381,7 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
     store.setShowPartSelector(false)
     store.setShowAutoDetect(false)
 
-    const svgResult = renderJianpuSVG(measures, keyStr, timeStr, titleStr, getContainerWidth(), tempoStr)
+    const svgResult = renderScore(measures, keyStr, timeStr, titleStr, tempoStr)
     store.setIsConverted(true)
     return svgResult
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -404,7 +408,7 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
     const measures = transposeNoteObjects(originalMeasures, originalKeyStr, key)
     useScoreStore.getState().setCurrent(measures, key)
     useScoreStore.getState().setTransposeKey(targetKey)
-    return renderJianpuSVG(measures, key, originalTimeStr, originalTitleStr, getContainerWidth(), originalTempoStr)
+    return renderScore(measures, key, originalTimeStr, originalTitleStr, originalTempoStr)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -432,7 +436,7 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
   const rerenderWithStore = useCallback((): string | null => {
     const { currentMeasures, currentKeyStr, originalTimeStr, originalTitleStr, originalTempoStr } = useScoreStore.getState()
     if (!currentMeasures) return null
-    return renderJianpuSVG(currentMeasures, currentKeyStr, originalTimeStr, originalTitleStr, getContainerWidth(), originalTempoStr)
+    return renderScore(currentMeasures, currentKeyStr, originalTimeStr, originalTitleStr, originalTempoStr)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -444,7 +448,7 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
     store.setCurrent(parsed.measures, parsed.keyStr)
     store.setTransposeKey('')
     store.setIsConverted(true)
-    return renderJianpuSVG(parsed.measures, parsed.keyStr, parsed.timeStr, title, getContainerWidth(), parsed.tempoStr)
+    return renderScore(parsed.measures, parsed.keyStr, parsed.timeStr, title, parsed.tempoStr)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store])
 

@@ -118,6 +118,7 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
   const originalTimeStr = useScoreStore((s) => s.originalTimeStr)
   const originalTempoStr = useScoreStore((s) => s.originalTempoStr)
   const originalTitleStr = useScoreStore((s) => s.originalTitleStr)
+  const measuresPerLine = useScoreStore((s) => s.measuresPerLine)
 
   const [text, setText] = useState('')
   const [showGuide, setShowGuide] = useState(false)
@@ -176,6 +177,7 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
           previewWidth - 40,
           parsed.tempoStr,
           isDark,
+          measuresPerLine,
         )
         setPreviewSvg(svg)
         lastGoodSvg.current = svg
@@ -185,7 +187,7 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
       }
     }, 180)
     return () => clearTimeout(timer)
-  }, [text, previewWidth, editTextVisible, currentKeyStr, originalTimeStr, originalTempoStr, originalTitleStr])
+  }, [text, previewWidth, editTextVisible, currentKeyStr, originalTimeStr, originalTempoStr, originalTitleStr, measuresPerLine])
 
   // Find which note the caret currently sits in. Returns either a regular note position
   // (measureIdx >= 0) or a rest-measure position (restMeasureIdx defined) or null.

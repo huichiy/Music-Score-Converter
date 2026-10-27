@@ -18,7 +18,7 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR + crop + playback + my-part, 208 assertions) then scripts/test-parser.ts (MusicXML parsing, 38 assertions)
+npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR + crop + playback + my-part + measures-per-line, 216 assertions) then scripts/test-parser.ts (MusicXML parsing, 38 assertions)
 ```
 
 - `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`. `scripts/test-parser.ts` parses inline MusicXML with `linkedom` (devDependency, tests only — never bundled).
@@ -54,6 +54,7 @@ Music-Score-Converter/
 │   │   ├── PdfPagePicker.tsx        — PDF thumbnail grid (page → ImageCropper)
 │   │   ├── ImageCropper.tsx         — box-select crop modal (PDF page / image → cropped PNG)
 │   │   ├── PlaybackBar.tsx          — transport strip (play/pause/stop, seek, speed)
+│   │   ├── MeasuresPerLineSelect.tsx — 每行小节数 sidebar select (saves to localStorage)
 │   │   └── …Sidebar / Toolbar / TransposeSelect / ExportButtons / PartSelector / ScoreOutput / FileUpload
 │   ├── hooks/
 │   │   ├── useFileHandler.ts        — File parsing + render orchestration
@@ -66,6 +67,7 @@ Music-Score-Converter/
 │   │   ├── pdfTools.ts              — Lazy pdfjs wrapper
 │   │   ├── cropTools.ts             — computeCropRect (display→source pixel mapping, unit-tested)
 │   │   ├── partMatch.ts             — "which part is mine": remembered-instrument matching + localStorage
+│   │   ├── layoutPrefs.ts           — measures-per-line options, default (4) + localStorage load/save
 │   │   ├── playback.ts              — pure scheduler: expandRepeats + buildPlaybackEvents (beats, unit-tested)
 │   │   ├── tonePlayer.ts            — lazy Tone.js audio layer (only file importing tone)
 │   │   ├── abcParser.ts             — ABC notation parser
@@ -115,6 +117,7 @@ function renderJianpuSVG(
   containerWidth = 540,
   tempoStr = "",
   isDark?: boolean,
+  measuresPerLine = 0,
 ): string
 ```
 - `measures` — array of `MeasureArray` (note objects) or `{ _multiRest: N }` blocks
@@ -124,6 +127,7 @@ function renderJianpuSVG(
 - `containerWidth` — pass `mainContentRef.current.clientWidth`; pages with the sidebar visible should NOT pass `scoreOutputRef.current.clientWidth` (it's 0 before mount)
 - `tempoStr` — BPM string e.g. `"120"`, empty string if no tempo
 - `isDark` — overrides the runtime theme check; the text editor's preview pane uses this to keep colours consistent with the app theme
+- `measuresPerLine` — `0` = auto (wrap by width, the original layout); `N` = fixed N per line, justified (see **Measures per line** below). App callers pass the store's `measuresPerLine`: `useFileHandler` routes every render through its `renderScore` helper, and `EditTextOverlay` passes it to the preview
 
 ---
 
@@ -212,6 +216,12 @@ Rendered at `currentX - 4`, `currentY - 20`, italic, text-anchor end, after clos
 - **Volta `{N}`** — horizontal bracket at `currentY - 44` from `measureStartX` to measure end, wrapped in `<g class="jn-volta">`; hook + `N.` label only drawn when the previous measure's `_volta` differs (consecutive same-number measures join into one visual bracket; line wraps break it naturally).
 - **Tuplet `~N`** — note durations (beam `cumulative` AND pixel widths) are multiplied by `tupletFactor(n)`: `2→3/2`, else `pow2floor(n)/n` (3→2/3, 5→4/5, 6→2/3, 7→4/7). Bracket + italic digit drawn above the group in `<g class="jn-tuplet">` at `currentY - 28`. Groups close after exactly N notes and never cross barlines.
 - **Temp time sig `@N/M`** — `beatsPerMeasure` / `beatUnit` are `let` and update at the top of the measure loop from `_timeSig`; a bold `N/M` label is drawn before the measure (+24px width, added to `measureWidth` too). Affects beat grouping and whole-rest `0` count from that measure on.
+
+### Measures per line (`measuresPerLine > 0`)
+- Requested by an orchestra tester ("五 bar 一行真的丑，求求 4 bar 一行"); Chinese orchestra parts are usually printed 4 per line, so **4 is the default** (`DEFAULT_MEASURES_PER_LINE` in `src/lib/layoutPrefs.ts`, remembered under `jianpu.measuresPerLine.v1`). Auto (`0`) keeps the old wrap-by-width output byte-for-byte; a test pins that.
+- `planLines()` runs before the measure loop on the collapsed (`collapseRestRuns`) array, so a multi-rest block counts as one item. A line takes up to N items and **breaks early when the next one would overflow**: narrow screens get fewer per line instead of a shrunken score.
+- Each line stretches its `flex` widths (notes, whole-rest, multi-rest block) by `(available - fixed) / flex` so the closing barline lands on `maxWidth`; `fixed` parts (time-sig label, repeat sign) don't stretch. A short **last** line reuses the previous line's stretch (a one-line score stays natural); a lone measure wider than the line overflows rather than squashing (stretch is never < 1).
+- Beam underlines that **connect** to the next note span the stretched width; one that **ends** (a lone eighth, a group's last note) keeps its natural length via `naturalWidth`, otherwise it reads as beamed to its neighbour.
 
 ---
 
@@ -408,13 +418,14 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] PDF input + page picker (lazy pdfjs-dist)
 - [x] BYOK multi-provider OCR — Gemini / Anthropic / OpenAI / Groq / Custom (OpenAI-compatible)
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with the key off the bundle
-- [x] Round-trip test suite (`npm run test`, 208 + 38 assertions across two files)
+- [x] Round-trip test suite (`npm run test`, 216 + 38 assertions across two files)
 - [x] Playback (Tone.js) — full repeat/volta expansion, follow highlight, pause/seek/click-a-note/speed slider
 - [x] MusicXML import: `<articulations>` / fermata / grace notes (倚音) / `<time-modification>` tuplets — plus graceNote transposition fix
 - [x] MusicXML import: `<ending>` (跳房子/volta) → `_volta`
 - [x] Route C: OCR → Route B text → rendered SVG loop — prompts emit exact Route B format (incl. v3), `normalizeOcrText`, editable result box, error sentinels, empty-parse guard
 
 - [x] Phase 3 OCR: box-select crop — extract one instrument's row from a 总谱 PDF/image before OCR (single-box, iterate)
+- [x] Orchestra pilot feedback (2026-10): MusicXML pitch-changing ties → slurs (#1), measures-per-line setting with justified lines, default 4 (#2), upload-area export hint (#3)
 
 ### Pending
 - [ ] 笛子 ornaments — parse MusicXML `<ornaments>` + render symbols; Route B syntax extension: `1[tr]` 颤音, `1[~]` 波音, `1[又]` 叠音, `1[打]` 打音, `1[*]` 花舌

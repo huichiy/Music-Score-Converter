@@ -1,6 +1,7 @@
 import FileUpload from './FileUpload'
 import PartSelector from './PartSelector'
 import TransposeSelect from './TransposeSelect'
+import MeasuresPerLineSelect from './MeasuresPerLineSelect'
 import ExportButtons from './ExportButtons'
 import OcrSection from './OcrSection'
 
@@ -74,6 +75,7 @@ export default function Sidebar({
         <FileUpload onFile={onFile} />
         <PartSelector onPartChange={onPartChange} />
         <TransposeSelect onTranspose={onTranspose} />
+        <MeasuresPerLineSelect />
 
         {/* Divider: input → output */}
         <div style={{ height: '0.5px', background: 'var(--color-border)', margin: '0 -4px' }} />

@@ -919,6 +919,46 @@ describe('Route B: octaves beyond ±2 survive the round-trip', () => {
   assertEq('octaves round-trip losslessly', asNotes(out[0]), asNotes(input[0]))
 })
 
+describe('Renderer: measures per line (issue #2)', () => {
+  // Four quarters = 160px of notes per measure
+  const bars = (n: number) => Array.from({ length: n }, () =>
+    measure([note({ degree: 1 }), note({ degree: 2 }), note({ degree: 3 }), note({ degree: 4 })])) as Measure[]
+  // The italic measure number is drawn only at the start of each line
+  const lineStarts = (svg: string) =>
+    [...svg.matchAll(/font-size="10" font-style="italic"[^>]*>(\d+)<\/text>/g)].map(m => m[1])
+  const render = (ms: Measure[], width: number, perLine?: number) =>
+    renderJianpuSVG(ms, 'C', '4/4', 'T', width, '', false, perLine)
+
+  assertEq('4 per line on a wide screen', lineStarts(render(bars(8), 1240, 4)), ['1', '5'])
+  // 400px leaves room for two 160px measures: fewer per line, never shrunk
+  assertEq('narrow screen falls back to what fits', lineStarts(render(bars(8), 400, 4)), ['1', '3', '5', '7'])
+  assertEq('auto (0) renders exactly as before', render(bars(8), 1240, 0), render(bars(8), 1240))
+
+  // Thin barlines of the line whose staff sits at `y` (first line: y = 100)
+  const barlineXs = (svg: string, y: number) =>
+    [...svg.matchAll(/<line x1="([\d.]+)" y1="([\d.]+)" x2="\1" y2="[\d.]+" stroke="[^"]+" stroke-width="1"\/>/g)]
+      .filter(m => parseFloat(m[2]) === y - 15)
+      .map(m => Math.round(parseFloat(m[1])))
+      .filter((x, k, xs) => xs.indexOf(x) === k)
+  // containerWidth 1240 → right edge at 1240 - 40 = 1200
+  const justified = render(bars(8), 1240, 4)
+  assertEq('full line is stretched to the right edge', Math.max(...barlineXs(justified, 100)), 1200)
+  assertEq('barlines line up on every line', barlineXs(justified, 180), barlineXs(justified, 100))
+  // Line 1 stretches 640 → 1180 (×1.84375); line 2's two measures keep that
+  // stretch: 20 + 2 × 160 × 1.84375 = 610, not spread to 1200
+  assertEq('short last line keeps the previous stretch', Math.max(...barlineXs(render(bars(6), 1240, 4), 180)), 610)
+  assertEq('a score shorter than one line stays natural', Math.max(...barlineXs(render(bars(2), 1240, 4), 100)), 340)
+
+  // 1. 1/ 2 4 — the lone eighth's underline must not stretch toward the next
+  // note, or it reads as if the two were beamed together
+  const loneEighth = Array.from({ length: 4 }, () => measure([
+    note({ degree: 1, dot: true }), note({ degree: 1, type: 'eighth' }), note({ degree: 2 }), note({ degree: 4 }),
+  ])) as Measure[]
+  const underlineLengths = (svg: string) =>
+    [...svg.matchAll(/<line x1="([\d.]+)" y1="104" x2="([\d.]+)" y2="104"/g)].map(m => Math.round(parseFloat(m[2]) - parseFloat(m[1])))
+  assertEq('lone eighth underline keeps its natural 26px', underlineLengths(render(loneEighth, 1240, 4)), [26, 26, 26, 26])
+})
+
 describe('Renderer: octave dots beyond ±2 (low/high orchestra parts)', () => {
   const one = (octave: number, extra: Partial<NoteObject> = {}) =>
     [measure([note({ degree: 1, octave, ...extra })])] as Measure[]
