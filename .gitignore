@@ -30,8 +30,12 @@ worker/.wrangler/
 worker/node_modules/
 worker/dist/
 
-# Playwright CLI scratch (browser automation testing)
+# Playwright CLI / MCP scratch (browser automation testing)
 .playwright-cli/
+.playwright-mcp/
 
 # Subagent-driven-development scratch workspace
 .superpowers/
+
+# Claude Code session handoffs (local only)
+docs/handoffs/
