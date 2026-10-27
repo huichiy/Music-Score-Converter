@@ -64,6 +64,12 @@ export default function FileUpload({ onFile }: FileUploadProps) {
           </div>
         )}
       </div>
+      {/* A tester double-clicked the exported .xml and macOS opened it in Word */}
+      {!currentFile && (
+        <p className="text-xs leading-relaxed" style={{ color: 'var(--color-muted)' }}>
+          从 Noteflight / MuseScore 导出 MusicXML（.xml / .mxl）后拖进来。别双击 .xml，Mac 会用 Word 打开它。
+        </p>
+      )}
       <input
         ref={inputRef}
         type="file"
