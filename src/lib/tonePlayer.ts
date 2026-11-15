@@ -17,9 +17,12 @@ export interface Player {
   load(events: PlaybackEvent[], bpm: number): Promise<void>
   play(): void
   pause(): void
-  stop(): void
+  /** Stop and rewind. `letRing` keeps the sounding notes' own release tail
+   *  instead of cutting them — used when the piece ends by itself. */
+  stop(letRing?: boolean): void
   seekBeat(beat: number): void
   setRate(rate: number): void
+  /** Where the LISTENER is in the piece, in beats (not where the scheduler is). */
   positionBeats(): number
   readonly totalBeats: number
   dispose(): void
@@ -51,12 +54,18 @@ export async function createPlayer(): Promise<Player> {
   let total = 0
   let baseBpm = 90
   let rate = 1
+  // Tone applies a seek one lookAhead (~100 ms) in the future, so the audible
+  // clock keeps reporting the OLD position until then — which would snap the
+  // slider back. Report the target until the jump has actually happened.
+  let seekHold: { beat: number; until: number } | null = null
 
   return {
     async load(events, bpm) {
       transport.stop()
       transport.cancel()
       transport.ticks = 0
+      // Same lag as a seek: until the rewind is audible the old position shows
+      seekHold = { beat: 0, until: Tone.now() + 0.05 }
       baseBpm = bpm
       transport.bpm.value = bpm * rate
       total = totalBeatsOf(events)
@@ -79,19 +88,36 @@ export async function createPlayer(): Promise<Player> {
     },
     play() { transport.start() },
     pause() { transport.pause() },
-    stop() {
+    stop(letRing = false) {
       transport.stop()
       transport.ticks = 0
-      synth.releaseAll()
+      seekHold = null
+      // Every note already carries its own scheduled release, so at the natural
+      // end releaseAll() would only cut the last one short.
+      if (!letRing) synth.releaseAll()
     },
     seekBeat(beat) {
-      transport.ticks = Math.max(0, Math.round(beat * transport.PPQ))
+      const ticks = Math.max(0, Math.round(beat * transport.PPQ))
+      transport.ticks = ticks
+      // +50 ms covers the tick-boundary delay Tone adds while the transport runs
+      seekHold = { beat: ticks / transport.PPQ, until: Tone.now() + 0.05 }
     },
     setRate(next) {
       rate = next
       transport.bpm.value = baseBpm * next
     },
-    positionBeats() { return transport.ticks / transport.PPQ },
+    positionBeats() {
+      // transport.ticks reads at Tone.now() = currentTime + lookAhead, so it
+      // runs ~100 ms ahead of what the speakers play: the highlight led the
+      // audio and the end-of-piece check fired before the last note ended.
+      // Ask the clock about the audible instant instead.
+      const t = Tone.immediate()
+      if (seekHold) {
+        if (t < seekHold.until) return seekHold.beat
+        seekHold = null
+      }
+      return transport.getTicksAtTime(t) / transport.PPQ
+    },
     get totalBeats() { return total },
     dispose() {
       transport.stop()
