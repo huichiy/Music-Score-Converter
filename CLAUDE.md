@@ -18,7 +18,7 @@ npm install
 npm run dev        # vite dev server, prints URL (default :5173)
 npm run build      # tsc -b && vite build, output in dist/
 npm run preview    # serve the built bundle
-npm run test       # scripts/test-roundtrip.ts (Route B + renderer + OCR + crop + playback + my-part + measures-per-line, 216 assertions) then scripts/test-parser.ts (MusicXML parsing, 38 assertions)
+npm run test       # six tsx files in sequence, 701 assertions: test-roundtrip (216) · test-parser (38) · test-parser-fixes (116) · test-renderer-fixes (104) · test-playback-fixes (31) · test-ocr-fixes (196)
 ```
 
 - `npm run test` runs via `tsx` (in devDependencies since 2026-07), so it works after a plain `npm install`. `scripts/test-parser.ts` parses inline MusicXML with `linkedom` (devDependency, tests only — never bundled).
@@ -38,9 +38,13 @@ Music-Score-Converter/
 ├── docs/JIANPU_FORMAT.md            — Route B text editor format spec
 ├── scripts/test-roundtrip.ts        — Route B round-trip tests (npm run test)
 ├── scripts/test-parser.ts           — MusicXML parser tests via linkedom (npm run test, 2nd file)
+├── scripts/test-parser-fixes.ts     — audit regressions: MusicXML voices/staves/_key/_timeSig, ABC, MIDI reader, pitch spelling
+├── scripts/test-renderer-fixes.ts   — audit regressions: collapse exclusions, data-m / data-rest-m index spaces, beaming, slurs, escaping
+├── scripts/test-playback-fixes.ts   — audit regressions: D.C./D.S./Fine, key/meter per measure, nearestNoteStart
+├── scripts/test-ocr-fixes.ts        — audit regressions: response extractors, normalize/merge, Worker (fetch stubbed), blocked storage, cropper geometry
 ├── scripts/screenshots.mjs          — README screenshot capture (Playwright, dev server on :7790)
 ├── worker/                          — Optional Cloudflare Worker (OCR proxy)
-│   ├── src/index.ts                 — OpenAI-shape → Gemini translator
+│   ├── src/index.ts                 — OpenAI-shape → Gemini translator (origin 403, Flash-only allowlist, token clamp, body cap)
 │   ├── wrangler.toml
 │   └── README.md                    — Deploy steps
 ├── src/
@@ -61,11 +65,11 @@ Music-Score-Converter/
 │   │   ├── useOcr.ts                — OCR runner, delegates to vision adapter
 │   │   └── usePlayback.ts           — playback orchestration + rAF highlight/progress loop
 │   ├── lib/
-│   │   ├── parser.ts                — MusicXML parser, pitch conversion, transposition
+│   │   ├── parser.ts                — MusicXML parser, MIDI reader (midiToJianpu), pitch conversion, transposition
 │   │   ├── renderer.ts              — SVG layout engine
 │   │   ├── editor.ts                — Route B serialize/parse + token positions
-│   │   ├── pdfTools.ts              — Lazy pdfjs wrapper
-│   │   ├── cropTools.ts             — computeCropRect (display→source pixel mapping, unit-tested)
+│   │   ├── pdfTools.ts              — Lazy pdfjs wrapper + canvasToOcrFile (PNG, or JPEG when over 4.5 MB)
+│   │   ├── cropTools.ts             — computeCropRect / fitDisplaySize / scaleRect (crop geometry, unit-tested)
 │   │   ├── partMatch.ts             — "which part is mine": remembered-instrument matching + localStorage
 │   │   ├── layoutPrefs.ts           — measures-per-line options, default (4) + localStorage load/save
 │   │   ├── playback.ts              — pure scheduler: expandRepeats + buildPlaybackEvents (beats, unit-tested)
@@ -160,16 +164,19 @@ measure._dynamic: string        // e.g. "mf", "ff"
 measure._wedge: 'cresc' | 'dim' | null
 measure._volta: number | undefined    // 跳房子 ending number; Route B `{N}`
 measure._timeSig: string | undefined  // temp time signature from this measure on, e.g. '3/4'; Route B `@N/M`
+measure._key: string | undefined      // mid-piece key change: degrees from this measure on are relative to this key, e.g. 'D'. No Route B syntax yet
 ```
+
+`_key` contract: set only on the measure where the key actually changes (never repeated, never on measure 0 — the header key covers that). Producers: MusicXML `<fifths>`, ABC `K:` (field line or inline `[K:]`), MIDI key-signature events. Consumers: `transposeNoteObjects` (switches source key, shifts the label by the same interval), renderer (bold `1=X` label, +32px fixed width), playback (key resolved per measure), `isCollapsibleRest` (a `_key` rest never merges). `serializeToText` **drops** it — opening such a score in the text editor and applying re-reads every degree in the header key.
 
 Articulations and grace notes are rendered by `src/lib/renderer.ts` (small text/circle/path above the note number) and round-tripped through Route B as `1[>]`, `1[2]`, etc. — see `docs/JIANPU_FORMAT.md`.
 
 ---
 
-## Pitch Conversion (3 steps)
-1. **Diatonic degree** — compare note step to tonic step using `stepMapDiatonic`
-2. **Octave shift** — `Math.round((noteSemi - (baseTonicSemi + scaleDegrees[degree])) / 12)`
-3. **Accidental** — compare intended semitone to actual semitone; mismatch → `#` or `b`
+## Pitch Conversion (src/lib/parser.ts — the ONE copy)
+- `pitchToJianpu(step, alter, octave, key)` — a **spelled** pitch (MusicXML, ABC): the letter decides the degree, so Bb in C is `b7` and A# is `#6`. Steps: diatonic degree from `stepMapDiatonic`; octave shift `Math.round((noteSemi - (tonicSemi + scaleDegrees[degree])) / 12)`; accidental from intended vs actual semitone.
+- `semitoneToJianpu(semi, key)` — an **unspelled** semitone (MIDI, transposition): in-scale pitches are plain degrees by semitone distance (B in Gb is `4`, not `#3`; F in F# is `7`); only out-of-scale pitches fall back to a letter (flat names in flat keys, sharp names elsewhere).
+- `jianpuToSemitone` / `noteToMidi` (= +12) / `tonicSemiOf` go the other way. Semitone space: C4 = 48.
 
 Always use `parseFloat()` for `alter` reads — MusicXML allows 0.5 quarter-tones.
 
@@ -178,15 +185,20 @@ Always use `parseFloat()` for `alter` reads — MusicXML allows 0.5 quarter-tone
 ## Key Rendering Rules
 
 ### Whole-measure rest
-Strict check: `measure.length === 1 && measure[0].rest && measure[0].type === "whole"`
+Strict check `isWholeRestMeasure()` (renderer.ts): `measure.length === 1 && measure[0].rest && measure[0].type === "whole"`. MusicXML `<rest measure="yes">` is forced to `whole` whatever its duration says.
 - Renders as repeated `0` symbols, one per beat: `0 0 0 0` in 4/4, `0 0 0` in 3/4
 - Mixed-rest measures (partial rests) go through normal note rendering
+- A lone whole rest shares the closing code with every other measure (barline, repeat sign, volta, direction, dynamic, hairpin) — it used to `continue` early and drop them. It has no `data-m` and does **not** advance `origIdx`; its `0`s sit in `<g class="jn-rest-group" data-rest-m="…">`
 
 ### Multi-measure rest collapsing
-`collapseRestRuns()` in `src/lib/renderer.ts` — collapses 2+ consecutive whole-measure rests into `{ _multiRest: N }` bracket block. Uses the same strict check above, **plus** exclusion of measures tagged `_volta` / `_timeSig` (their bracket/label must stay visible). `editor.ts computeOrigIdxMap` mirrors this logic and must keep the same exclusions, or the text-editor cursor sync (data-m) drifts.
+`collapseRestRuns()` in `src/lib/renderer.ts` — collapses 2+ consecutive whole-measure rests into `{ _multiRest: N }` bracket block. The predicate is the exported `isCollapsibleRest()`: the strict check above **minus any marked rest** — `_volta`, `_timeSig`, `_key`, `_repeatStart`, `_repeatEnd`, `_dynamic`, `_wedge`, `_direction` (the marking would vanish inside a `[N]` block). `editor.ts` (`computeOrigIdxMap`, `serializeToText`'s `[N]` auto-collapse) **imports** this predicate rather than copying it — a second copy is how the data-m index space drifted before.
+
+**Two index spaces, don't mix them:**
+- `data-m` = renderer `origIdx` (whole rests skip, a `[N]` block adds N). Anything that turns a clicked note's `data-m` into a `currentMeasures` index goes through `measureIdxFromOrigIdx()` (editor.ts) — Route A does. Playback events carry `origIdx` too.
+- `data-rest-m` = index into the array the renderer was **given** (before collapsing); a collapsed run (and its `[N]` block group) is keyed by its first measure. `collapseRestRunsIndexed()` returns that mapping; the text editor's `restMeasureIdx` uses `restRunStart()` to match.
 
 ### Beat-boundary beaming
-Pre-compute cumulative beat positions per measure. Only connect beaming underlines when adjacent notes are in the same beat group (`Math.floor(cumulative[j] / beatUnit)`).
+Pre-compute cumulative beat positions per measure. Only connect beaming underlines when adjacent notes are in the same beam group: `beamGroupLength()` = `4 / beatType` for simple meters, **1.5 (three eighths) for compound 6/8, 9/8, 12/8**. `beamGroupOf()` adds `1e-9` before flooring — tuplet sums are inexact (six sextuplet 16ths = 0.9999999999999999).
 
 ### Extension dashes
 `dashStep = (noteWidth - numXOffset) / (extraBeats + 1)` — evenly spaced, accounts for accidental offset.
@@ -194,7 +206,8 @@ Pre-compute cumulative beat positions per measure. Only connect beaming underlin
 ### Octave dots
 - **One dot per octave, never capped.** Above: start `currentY - 18`, step −6 per dot. Below: start `currentY + 10`, step +6. Chord notes use the same rule from their own baselines (−14 / +6); grace notes too, at 5px spacing since the glyph is smaller.
 - The cap used to be ±2 in all three places, which **silently drew the wrong pitch**: a 大提琴 / 革胡 / 大阮 part sits three octaves below the tonic routinely, and `octave: -3` rendered zero dots — indistinguishable from the tonic octave. Grace notes were worse: capped at one dot, so even ±2 was wrong. Don't reintroduce a cap.
-- Chord notes: rows are 16px apart + **6px per octave dot** (`Math.max(0, cn.octave)` above / `Math.max(0, -cn.octave)` below) — without this the dots land on the neighbouring chord digit
+- Chord notes: rows are 16px apart + **6px per octave dot** (`Math.max(0, cn.octave)` above / `Math.max(0, -cn.octave)` below) — without this the dots land on the neighbouring chord digit. The first row starts below the beam lines (`getBeamingLines × 4`); melody below-dots also start under the last beam line.
+- `chordExtent()` mirrors that stepping: a line's deepest chord stack pushes the **next line** down (`lineChordExtra`) and the dynamic text below it.
 
 ### Repeat signs
 - `_repeatStart`: thick + thin line + two dots, advances `currentX` by 12px. Record `measureStartX` **before** this block.
@@ -202,6 +215,9 @@ Pre-compute cumulative beat positions per measure. Only connect beaming underlin
 
 ### Tempo
 Rendered as `Tempo: ${tempoStr}` at y=82. `paddingTop` is `100` when tempo present, `80` otherwise. Unicode music symbols (♩) not supported by Inter font — use plain text.
+
+### Fonts and escaping
+Every `<text>` uses `FONT_FAMILY` (Inter + system fallbacks): Inter is only guaranteed on the page, not inside the exported `<img>`, so a bare `font-family="Inter"` exported in serif. Every user-derived string in the SVG (title, key, time, tempo, `_key`, `_timeSig`, `_direction`, `_dynamic`) goes through `escapeSVG`.
 
 ### Dynamic markings
 Rendered at `measureStartX + 2`, `currentY + 22`, italic, font-size 12. `measureStartX` must be captured before `_repeatStart` moves `currentX`.
@@ -215,7 +231,9 @@ Rendered at `currentX - 4`, `currentY - 20`, italic, text-anchor end, after clos
 ### Route B v3: volta / tuplet / temp time signature (renderer)
 - **Volta `{N}`** — horizontal bracket at `currentY - 44` from `measureStartX` to measure end, wrapped in `<g class="jn-volta">`; hook + `N.` label only drawn when the previous measure's `_volta` differs (consecutive same-number measures join into one visual bracket; line wraps break it naturally).
 - **Tuplet `~N`** — note durations (beam `cumulative` AND pixel widths) are multiplied by `tupletFactor(n)`: `2→3/2`, else `pow2floor(n)/n` (3→2/3, 5→4/5, 6→2/3, 7→4/7). Bracket + italic digit drawn above the group in `<g class="jn-tuplet">` at `currentY - 28`. Groups close after exactly N notes and never cross barlines.
-- **Temp time sig `@N/M`** — `beatsPerMeasure` / `beatUnit` are `let` and update at the top of the measure loop from `_timeSig`; a bold `N/M` label is drawn before the measure (+24px width, added to `measureWidth` too). Affects beat grouping and whole-rest `0` count from that measure on.
+- **Temp time sig `@N/M`** — `beatsPerMeasure` / `beamGroup` are `let` and update at the top of the measure loop from `_timeSig`; a bold `N/M` label is drawn before the measure (+24px width, added to `measureWidth` too). Affects beat grouping and whole-rest `0` count from that measure on.
+- **Key change `_key`** — bold `1=X` label drawn before the time-sig label (+32px, `fixed` width in line planning).
+- **Slurs** — stop is handled **before** start, so a note that ends one slur and opens the next (`<slur stop/><slur start/>`) draws both arcs; the serializer writes it the same way (`( 1 ( 2 ) 3 )` — note 2 closes the first slur and opens the second).
 
 ### Measures per line (`measuresPerLine > 0`)
 - Requested by an orchestra tester ("五 bar 一行真的丑，求求 4 bar 一行"); Chinese orchestra parts are usually printed 4 per line, so **4 is the default** (`DEFAULT_MEASURES_PER_LINE` in `src/lib/layoutPrefs.ts`, remembered under `jianpu.measuresPerLine.v1`). Auto (`0`) keeps the old wrap-by-width output byte-for-byte; a test pins that.
@@ -230,16 +248,23 @@ Rendered at `currentX - 4`, `currentY - 20`, italic, text-anchor end, after clos
 function transposeNoteObjects(measures: Measure[], fromKeyStr: string, toKeyStr: string): Measure[]
 ```
 - Returns original `measures` unchanged if `fromKeyStr === toKeyStr`
-- For each note: recovers absolute semitone via `fromTonicSemi + octave*12 + scaleDegrees[degree-1] + accVal`
-- Re-expresses in `toKey` using the same diatonic arithmetic as the main parser
-- Enharmonic spelling follows toKey character (sharp keys → sharps, flat keys → flats)
+- **Keeps absolute pitch** (same as before the audit): every note is `semitoneToJianpu(jianpuToSemitone(note, fromKey), toKey)` — the same sound rewritten under a new `1=`. C→Gb turns C F B into `#4,` `7,` `4`
+- Enharmonic spelling: in-scale pitches by semitone distance; out-of-scale ones follow toKey character (flat keys → flats)
+- A `_key` measure switches the source key; its transposed `_key` moves by the same interval as the whole piece (`shiftKey`, spelled like the TransposeSelect list, or as the target itself when it is that key)
 - Handles chord notes, skips rests, passes through `{ _multiRest: N }` blocks
-- All measure-level metadata (`_repeatStart`, `_repeatEnd`, `_direction`, `_dynamic`, `_wedge`, `_volta`, `_timeSig`) copied to new measure arrays; `tuplet` survives via the `{ ...note }` spread; `graceNote` is re-expressed through the same `absSemi`/`reexpress` math as the main pitch (it must transpose, not pass through)
+- All measure-level metadata (`_repeatStart`, `_repeatEnd`, `_direction`, `_dynamic`, `_wedge`, `_volta`, `_timeSig`, and the shifted `_key`) copied to new measure arrays; `tuplet` survives via the `{ ...note }` spread; `graceNote` is re-expressed through the same `reexpress` math as the main pitch (it must transpose, not pass through)
+- Route A edits (`withNoteEdited` in editor.ts) copy **every** own `_` property of the edited measure, and `handleNoteConfirm` rebases `original*` on the edit — otherwise the next transpose (which starts from `originalMeasures`) would throw the edit away
 - Called by `TransposeSelect` via `useFileHandler.transpose()`; `originalMeasures` / `originalKeyStr` in the Zustand store hold the pre-transpose source
 
 ---
 
-## MusicXML Notations Import (src/lib/parser.ts)
+## MusicXML Import (src/lib/parser.ts)
+- **One voice only:** the lowest-numbered staff, and the part's first `<voice>` on it (or that measure's first voice when the part's first voice is absent). Merging a piano part's both hands and `<backup>` voices doubled bar lengths. `<cue>` notes are skipped.
+- Children of each `<measure>` are walked **in document order**, so an `<attributes>` key/time change before the first note applies to this measure, one after a note applies to the next. A change emits `_key` / `_timeSig` only when it differs from what is in force.
+- Note types MusicXML has but NoteObject doesn't fold: 64th+ → `32nd`, `breve`/`long` → `whole`.
+- Every `<notations>` block of a note is read (Finale/MuseScore split slurs and articulations across several). A hairpin that opens and closes in one measure still draws there but doesn't leak into the next.
+- Tempo: `parseMetronomeTempo` → **quarter notes per minute** (playback counts quarters): `half = 60` → 120, dotted quarter = 60 → 90.
+- `.mxl`: the container's rootfile, else the first `.xml`/`.musicxml` outside `META-INF/` (case-insensitive). A file without `<part-list>` still renders.
 - `<notations><articulations>` children map to `NoteObject.articulation`: `accent`→accent, `staccato`→staccato, `tenuto`→tenuto, `strong-accent`→marcato (first mapped child wins)
 - `<notations><fermata>` (direct child, outside `<articulations>`) → `fermata`, only when no articulation was found
 - `<grace>` notes: pitch converted via `parseChordNote` and held in `pendingGrace`, attached to the **next pitched note** (survives measure boundaries; consecutive graces keep only the first)
@@ -251,28 +276,21 @@ function transposeNoteObjects(measures: Measure[], fromKeyStr: string, toKeyStr:
 ---
 
 ## Mid-piece Key Changes (src/lib/parser.ts)
-Inside the measure loop, after reading `divisions`, check for new `<fifths>`:
-```ts
-const newFifthsNode = attributesNode.getElementsByTagName('fifths')[0]
-if (newFifthsNode) {
-  fifths = parseInt(newFifthsNode.textContent!)
-  const newKey = keyMap[fifths.toString()] || 'C'
-  keyStr = newKey                  // keyStr must be `let`, not `const`
-  baseTonicStep = newKey[0]
-  baseTonicAlter = newKey.includes('#') ? 1 : (newKey.includes('b') ? -1 : 0)
-  baseTonicSemi = pitchToSemitones(baseTonicStep, baseTonicAlter, 4)
-}
-```
+`applyAttributes()` reads `<fifths>` per `<attributes>` block; a new key sets `keyStr` (must be `let`) and stamps `measure._key` (see the `_key` contract above), deferred to the next measure via `pendingKey` when notes already came first. Every later pitch goes through `pitchToJianpu(…, keyStr)`.
+
+## ABC (src/lib/abcParser.ts)
+- `K:` → key-signature fifths via mode offsets (`Ador` = G, `Am` = C, `Dmix` = G…); Jianpu counts from the major key sharing the signature. Body `K:` / `M:` / `L:` field lines and inline `[K:…]` fields apply mid-tune (key/meter from the next measure when the current one already has notes → `_key` / `_timeSig`).
+- Ties `-` join only same-pitch notes; `|:` `:|` `::` set repeats; `[1` `[2` start a measure (voltas not tagged yet); chords `[CEG]` → top note + `chordNotes`; `(3` tuplets; `{g}` grace; `>` `<` broken rhythm; `/`, `//`, `/4` durations; unrepresentable lengths become tied pieces via `splitDuration`. `!…!` / `+…+` decorations and `"…"` chord symbols are skipped. Multi-voice: only the first `V:`. A second `X:` ends the tune.
 
 ---
 
-## MIDI Parsing (src/hooks/useFileHandler.ts)
-- Chord deduplication: keep highest pitch per tick using `tickMap`
-- Time signature validation: reject `beats === 1` or `beats > 12` or invalid `beatType`
-- Density heuristic: if avg notes/measure < 1.5, fallback to 4/4
-- Tempo: `Math.round(midi.header.tempos[0].bpm).toString()`
-- Key: `midi.header.keySignatures[0].key`
-- Rest padding: a single whole rest per measure, then `collapseRestRuns` may merge them in the renderer
+## MIDI Parsing (`midiToJianpu` in src/lib/parser.ts; useFileHandler only calls it)
+- Track: the pitched track with the most notes (percussion / channel 10 skipped). Chords: highest pitch per tick (`tickMap`)
+- Time signature validation: reject `beats === 1` or `beats > 12` or invalid `beatType`; a valid signature always wins (the old density heuristic that forced 4/4 is **gone** — it overrode valid signatures of sparse files)
+- Onsets snap to a 16th grid (32nd when the file really has odd-32nd onsets). Each note runs to the next onset unless a gap > `ppq/5` follows (then its own length + a rest), so bars add up
+- The timeline is cut at barlines: a note crossing one continues as `tie` pieces; lengths split via `splitDuration`. A fully silent bar is one whole rest (`collapseRestRuns` may merge them)
+- Pitch: `semitoneToJianpu`; later key-signature events → `_key` on the first measure at/after them
+- Tempo: `Math.round(midi.header.tempos[0].bpm).toString()`; key: `keySignatures[0].key` (tonejs names the major key of the signature)
 
 ---
 
@@ -287,31 +305,38 @@ Resolution order in `buildAdapter(config, env)`:
 
 **Keys never enter the bundle.** The Worker holds the production Gemini key as a Cloudflare secret; BYOK keys live in `localStorage` under `jianpu.ocr.config.v1`.
 
-Anthropic browser-direct calls require the header `anthropic-dangerous-direct-browser-access: true` — already set in the Anthropic adapter.
+Anthropic browser-direct calls require the header `anthropic-dangerous-direct-browser-access: true` — already set in the Anthropic adapter. Anthropic ids are `claude-sonnet-5-5` (default) / `claude-haiku-5-5`; `gemini-2.0-flash` is gone. `sanitizeOcrConfig` drops retired saved ids (claude-3-5-*, Pro on auto); an unknown saved provider falls back to the default. The Anthropic request sends **no `temperature`** (these models 400 on any non-default sampling value) and `max_tokens: 16000` (they think by default, against that cap).
 
-**Route C loop (OCR → rendered score):** the prompts in `prompts.ts` teach the model to emit exact Route B format (`Title:`/`Key:` headers, `1/` eighths, `1,` low octave, v3 `{N}` `~N` `@N/M`) so the result feeds `parseFromText` directly. `useOcr.runOcr` pipes every result through `normalizeOcrText` (fence-stripping, 全角→半角, legacy `_`→`/`) **before** it reaches the store — the text in the result box is exactly what will be parsed. `extractOcrError` routes `[错误：…]`/`[Error: …]` sentinels to `setOcrError` instead of the result box. The result textarea is editable; `OcrSection.handleUseAsScore` refuses to render when `parseFromText` yields 0 measures.
+**Unusable replies are errors, never results.** Every adapter reads its response through `extractGeminiText` / `extractAnthropicText` / `extractOpenAIText` (utils.ts): all text parts joined (Gemini thought parts dropped); empty, safety-blocked/refused and truncated (`MAX_TOKENS` / `max_tokens` / `length`) throw a Chinese message. The Worker's `geminiToText` does the same with the same wording.
+
+**Runs and accumulation (useOcr.ts):** a module-level run token (`currentRun`) — a reply only lands if it is still the latest run AND its file is still selected; `resetOcr` orphans in-flight runs; uploads/drops are refused while analyzing. Results **accumulate** across crops via `mergeOcrResults` (body appended; header fields `prev` already has are dropped, missing ones folded into `prev`'s header). Re-running the same picture while the box still equals the last output replaces that contribution (`ocrMergeBase`). Accepted inputs: PNG / JPEG / WebP / GIF (`resolveOcrImageType`, extension fallback for an empty `type`; HEIC rejected).
+
+**Worker (worker/src/index.ts):** `ALLOWED_ORIGINS` is a `[vars]` entry in `wrangler.toml` (not a secret) — `https://huichiy.github.io` + localhost 5173/7790. Any other Origin, or none, gets **403** before anything else, preflight included; unset or `*` means open (local `wrangler dev` only). Model forced to `ALLOWED_MODELS` (Flash only), `max_tokens` clamped to 8192, bodies over 15 MB → 413 (streamed count, not just Content-Length), requests without a PNG/JPEG/WebP/GIF image → 400, key sent as `x-goog-api-key` header. Changes only go live after `wrangler deploy`.
+
+**Route C loop (OCR → rendered score):** the prompts in `prompts.ts` teach the model to emit exact Route B format (`Title:`/`Key:` headers, `1/` eighths, `1,` low octave, v3 `{N}` `~N` `@N/M`) so the result feeds `parseFromText` directly. `useOcr.runOcr` pipes every result through `normalizeOcrText` (fence-stripping, 全角→半角; on body lines only: look-alike `’ ′`→`'`, `－ — –`→`-`, `（）`→`()`, legacy `_`→`/` — header lines like `Title: my_song` are left alone) **before** it reaches the store — the text in the result box is exactly what will be parsed. `extractOcrError` routes `[错误：…]`/`[Error: …]` sentinels to `setOcrError` instead of the result box. The result textarea is editable; `OcrSection.handleUseAsScore` refuses to render when `parseFromText` yields 0 measures, and calls `loadFromText(text, { fresh: true })`: an OCR score must not inherit the loaded file's title/key/tempo, and the old file's parts/XML are cleared (else picking a part re-renders the old file). The text editor calls `loadFromText(text)` (fresh false: missing headers fall back to the loaded score's).
 
 ---
 
 ## Playback (src/lib/playback.ts + src/lib/tonePlayer.ts + src/hooks/usePlayback.ts)
 Two layers, deliberately split so the audio backend is replaceable:
 
-- **Pure scheduler** (`playback.ts`, unit-tested): `expandRepeats()` unrolls `|:` `:|` + `{N}` voltas into performance order (two passes; pass 1 takes `{1}`, pass 2 takes `{2}`; `_volta >= 3` never plays). **The `justJumped` flag is load-bearing** — without it the section's `|:` resets the pass counter on the jump back and playback loops forever. Output carries original measure indices; a runaway guard caps expansion at 4× score length. `buildPlaybackEvents()` then emits `PlaybackEvent[]` with times in **beats** (quarter = 1), handling dots, tuplets, rests as silent time, ties (extend the still-sounding events, never re-attack), chords (same `startBeat`), multi-rests, temp time signatures, and grace notes (`GRACE_BEATS = 0.125`, borrowed from the front of the main note).
+- **Pure scheduler** (`playback.ts`, unit-tested): `expandRepeats()` unrolls `|:` `:|` + `{N}` voltas into performance order (two passes; pass 1 takes `{1}`, pass 2 takes `{2}`; `_volta >= 3` never plays). **The `justJumped` flag is load-bearing** — without it the section's `|:` resets the pass counter on the jump back and playback loops forever. A `:|` without its own `|:` repeats from the end of the previous section (`A :| B :|` = A A B B). **D.C. / D.S.** (case-insensitive prefix of `_direction`, so MusicXML's "D.C. al Fine" counts): one jump per performance, to measure 0 or the nearest `Segno` word (start when none); after it repeats are not retaken, only each volta bracket's last ending plays, and `Fine` ends the piece (ignored on the way down). Coda / To Coda are not handled. Output carries original measure indices; a runaway guard caps expansion at 4× score length. `buildPlaybackEvents()` then emits `PlaybackEvent[]` with times in **beats** (quarter = 1), handling dots, tuplets, rests as silent time, ties (extend the still-sounding events, never re-attack), chords (same `startBeat`), multi-rests, temp time signatures, and grace notes (`GRACE_BEATS = 0.125`, borrowed from the front of the main note). Key (`_key`) and meter (`_timeSig`) are resolved **in score order** and looked up per measure index, so a repeat or D.C. back to earlier music uses the key/meter in force there. `nearestNoteStart()` picks, for a clicked note that sounds more than once, the occurrence closest to the current position.
 - **Audio layer** (`tonePlayer.ts`): the ONLY file that imports `tone`, and it does so lazily (`await import('tone')`, same pattern as pdfjs in pdfTools) so the main bundle is unaffected. Events are scheduled in **Transport ticks**, which is what makes the speed slider (`Transport.bpm`) and seeking work without rebuilding the event list. `PolySynth(FMSynth)` so chords sound together. `Tone.start()` must run inside a user gesture (the play button).
-- **Orchestration** (`usePlayback.ts`): one `requestAnimationFrame` loop serves both the follow highlight and the progress bar. Auto-stops and resets at the end. Changing scores calls `stop()` and reuses the existing player (deliberately — avoids AudioContext churn); only unmounting disposes it.
+- `positionBeats()` reports the **audible** position (`getTicksAtTime(Tone.immediate())`, not `transport.ticks`, which runs ~100 ms lookAhead early), holding a seek target until the jump is audible. `stop(letRing)`: the natural end skips `releaseAll()` so the last note keeps its release.
+- **Orchestration** (`usePlayback.ts`): one `requestAnimationFrame` loop serves both the follow highlight and the progress bar. Auto-stops (`halt(true)`, letting the last note ring) and resets at the end. Changing scores calls `stop()` and reuses the existing player (deliberately — avoids AudioContext churn); only unmounting disposes it. Start races are guarded: one shared in-flight `createPlayer()` promise, a run counter bumped by every stop/score change (a superseded `play()` returns after its awaits), and a stopped player resumes from the slider position.
 
-Times are in beats everywhere except inside the player: tempo belongs to playback, not to the music. Highlight uses `.jn-note-playing`, deliberately a separate class from the text editor's `jn-note-current` so the two features never fight over styling. There is no rest-measure highlight: rests emit no events, so nothing ever targets one (an earlier `data-rest-m` fallback was removed as unreachable — it also mixed index spaces, since `data-rest-m` is the renderer's loop index while events carry `origIdx`). Clicking a note seeks there only when `editModeA` is off, so edit mode keeps owning the click.
+Times are in beats everywhere except inside the player: tempo belongs to playback, not to the music. Highlight uses `.jn-note-playing`, deliberately a separate class from the text editor's `jn-note-current` so the two features never fight over styling. There is no rest-measure highlight: rests emit no events, so nothing ever targets one (an earlier `data-rest-m` fallback was removed as unreachable — it also mixed index spaces: `data-rest-m` indexes the renderer's input array while events carry `origIdx`). Clicking a note seeks there only when `editModeA` is off, so edit mode keeps owning the click.
 
 ## My Part (src/lib/partMatch.ts + src/components/PartSelector.tsx)
-Auto-detection can only guess ONE default — the melody — and that guess is wrong for everyone playing an inner or bass voice (大提琴, 中阮, 扬琴, 革胡). Rather than asking up front (most uploads are single-part, so a first-run question is pure friction), the app **learns from behaviour**: whatever part the user picks by hand is saved to `localStorage` under `jianpu.myPart.v1`, and `matchPartIndex()` selects it on every later score, ahead of melody scoring. Exact name matches beat substring matches — otherwise a remembered `二胡 II` settles on `二胡 I`. No match returns -1 and the melody scoring stands. The selector then shows 「已记住你的声部：X」 with a 忘记 link that restores auto-detection.
+Auto-detection can only guess ONE default — the melody — and that guess is wrong for everyone playing an inner or bass voice (大提琴, 中阮, 扬琴, 革胡). Rather than asking up front (most uploads are single-part, so a first-run question is pure friction), the app **learns from behaviour**: whatever part the user picks by hand is saved to `localStorage` under `jianpu.myPart.v1`, and `matchPartIndex()` selects it on every later score, ahead of melody scoring. Tiers: exact, then whole-word prefix, then any substring — otherwise a remembered `二胡 II` settles on `二胡 I`, and `Flute` picks `Alto Flute` over `Flute 2`. Generic names (`Part 2`, `Track 3`, `P1`, `声部`) are never remembered (`isGenericPartName`): they name a slot, not an instrument. No match returns -1 and the melody scoring stands. The selector then shows 「已记住你的声部：X」 with a 忘记 link that restores auto-detection.
 
 ## Box-Select Crop (src/components/ImageCropper.tsx + src/lib/cropTools.ts)
-Generic, OCR-agnostic crop step so users can extract one instrument's row from a 总谱 before OCR. `ImageCropper` takes `source: HTMLCanvasElement | File` (PDF page rendered @2.0x, or an uploaded image), shows a draggable/resizable box (pure React pointer events, no library, dim-outside via `box-shadow`), and on confirm maps the display selection to full-resolution pixels via `computeCropRect` (the only logic-bearing piece, unit-tested in test-roundtrip.ts), crops with `drawImage`, and hands back a PNG `File`. Two entry points: PdfPagePicker (clicking a page opens the cropper; 整页 button = whole page) and OcrSection (optional 框选区域 button for images; not shown for PDFs, which route through the picker). The cropper renders as a **sibling** of PdfPagePicker's `onClick={onCancel}` backdrop (via fragment), not a child, so its backdrop click doesn't bubble up and close the picker. Single-box, iterate: the editable OCR result box accumulates multiple crops.
+Generic, OCR-agnostic crop step so users can extract one instrument's row from a 总谱 before OCR. `ImageCropper` takes `source: HTMLCanvasElement | File` (PDF page rendered @2.0x, or an uploaded image), shows a draggable/resizable box (pure React pointer events, no library, dim-outside via `box-shadow`), and on confirm maps the display selection to full-resolution pixels via `computeCropRect` (the only logic-bearing piece, unit-tested in test-roundtrip.ts), crops with `drawImage`, and hands back a `File` via `canvasToOcrFile` (PNG, or JPEG on white when the PNG passes 4.5 MB, so it clears the 5 MB image limit). The preview is sized to the measured container (`fitDisplaySize`; a fixed 640px clipped on phones) and the box rescales with it (`scaleRect`). Two entry points: PdfPagePicker (clicking a page opens the cropper; 整页 button = whole page) and OcrSection (optional 框选区域 button for images; not shown for PDFs, which route through the picker). The cropper renders as a **sibling** of PdfPagePicker's `onClick={onCancel}` backdrop (via fragment), not a child, so its backdrop click doesn't bubble up and close the picker. Single-box, iterate: the editable OCR result box accumulates multiple crops.
 
 ## PDF Input (src/lib/pdfTools.ts + src/components/PdfPagePicker.tsx)
 - `pdfjs-dist` is dynamically imported (lazy chunk ~280 KB + 1.2 MB worker) only when the user drops a PDF
 - `loadPdf(file)` → `PDFDocumentProxy`
-- `pageToFile(pdf, n, baseName, 2.0)` → `File('.png', image/png)` that drops into the existing OCR pipeline
+- `pageToFile(pdf, n, baseName, 2.0)` → `File` (via `canvasToOcrFile`) that drops into the existing OCR pipeline
 - PDFs over 20 MB are rejected at OcrSection before the picker opens
 
 ---
@@ -352,14 +377,17 @@ Generic, OCR-agnostic crop step so users can extract one instrument's row from a
 | Skip normal barline when `_repeatEnd` is true | Prevents double barline + repeat sign overlap |
 | `keyStr` must be `let` in parseXMLToNoteObjects | Needs to update on mid-piece key changes |
 | A tie only continues into a note of the same pitch; otherwise it becomes a slur | Noteflight exports phrase marks drawn with the tie tool as a dangling `<tie type="start"/>` before a different pitch. The old rule (any note after a tie start is a tie) drew those notes as `-` and lost their pitch everywhere: renderer, text editor and playback. A tester's score lost 14 notes this way (issue #1) |
-| A note never carries both `slurStop` and `slurStart` from the tie conversion | The renderer and `editor.ts` handle slur start before slur stop, so such a note overwrites the open arc and draws a zero-length one. Consecutive pitch-changing ties extend one slur instead |
+| Renderer and serializer close a slur **before** opening one | A note can end one slur and start the next (MusicXML `<slur stop/><slur start/>`). Handling start first overwrote the open arc's origin: the first arc vanished and the second was drawn from nowhere. The tie→slur conversion still extends one slur across consecutive pitch-changing ties instead of chaining |
 | `totalHeight = currentY + 40` | `+ 20` clips dynamic text at bottom |
 | OCR keys never in the bundle | Either Worker proxy or `localStorage` BYOK; never `import.meta.env.VITE_*_KEY` for real keys |
 | OCR prompts must emit Route B format, verbatim | The result is fed straight into `parseFromText`; prompt syntax drift silently corrupts durations/octaves. Contract tests in `scripts/test-roundtrip.ts` pin the format — keep prompts, `docs/JIANPU_FORMAT.md`, and those tests in lockstep |
 | Never offer Gemini Pro on the `auto` (Worker) provider | The shared Worker key is free-tier — no Pro quota, instant 429. Pro lives only under BYOK `gemini`. `sanitizeOcrConfig` also drops stale saved model ids on load |
-| OCR adapters send `max_tokens` 8192 (Anthropic: 4096) | Gemini 2.5 Flash counts THINKING tokens against `maxOutputTokens` — 2048 truncated a 16-measure score to 3 measures. Worker passes the client value through, so client-side bumps work without redeploying the Worker |
+| OCR adapters send `max_tokens` 8192 (Anthropic: 16000) | Gemini 2.5 Flash counts THINKING tokens against `maxOutputTokens` — 2048 truncated a 16-measure score to 3 measures; Claude 5.5 models think by default too. The Worker clamps to 8192 (`MAX_OUTPUT_TOKENS`), so raising the client above that needs a Worker change + redeploy |
+| No `temperature` / `top_p` / `top_k` on Anthropic requests | Claude Sonnet / Haiku 5.5 reject any non-default sampling value with a 400 — `temperature: 0` silently broke every BYOK Claude call when the default model moved to `claude-sonnet-5-5` |
 | `normalizeOcrText` runs before the OCR result enters the store | The result box must show exactly what will be parsed; never normalize at render time |
-| Pitch math, `tupletFactor`, `computeOrigIdxMap`, `durationBeats` have exactly ONE copy | Playback reuses all four via exports. A second copy drifts — see the `collapseRestRuns` lesson above |
+| Pitch math, `tupletFactor`, `computeOrigIdxMap`, `durationBeats`, `isCollapsibleRest` have exactly ONE copy | Pitch math lives in parser.ts (`pitchToJianpu` / `semitoneToJianpu` / `jianpuToSemitone`) and is used by MusicXML, ABC, MIDI, transposition and playback; editor.ts imports `isCollapsibleRest` from renderer.ts. A second copy drifts — see the `collapseRestRuns` lesson above |
+| Every `localStorage` access — including a `typeof localStorage` guard — sits inside `try` | With storage blocked (Chrome "block all cookies", some in-app browsers) the global getter itself throws; prefs are read at store init, so one escaped throw white-screens the app. BYOK config falls back to an in-memory copy for the session |
+| Worker: allowed Origins only, Flash only, never Pro | The key is shared and free-tier; an unchecked `model` was also interpolated into the upstream URL. The Origin check stops other websites, not scripts — the README's Cloudflare rate-limit rule is the real cap |
 | Playback times are in beats; only `tonePlayer` knows seconds/BPM | Lets the speed slider change `Transport.bpm` without re-deriving the music, and keeps the scheduler unit-testable without tempo |
 | `expandRepeats` must keep the `justJumped` flag | Without it `|:` resets the pass counter on the jump back → infinite loop |
 | Playback accumulates written durations; it never pads a short measure to the bar | Padding would fill a dropped/misread note with phantom silence — the exact error playback exists to expose. An under-filled measure just compresses |
@@ -418,7 +446,8 @@ Scopes: `renderer`, `parser`, `app`, `downloader`, `ui`
 - [x] PDF input + page picker (lazy pdfjs-dist)
 - [x] BYOK multi-provider OCR — Gemini / Anthropic / OpenAI / Groq / Custom (OpenAI-compatible)
 - [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with the key off the bundle
-- [x] Round-trip test suite (`npm run test`, 216 + 38 assertions across two files)
+- [x] Round-trip test suite (`npm run test`, 701 assertions across six files)
+- [x] Audit fixes (2026-11, ~60 bugs): MusicXML voices/staves/cue, `_key` key changes end to end, `_timeSig` from MusicXML/ABC, ABC syntax (modes, ties, chords, tuplets, broken rhythm), MIDI reader rewrite, D.C./D.S./Fine playback, locked-down Worker, OCR result accumulation + honest errors, blocked-storage safety
 - [x] Playback (Tone.js) — full repeat/volta expansion, follow highlight, pause/seek/click-a-note/speed slider
 - [x] MusicXML import: `<articulations>` / fermata / grace notes (倚音) / `<time-modification>` tuplets — plus graceNote transposition fix
 - [x] MusicXML import: `<ending>` (跳房子/volta) → `_volta`
