@@ -8,7 +8,6 @@ interface EditNotePopupProps {
 }
 
 const DEGREES = [1, 2, 3, 4, 5, 6, 7]
-const TYPES = ['whole', 'half', 'quarter', 'eighth', '16th'] as const
 
 export default function EditNotePopup({ onConfirm, onClose }: EditNotePopupProps) {
   const popupNote = useScoreStore((s) => s.popupNote)
@@ -23,7 +22,8 @@ export default function EditNotePopup({ onConfirm, onClose }: EditNotePopupProps
   useEffect(() => {
     if (!popupNote) return
     const n = popupNote.note
-    setDegree(n.rest ? 0 : n.degree)
+    // A rest has degree 0, which isn't a pitch: seed 1 so un-ticking 休止符 yields a real note
+    setDegree(n.rest ? 1 : n.degree)
     setOctave(n.octave)
     setType(n.type)
     setDot(n.dot)
@@ -194,6 +194,7 @@ export default function EditNotePopup({ onConfirm, onClose }: EditNotePopupProps
             <option value="quarter">四分音符</option>
             <option value="eighth">八分音符</option>
             <option value="16th">十六分音符</option>
+            <option value="32nd">三十二分音符</option>
           </select>
         </div>
 
