@@ -20,33 +20,64 @@ const RENDER_CONFIG = {
   multiRestMaxWidth: 160,
 }
 
+// Inter is only guaranteed on the page, not inside an exported <img>: without
+// fallbacks the PNG/JPEG export renders the whole score in the default serif
+const FONT_FAMILY = "Inter, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif"
+
 function escapeSVG(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-export function collapseRestRuns(measures: Measure[]): Measure[] {
-  // Whole-rest measures carrying _volta/_timeSig must stay visible as real
-  // measures (the bracket/label would be lost inside a [N] block)
-  const isCollapsibleRest = (m: Measure): boolean => {
-    if (!Array.isArray(m)) return false
-    const arr = m as MeasureArray
-    return arr.length === 1 && arr[0].rest && arr[0].type === 'whole'
-      && arr._volta === undefined && !arr._timeSig
-  }
-  const out: Measure[] = []
+// A measure that is nothing but one whole rest — drawn as a row of `0`s
+export function isWholeRestMeasure(m: Measure): boolean {
+  return Array.isArray(m) && m.length === 1 && m[0].rest && m[0].type === 'whole'
+}
+
+// Whole-rest measures that may merge into a [N] block. One that carries ANY
+// marking must stay a real measure or the marking vanishes: volta bracket,
+// time/key label, repeat signs, dynamic, hairpin, D.C./Fine text.
+// editor.ts (computeOrigIdxMap, serializer) imports this instead of keeping
+// its own copy — the two must agree exactly or the data-m index space drifts.
+export function isCollapsibleRest(m: Measure): boolean {
+  if (!isWholeRestMeasure(m)) return false
+  const a = m as MeasureArray
+  return a._volta === undefined && !a._timeSig && !a._key
+    && !a._repeatStart && !a._repeatEnd && !a._dynamic && !a._wedge && !a._direction
+}
+
+// Collapse runs of 2+ collapsible rests into { _multiRest: N }. `first[k]` is
+// the index in the INPUT array of output item k's first measure (a parsed
+// `[N]` block is one input entry, a collapsed run is N) — the shared index
+// space for data-rest-m and the text editor's restMeasureIdx.
+export function collapseRestRunsIndexed(measures: Measure[]): { items: Measure[]; first: number[] } {
+  const items: Measure[] = []
+  const first: number[] = []
   let i = 0
   while (i < measures.length) {
+    first.push(i)
     if (isCollapsibleRest(measures[i])) {
       let run = 1
       while (i + run < measures.length && isCollapsibleRest(measures[i + run])) run++
-      out.push(run >= 2 ? { _multiRest: run } : measures[i])
+      items.push(run >= 2 ? { _multiRest: run } : measures[i])
       i += run
     } else {
-      out.push(measures[i])
+      items.push(measures[i])
       i++
     }
   }
-  return out
+  return { items, first }
+}
+
+export function collapseRestRuns(measures: Measure[]): Measure[] {
+  return collapseRestRunsIndexed(measures).items
+}
+
+// Index of the first measure of the collapsible-rest run that contains
+// measures[i] (i itself for a lone rest)
+export function restRunStart(measures: Measure[], i: number): number {
+  let s = i
+  while (s > 0 && isCollapsibleRest(measures[s - 1])) s--
+  return s
 }
 
 // Tuplet duration correction: N notes in the time of pow2floor(N) (duplet: 2 in 3)
@@ -69,10 +100,10 @@ function renderHeader(
   els: string[], maxWidth: number, startX: number, color: string,
   titleStr: string, keyStr: string, timeStr: string, tempoStr: string,
 ): void {
-  els.push(`<text x="${maxWidth / 2}" y="35" font-family="Inter" font-size="24" font-weight="600" fill="${color}" text-anchor="middle">${escapeSVG(titleStr)}</text>`)
-  els.push(`<text x="${startX}" y="65" font-family="Inter" font-size="14" font-weight="500" fill="${color}">Key: 1=${keyStr}   Time: ${timeStr}</text>`)
+  els.push(`<text x="${maxWidth / 2}" y="35" font-family="${FONT_FAMILY}" font-size="24" font-weight="600" fill="${color}" text-anchor="middle">${escapeSVG(titleStr)}</text>`)
+  els.push(`<text x="${startX}" y="65" font-family="${FONT_FAMILY}" font-size="14" font-weight="500" fill="${color}">Key: 1=${escapeSVG(keyStr)}   Time: ${escapeSVG(timeStr)}</text>`)
   if (tempoStr) {
-    els.push(`<text x="${startX}" y="82" font-family="Inter" font-size="13" fill="${color}">Tempo: ${tempoStr}</text>`)
+    els.push(`<text x="${startX}" y="82" font-family="${FONT_FAMILY}" font-size="13" fill="${color}">Tempo: ${escapeSVG(tempoStr)}</text>`)
   }
 }
 
@@ -100,11 +131,27 @@ function renderRepeatEnd(els: string[], x: number, y: number, color: string): vo
 // One dot per octave, stacked 6px apart. Deliberately NOT capped at 2: a
 // 大提琴 / 革胡 / 大阮 part sits three octaves below the tonic often enough that
 // capping silently drew the wrong pitch (a C2 looked like a mid-register note).
-function renderOctaveDots(els: string[], cx: number, y: number, octave: number, color: string): void {
+// Beam underlines sit at y + 4 per line, so below-dots start under the last one
+// (a 16th's 2nd / a 32nd's 3rd line used to cut through the first dot).
+function renderOctaveDots(els: string[], cx: number, y: number, octave: number, color: string, beamLines = 0): void {
+  const belowStart = y + 10 + Math.max(0, beamLines - 1) * 4
   for (let i = 0; i < Math.abs(octave); i++) {
-    const cy = octave > 0 ? y - 18 - i * 6 : y + 10 + i * 6
+    const cy = octave > 0 ? y - 18 - i * 6 : belowStart + i * 6
     els.push(`<circle cx="${cx}" cy="${cy}" r="1.5" fill="${color}"/>`)
   }
+}
+
+// Beam group length in quarter-beats. Simple meters beam per beat (4 / beat
+// type); compound meters (6/8, 9/8, 12/8) beam per dotted beat, i.e. 3 eighths.
+function beamGroupLength(beats: number, beatType: number): number {
+  return beatType === 8 && beats % 3 === 0 ? 1.5 : 4 / beatType
+}
+
+// Which beam group a position (in quarter-beats) falls into. Tuplet durations
+// are inexact floats (6 sixteenth-sextuplets sum to 0.9999999999999999), so a
+// note exactly on a group boundary must not floor into the previous group.
+function beamGroupOf(pos: number, groupLen: number): number {
+  return Math.floor(pos / groupLen + 1e-9)
 }
 
 // naturalWidth = noteWidth before line stretching: an underline that ends here
@@ -112,13 +159,13 @@ function renderOctaveDots(els: string[], cx: number, y: number, octave: number, 
 function renderBeamingUnderlines(
   els: string[], measure: MeasureArray, j: number,
   currentX: number, noteWidth: number, naturalWidth: number, currentY: number,
-  cumulative: number[], beatUnit: number, color: string,
+  cumulative: number[], beamGroup: number, color: string,
 ): void {
   const linesCnt = getBeamingLines(measure[j].type)
   for (let l = 1; l <= linesCnt; l++) {
-    const noteBeat = Math.floor(cumulative[j] / beatUnit)
-    const prevBeat = j > 0 ? Math.floor(cumulative[j - 1] / beatUnit) : -1
-    const nextBeat = j < measure.length - 1 ? Math.floor(cumulative[j + 1] / beatUnit) : -1
+    const noteBeat = beamGroupOf(cumulative[j], beamGroup)
+    const prevBeat = j > 0 ? beamGroupOf(cumulative[j - 1], beamGroup) : -1
+    const nextBeat = j < measure.length - 1 ? beamGroupOf(cumulative[j + 1], beamGroup) : -1
     const connectLeft = j > 0 && getBeamingLines(measure[j - 1].type) >= l && prevBeat === noteBeat
     const connectRight = j < measure.length - 1 && getBeamingLines(measure[j + 1].type) >= l && nextBeat === noteBeat
     const x1 = connectLeft ? currentX : currentX + 2
@@ -138,7 +185,7 @@ function renderExtensionDashes(
     const dashStep = (noteWidth - numXOffset) / (extraBeats + 1)
     for (let b = 1; b <= extraBeats; b++) {
       const extChar = note.rest ? '0' : '-'
-      els.push(`<text x="${currentX + numXOffset + b * dashStep}" y="${currentY}" font-family="Inter" font-size="18" fill="${color}">${extChar}</text>`)
+      els.push(`<text x="${currentX + numXOffset + b * dashStep}" y="${currentY}" font-family="${FONT_FAMILY}" font-size="18" fill="${color}">${extChar}</text>`)
     }
   }
   return extraBeats
@@ -155,7 +202,7 @@ function renderMultiRestBracket(
   els.push(`<line x1="${lx1}" y1="${lineY}" x2="${lx2}" y2="${lineY}" stroke="${color}" stroke-width="3"/>`)
   els.push(`<line x1="${lx1}" y1="${lineY - 5}" x2="${lx1}" y2="${lineY + 5}" stroke="${color}" stroke-width="2"/>`)
   els.push(`<line x1="${lx2}" y1="${lineY - 5}" x2="${lx2}" y2="${lineY + 5}" stroke="${color}" stroke-width="2"/>`)
-  els.push(`<text x="${midX}" y="${lineY - 7}" font-family="Inter" font-size="12" font-weight="600" fill="${color}" text-anchor="middle">${N}</text>`)
+  els.push(`<text x="${midX}" y="${lineY - 7}" font-family="${FONT_FAMILY}" font-size="12" font-weight="600" fill="${color}" text-anchor="middle">${N}</text>`)
   return blockW
 }
 
@@ -163,13 +210,13 @@ function renderArticulation(els: string[], cx: number, y: number, kind: string, 
   // Push higher when there are octave dots above to avoid collision
   const yAbove = octave >= 2 ? y - 32 : octave >= 1 ? y - 26 : y - 20
   if (kind === 'accent') {
-    els.push(`<text x="${cx}" y="${yAbove}" font-family="Inter" font-size="11" font-weight="600" fill="${color}" text-anchor="middle">&gt;</text>`)
+    els.push(`<text x="${cx}" y="${yAbove}" font-family="${FONT_FAMILY}" font-size="11" font-weight="600" fill="${color}" text-anchor="middle">&gt;</text>`)
   } else if (kind === 'staccato') {
     els.push(`<circle cx="${cx}" cy="${yAbove - 2}" r="1.5" fill="${color}"/>`)
   } else if (kind === 'tenuto') {
     els.push(`<line x1="${cx - 3}" y1="${yAbove - 2}" x2="${cx + 3}" y2="${yAbove - 2}" stroke="${color}" stroke-width="1.2" stroke-linecap="round"/>`)
   } else if (kind === 'marcato') {
-    els.push(`<text x="${cx}" y="${yAbove}" font-family="Inter" font-size="12" font-weight="700" fill="${color}" text-anchor="middle">^</text>`)
+    els.push(`<text x="${cx}" y="${yAbove}" font-family="${FONT_FAMILY}" font-size="12" font-weight="700" fill="${color}" text-anchor="middle">^</text>`)
   } else if (kind === 'fermata') {
     els.push(`<path d="M ${cx - 6},${yAbove} Q ${cx},${yAbove - 7} ${cx + 6},${yAbove}" fill="none" stroke="${color}" stroke-width="1.2"/>`)
     els.push(`<circle cx="${cx}" cy="${yAbove - 2}" r="1.2" fill="${color}"/>`)
@@ -183,10 +230,10 @@ function renderGraceNote(els: string[], x: number, y: number, g: { degree: numbe
   const gy = y - 4
   let offset = 0
   if (g.accidental) {
-    els.push(`<text x="${gx - 4}" y="${gy - 5}" font-family="Inter" font-size="7" fill="${color}">${g.accidental}</text>`)
+    els.push(`<text x="${gx - 4}" y="${gy - 5}" font-family="${FONT_FAMILY}" font-size="7" fill="${color}">${g.accidental}</text>`)
     offset = 3
   }
-  els.push(`<text x="${gx + offset}" y="${gy}" font-family="Inter" font-size="11" font-style="italic" fill="${color}">${g.degree}</text>`)
+  els.push(`<text x="${gx + offset}" y="${gy}" font-family="${FONT_FAMILY}" font-size="11" font-style="italic" fill="${color}">${g.degree}</text>`)
   // Octave dots for the grace note — one per octave (5px apart, the glyph is
   // smaller than a melody note). Previously drew at most one, so a 倚音 two
   // octaves out was already displayed at the wrong pitch.
@@ -206,7 +253,7 @@ function renderVoltaBracket(
   els.push(`<line x1="${x1}" y1="${vy}" x2="${x2}" y2="${vy}" stroke="${color}" stroke-width="1"/>`)
   if (drawHead) {
     els.push(`<line x1="${x1}" y1="${vy}" x2="${x1}" y2="${vy + 8}" stroke="${color}" stroke-width="1"/>`)
-    els.push(`<text x="${x1 + 4}" y="${vy + 12}" font-family="Inter" font-size="10" font-style="italic" fill="${color}">${num}.</text>`)
+    els.push(`<text x="${x1 + 4}" y="${vy + 12}" font-family="${FONT_FAMILY}" font-size="10" font-style="italic" fill="${color}">${num}.</text>`)
   }
   els.push(`</g>`)
 }
@@ -219,7 +266,7 @@ function renderTupletBracket(els: string[], x1: number, x2: number, y: number, n
   els.push(`<line x1="${mid + 6}" y1="${by}" x2="${x2}" y2="${by}" stroke="${color}" stroke-width="1"/>`)
   els.push(`<line x1="${x1}" y1="${by}" x2="${x1}" y2="${by + 5}" stroke="${color}" stroke-width="1"/>`)
   els.push(`<line x1="${x2}" y1="${by}" x2="${x2}" y2="${by + 5}" stroke="${color}" stroke-width="1"/>`)
-  els.push(`<text x="${mid}" y="${by + 3.5}" font-family="Inter" font-size="10" font-style="italic" fill="${color}" text-anchor="middle">${n}</text>`)
+  els.push(`<text x="${mid}" y="${by + 3.5}" font-family="${FONT_FAMILY}" font-size="10" font-style="italic" fill="${color}" text-anchor="middle">${n}</text>`)
   els.push(`</g>`)
 }
 
@@ -231,7 +278,7 @@ function renderNote(
   if (note.tie) displayStr = '-'
   let numXOffset = 2
   if (!note.rest && !note.tie && note.accidental) {
-    els.push(`<text x="${currentX}" y="${currentY - 8}" font-family="Inter" font-size="10" fill="${color}">${note.accidental}</text>`)
+    els.push(`<text x="${currentX}" y="${currentY - 8}" font-family="${FONT_FAMILY}" font-size="10" fill="${color}">${note.accidental}</text>`)
     numXOffset = 8
   }
   // Grace note (倚音) — small number before main
@@ -239,7 +286,7 @@ function renderNote(
     renderGraceNote(els, currentX, currentY, note.graceNote, color)
   }
   const dataAttrs = ` data-m="${mIdx}" data-n="${nIdx}" class="jn-note"`
-  els.push(`<text x="${currentX + numXOffset}" y="${currentY}" font-family="Inter" font-size="18" fill="${color}"${dataAttrs}>${displayStr}</text>`)
+  els.push(`<text x="${currentX + numXOffset}" y="${currentY}" font-family="${FONT_FAMILY}" font-size="18" fill="${color}"${dataAttrs}>${displayStr}</text>`)
   // Articulation above the note
   if (note.articulation && !note.rest && !note.tie) {
     const noteCenterX = currentX + numXOffset + 5
@@ -248,18 +295,19 @@ function renderNote(
 
   if (note.chordNotes && note.chordNotes.length > 0) {
     // Rows are 16px apart; octave dots need extra 6px per dot so they land in
-    // the gap between digits instead of on the neighbouring chord note
-    let chordY = currentY
+    // the gap between digits instead of on the neighbouring chord note. Beam
+    // underlines (4px each) would run through the first row, so start below them.
+    let chordY = currentY + getBeamingLines(note.type) * 4
     for (const cn of note.chordNotes) {
       const aboveDots = Math.max(0, cn.octave)
       const belowDots = Math.max(0, -cn.octave)
       chordY += 16 + aboveDots * 6
       let chordXOffset = 2
       if (cn.accidental) {
-        els.push(`<text x="${currentX}" y="${chordY - 6}" font-family="Inter" font-size="9" fill="${color}">${cn.accidental}</text>`)
+        els.push(`<text x="${currentX}" y="${chordY - 6}" font-family="${FONT_FAMILY}" font-size="9" fill="${color}">${cn.accidental}</text>`)
         chordXOffset = 7
       }
-      els.push(`<text x="${currentX + chordXOffset}" y="${chordY}" font-family="Inter" font-size="16" fill="${color}">${cn.degree}</text>`)
+      els.push(`<text x="${currentX + chordXOffset}" y="${chordY}" font-family="${FONT_FAMILY}" font-size="16" fill="${color}">${cn.degree}</text>`)
       // Same uncapped rule as the melody line above
       const dotCx = currentX + chordXOffset + 5
       for (let d = 0; d < Math.abs(cn.octave); d++) {
@@ -270,6 +318,15 @@ function renderNote(
     }
   }
   return numXOffset
+}
+
+// Vertical space a note's chord rows take below its baseline — mirrors the row
+// stepping in renderNote: beam lines, then 16px + 6px per octave dot per row
+function chordExtent(note: NoteObject): number {
+  if (!note.chordNotes || note.chordNotes.length === 0) return 0
+  let h = getBeamingLines(note.type) * 4
+  for (const cn of note.chordNotes) h += 16 + Math.abs(cn.octave) * 6
+  return h
 }
 
 function noteWidthOf(note: NoteObject): number {
@@ -332,8 +389,10 @@ export function renderJianpuSVG(
 
   // Mutable: a measure's _timeSig switches the meter from that measure on
   let beatsPerMeasure = parseInt(timeStr.split('/')[0]) || 4
-  let beatUnit = 4 / (parseInt(timeStr.split('/')[1]) || 4)
+  let beamGroup = beamGroupLength(beatsPerMeasure, parseInt(timeStr.split('/')[1]) || 4)
   const timeSigWidth = 24
+  // "1=D" label for a mid-piece key change, drawn before the measure like the time sig
+  const keySigWidth = 32
   const maxWidth = Math.max(RENDER_CONFIG.minWidth, containerWidth - RENDER_CONFIG.padding)
   const paddingTop = tempoStr ? RENDER_CONFIG.paddingTopWithTempo : RENDER_CONFIG.paddingTopDefault
 
@@ -351,7 +410,11 @@ export function renderJianpuSVG(
   renderHeader(svgElements, maxWidth, startX, svgColor, titleStr, keyStr, timeStr, tempoStr)
   renderBarline(svgElements, startX, currentY, svgColor, false)
 
-  measures = collapseRestRuns(measures)
+  // `restIdx[i]` = index of measures[i] in the array the caller passed in (before
+  // collapsing), so data-rest-m matches the text editor's restMeasureIdx
+  const collapsed = collapseRestRunsIndexed(measures)
+  measures = collapsed.items
+  const restIdx = collapsed.first
 
   const itemWidth = (m: Measure): ItemWidth => {
     if (!Array.isArray(m) && m._multiRest) {
@@ -360,7 +423,8 @@ export function renderJianpuSVG(
     const arr = m as MeasureArray
     return {
       flex: arr.reduce((sum, note) => sum + noteWidthOf(note), 0),
-      fixed: (arr._timeSig ? timeSigWidth : 0) + (arr._repeatStart ? RENDER_CONFIG.repeatSignWidth : 0),
+      fixed: (arr._timeSig ? timeSigWidth : 0) + (arr._key ? keySigWidth : 0)
+        + (arr._repeatStart ? RENDER_CONFIG.repeatSignWidth : 0),
     }
   }
   // 0 = auto: wrap whenever the next measure doesn't fit (ragged right edge)
@@ -368,6 +432,8 @@ export function renderJianpuSVG(
 
   let actualMeasureNum = 1
   let origIdx = 0
+  // Deepest chord stack on the current line: the next line starts that much lower
+  let lineChordExtra = 0
 
   for (let i = 0; i < measures.length; i++) {
     const measure = measures[i]
@@ -379,13 +445,18 @@ export function renderJianpuSVG(
       origIdx += N
       if (plan ? plan.lineStart[i] && i > 0 : currentX + blockW > maxWidth && currentX > startX) {
         currentX = startX
-        currentY += lineHeight
+        currentY += lineHeight + lineChordExtra
+        lineChordExtra = 0
       }
       if (currentX === startX) {
-        svgElements.push(`<text x="${currentX}" y="${currentY - 30}" font-family="Inter" font-size="10" font-style="italic" fill="${svgColor}">${actualMeasureNum}</text>`)
+        svgElements.push(`<text x="${currentX}" y="${currentY - 30}" font-family="${FONT_FAMILY}" font-size="10" font-style="italic" fill="${svgColor}">${actualMeasureNum}</text>`)
         renderBarline(svgElements, currentX, currentY, svgColor, false)
       }
+      // Same data-rest-m group as a single whole rest, keyed by the block's first measure
+      svgElements.push(`<g class="jn-rest-group" data-rest-m="${restIdx[i]}">`)
+      svgElements.push(`<rect class="jn-rest-rect" x="${currentX + 2}" y="${currentY - 28}" width="${blockW * lineScale - 4}" height="26" fill="none" stroke="none" rx="3"/>`)
       currentX += renderMultiRestBracket(svgElements, currentX, currentY, N, blockW * lineScale, svgColor)
+      svgElements.push(`</g>`)
       if (i === measures.length - 1) {
         renderBarline(svgElements, currentX, currentY, svgColor, true)
         if (currentX + 4 > maxTotalWidth) maxTotalWidth = currentX + 4
@@ -403,12 +474,13 @@ export function renderJianpuSVG(
     if (measureArr._timeSig) {
       const tsParts = measureArr._timeSig.split('/')
       beatsPerMeasure = parseInt(tsParts[0]) || beatsPerMeasure
-      beatUnit = 4 / (parseInt(tsParts[1]) || 4)
+      beamGroup = beamGroupLength(beatsPerMeasure, parseInt(tsParts[1]) || 4)
     }
 
     let measureWidth = 0
     for (const note of measureArr) measureWidth += noteWidthOf(note)
     if (measureArr._timeSig) measureWidth += timeSigWidth
+    if (measureArr._key) measureWidth += keySigWidth
 
     if (plan ? plan.lineStart[i] && i > 0 : currentX + measureWidth > maxWidth && currentX > startX) {
       if (slurStartX !== null) {
@@ -417,7 +489,8 @@ export function renderJianpuSVG(
         svgElements.push(`<path d="M ${slurStartX},${arcY} Q ${midX},${arcY - 12} ${currentX},${arcY}" fill="none" stroke="${svgColor}" stroke-width="1.2"/>`)
       }
       currentX = startX
-      currentY += lineHeight
+      currentY += lineHeight + lineChordExtra
+      lineChordExtra = 0
       if (slurStartX !== null) {
         slurStartX = startX
         slurStartY = currentY
@@ -425,14 +498,19 @@ export function renderJianpuSVG(
     }
 
     if (currentX === startX) {
-      svgElements.push(`<text x="${currentX}" y="${currentY - 30}" font-family="Inter" font-size="10" font-style="italic" fill="${svgColor}">${actualMeasureNum}</text>`)
+      svgElements.push(`<text x="${currentX}" y="${currentY - 30}" font-family="${FONT_FAMILY}" font-size="10" font-style="italic" fill="${svgColor}">${actualMeasureNum}</text>`)
       renderBarline(svgElements, currentX, currentY, svgColor, false)
     }
 
     const measureStartX = currentX
 
+    if (measureArr._key) {
+      svgElements.push(`<text x="${currentX + 2}" y="${currentY}" font-family="${FONT_FAMILY}" font-size="13" font-weight="600" fill="${svgColor}">1=${escapeSVG(measureArr._key)}</text>`)
+      currentX += keySigWidth
+    }
+
     if (measureArr._timeSig) {
-      svgElements.push(`<text x="${currentX + 2}" y="${currentY}" font-family="Inter" font-size="13" font-weight="600" fill="${svgColor}">${measureArr._timeSig}</text>`)
+      svgElements.push(`<text x="${currentX + 2}" y="${currentY}" font-family="${FONT_FAMILY}" font-size="13" font-weight="600" fill="${svgColor}">${escapeSVG(measureArr._timeSig)}</text>`)
       currentX += timeSigWidth
     }
 
@@ -441,33 +519,23 @@ export function renderJianpuSVG(
       currentX += RENDER_CONFIG.repeatSignWidth
     }
 
-    const isWholeMeasureRest = measureArr.length === 1 && measureArr[0].rest && measureArr[0].type === 'whole'
+    // A lone whole rest draws its own row of 0s here, then shares the closing
+    // barline / repeat sign / volta / direction / dynamic / hairpin code below
+    // with every other measure (it used to `continue` and drop those markings)
+    const isWholeMeasureRest = isWholeRestMeasure(measureArr)
     if (isWholeMeasureRest) {
       const wmWidth = noteWidths['whole'] * lineScale
       const step = wmWidth / beatsPerMeasure
       // Wrap the 4 rest "0"s in a <g> with data-rest-m so text-editor cursor sync
       // can outline the whole group when caret is in the matching 0--- token.
-      svgElements.push(`<g class="jn-rest-group" data-rest-m="${i}">`)
+      svgElements.push(`<g class="jn-rest-group" data-rest-m="${restIdx[i]}">`)
       for (let b = 0; b < beatsPerMeasure; b++) {
-        svgElements.push(`<text x="${currentX + b * step + 2}" y="${currentY}" font-family="Inter" font-size="18" fill="${svgColor}">0</text>`)
+        svgElements.push(`<text x="${currentX + b * step + 2}" y="${currentY}" font-family="${FONT_FAMILY}" font-size="18" fill="${svgColor}">0</text>`)
       }
       // Invisible hit/highlight rect spanning the group — gets outlined when active.
       svgElements.push(`<rect class="jn-rest-rect" x="${currentX - 2}" y="${currentY - 18}" width="${wmWidth}" height="26" fill="none" stroke="none" rx="3"/>`)
       svgElements.push(`</g>`)
       currentX += wmWidth
-      if (i === measures.length - 1) {
-        renderBarline(svgElements, currentX, currentY, svgColor, true)
-        if (currentX + 4 > maxTotalWidth) maxTotalWidth = currentX + 4
-      } else {
-        renderBarline(svgElements, currentX, currentY, svgColor, false)
-      }
-      if (currentX > maxTotalWidth) maxTotalWidth = currentX
-      if (measureArr._volta !== undefined) {
-        renderVoltaBracket(svgElements, measureStartX, currentX, currentY, measureArr._volta, prevVoltaNum !== measureArr._volta, svgColor)
-      }
-      prevVoltaNum = measureArr._volta ?? null
-      actualMeasureNum++
-      continue
     }
 
     const cumulative: number[] = []
@@ -482,7 +550,9 @@ export function renderJianpuSVG(
     let tupletStartX: number | null = null
     let tupletLeft = 0
 
-    for (let j = 0; j < measureArr.length; j++) {
+    // The row of 0s above already stands in for a whole-rest measure's single note
+    const noteCount = isWholeMeasureRest ? 0 : measureArr.length
+    for (let j = 0; j < noteCount; j++) {
       const note = measureArr[j]
       const naturalWidth = noteWidthOf(note)
       const noteWidth = naturalWidth * lineScale
@@ -495,12 +565,24 @@ export function renderJianpuSVG(
         tupletLeft = 0
       }
 
+      const numXOffset = renderNote(svgElements, note, currentX, currentY, svgColor, origIdx, j)
+
+      // Stop BEFORE start: a note can end one slur and open the next (MusicXML
+      // <slur stop/><slur start/>). Starting first overwrote the open arc's
+      // origin, so the first arc was lost and the second one drawn from nowhere.
+      if (note.slurStop && !note.rest && slurStartX !== null) {
+        const slurEndX = currentX + numXOffset + 12
+        const arcY = currentY - 30
+        const midX = (slurStartX + slurEndX) / 2
+        svgElements.push(`<path d="M ${slurStartX},${arcY} Q ${midX},${arcY - 12} ${slurEndX},${arcY}" fill="none" stroke="${svgColor}" stroke-width="1.2"/>`)
+        slurStartX = null
+        slurStartY = null
+      }
       if (note.slurStart && !note.rest) {
         slurStartX = currentX + 2
         slurStartY = currentY
       }
 
-      const numXOffset = renderNote(svgElements, note, currentX, currentY, svgColor, origIdx, j)
       renderExtensionDashes(svgElements, note, currentX, numXOffset, noteWidth, currentY, svgColor)
 
       let extraBeats = 0
@@ -514,10 +596,10 @@ export function renderJianpuSVG(
 
       const cx = currentX + numXOffset + 5.5
       if (!note.rest && !note.tie) {
-        renderOctaveDots(svgElements, cx, currentY, note.octave, svgColor)
+        renderOctaveDots(svgElements, cx, currentY, note.octave, svgColor, getBeamingLines(note.type))
       }
 
-      renderBeamingUnderlines(svgElements, measureArr, j, currentX, noteWidth, naturalWidth, currentY, cumulative, beatUnit, svgColor)
+      renderBeamingUnderlines(svgElements, measureArr, j, currentX, noteWidth, naturalWidth, currentY, cumulative, beamGroup, svgColor)
 
       currentX += noteWidth
 
@@ -527,15 +609,6 @@ export function renderJianpuSVG(
           renderTupletBracket(svgElements, tupletStartX + 2, currentX - 2, currentY, note.tuplet, svgColor)
           tupletStartX = null
         }
-      }
-
-      if (note.slurStop && !note.rest && slurStartX !== null) {
-        const slurEndX = currentX - noteWidth + numXOffset + 12
-        const arcY = currentY - 30
-        const midX = (slurStartX + slurEndX) / 2
-        svgElements.push(`<path d="M ${slurStartX},${arcY} Q ${midX},${arcY - 12} ${slurEndX},${arcY}" fill="none" stroke="${svgColor}" stroke-width="1.2"/>`)
-        slurStartX = null
-        slurStartY = null
       }
     }
 
@@ -558,15 +631,15 @@ export function renderJianpuSVG(
     prevVoltaNum = measureArr._volta ?? null
 
     if (measureArr._direction) {
-      svgElements.push(`<text x="${currentX - 4}" y="${currentY - 20}" font-family="Inter" font-size="11" font-style="italic" font-weight="500" fill="${svgColor}" text-anchor="end">${escapeSVG(measureArr._direction)}</text>`)
+      svgElements.push(`<text x="${currentX - 4}" y="${currentY - 20}" font-family="${FONT_FAMILY}" font-size="11" font-style="italic" font-weight="500" fill="${svgColor}" text-anchor="end">${escapeSVG(measureArr._direction)}</text>`)
     }
 
-    const chordDepth = measureArr.reduce((m, n) => Math.max(m, n.chordNotes?.length ?? 0), 0)
-    const chordOffset = chordDepth * 16
-    if (chordDepth > 0) maxBottomY = Math.max(maxBottomY, currentY + chordOffset + 36)
+    const chordOffset = measureArr.reduce((m, n) => Math.max(m, chordExtent(n)), 0)
+    if (chordOffset > 0) maxBottomY = Math.max(maxBottomY, currentY + chordOffset + 36)
+    lineChordExtra = Math.max(lineChordExtra, chordOffset)
 
     if (measureArr._dynamic) {
-      svgElements.push(`<text x="${measureStartX + 2}" y="${currentY + 22 + chordOffset}" font-family="Inter" font-size="12" font-style="italic" font-weight="600" fill="${svgColor}">${escapeSVG(measureArr._dynamic)}</text>`)
+      svgElements.push(`<text x="${measureStartX + 2}" y="${currentY + 22 + chordOffset}" font-family="${FONT_FAMILY}" font-size="12" font-style="italic" font-weight="600" fill="${svgColor}">${escapeSVG(measureArr._dynamic)}</text>`)
     }
 
     if (measureArr._wedge) {
@@ -584,7 +657,9 @@ export function renderJianpuSVG(
     }
 
     actualMeasureNum++
-    origIdx++
+    // A lone whole rest has no data-m of its own and does not advance origIdx
+    // (computeOrigIdxMap mirrors this)
+    if (!isWholeMeasureRest) origIdx++
   }
 
   const totalHeight = Math.max(currentY + 40, maxBottomY + 8)
