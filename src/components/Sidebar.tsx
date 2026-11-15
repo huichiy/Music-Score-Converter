@@ -10,7 +10,7 @@ interface SidebarProps {
   onPartChange: (idx: number) => void
   onTranspose: (key: string) => void
   onOcrScore: (svgHtml: string) => void
-  loadFromText: (text: string) => string
+  loadFromText: (text: string, opts?: { fresh?: boolean }) => string
   svgRef: React.RefObject<HTMLDivElement | null>
   isDark: boolean
   onThemeToggle: () => void

@@ -8,7 +8,7 @@ import OcrSettings from './OcrSettings'
 
 interface OcrSectionProps {
   onOcrScore: (svgHtml: string) => void
-  loadFromText: (text: string) => string
+  loadFromText: (text: string, opts?: { fresh?: boolean }) => string
 }
 
 function isPdf(file: File): boolean {
@@ -74,7 +74,7 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
         useScoreStore.getState().setOcrError('无法解析简谱文本，请检查格式')
         return
       }
-      const svgHtml = loadFromText(ocrResult)
+      const svgHtml = loadFromText(ocrResult, { fresh: true })
       onOcrScore(svgHtml)
     } catch {
       useScoreStore.getState().setOcrError('无法解析简谱文本，请检查格式')

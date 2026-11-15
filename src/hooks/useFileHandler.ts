@@ -343,11 +343,10 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
   // Two callers. The text editor edits the loaded score in place, so a header it left
   // out falls back to that score's. OCR text is a different score: it must not inherit
   // the loaded file's title / key / tempo, and the old file's parts must go, or picking
-  // a part would re-render the old file over it. `fresh` selects the OCR behaviour;
-  // left out, it is on whenever the editor overlay is closed (OCR runs from the sidebar).
+  // a part would re-render the old file over it. `fresh: true` selects the OCR behaviour.
   const loadFromText = useCallback((text: string, opts?: { fresh?: boolean }): string => {
-    const { originalKeyStr, originalTimeStr, originalTempoStr, originalTitleStr, editTextVisible } = useScoreStore.getState()
-    const fresh = opts?.fresh ?? !editTextVisible
+    const { originalKeyStr, originalTimeStr, originalTempoStr, originalTitleStr } = useScoreStore.getState()
+    const fresh = opts?.fresh ?? false
     const parsed = fresh
       ? parseFromText(text)
       : parseFromText(text, originalKeyStr, originalTimeStr, originalTempoStr, originalTitleStr)
