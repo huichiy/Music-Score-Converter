@@ -1,4 +1,5 @@
 import type { Articulation, ChordNote, GraceNote, Measure, MeasureArray, NoteObject } from '@/types/score'
+import { isCollapsibleRest, isWholeRestMeasure, restRunStart } from './renderer'
 
 // Compute renderer's origIdx for each measure index in the parsed array.
 // Mirrors collapseRestRuns + the per-measure origIdx incrementing in renderer.ts.
@@ -16,25 +17,18 @@ export function computeOrigIdxMap(measures: Measure[]): Map<number, number> {
       i++
       continue
     }
-    const arr = m as MeasureArray
-    const isWholeRest = arr.length === 1 && arr[0].rest && arr[0].type === 'whole'
-    // Mirrors collapseRestRuns: measures tagged with _volta/_timeSig never join a rest run
-    const isCollapsibleRest = (mm: Measure): boolean =>
-      Array.isArray(mm) && mm.length === 1 && mm[0].rest && mm[0].type === 'whole'
-      && (mm as MeasureArray)._volta === undefined && !(mm as MeasureArray)._timeSig
-    if (isWholeRest) {
-      if (isCollapsibleRest(m)) {
-        // Look ahead for run of consecutive whole-rest measures (collapseRestRuns groups 2+)
-        let j = i + 1
-        while (j < measures.length && isCollapsibleRest(measures[j])) j++
-        const runLen = j - i
-        if (runLen >= 2) origIdx += runLen
-        // single whole-rest: origIdx not incremented (renderer's isWholeMeasureRest path skips it)
-        i = j
-      } else {
-        // v3-tagged whole-rest renders as a single whole-rest measure: no origIdx increment
-        i++
-      }
+    if (isCollapsibleRest(m)) {
+      // Look ahead for run of consecutive collapsible rests (collapseRestRuns groups 2+)
+      let j = i + 1
+      while (j < measures.length && isCollapsibleRest(measures[j])) j++
+      const runLen = j - i
+      if (runLen >= 2) origIdx += runLen
+      // single whole-rest: origIdx not incremented (renderer's isWholeMeasureRest path skips it)
+      i = j
+    } else if (isWholeRestMeasure(m)) {
+      // Marked whole-rest (repeat sign, dynamic, volta…) renders as a single
+      // whole-rest measure: no origIdx increment
+      i++
     } else {
       map.set(i, origIdx)
       origIdx++
@@ -42,6 +36,39 @@ export function computeOrigIdxMap(measures: Measure[]): Map<number, number> {
     }
   }
   return map
+}
+
+// Inverse of computeOrigIdxMap: the renderer's data-m → index into `measures`
+// (-1 when no measure carries that data-m). data-m is NOT an array index once a
+// whole rest or [N] block sits before the note, so anything that reads a
+// clicked note's data-m and looks it up in the measure array must go through this.
+export function measureIdxFromOrigIdx(measures: Measure[], origIdx: number): number {
+  for (const [arrayIdx, o] of computeOrigIdxMap(measures)) {
+    if (o === origIdx) return arrayIdx
+  }
+  return -1
+}
+
+// Copy of `measures` with one note patched. The edited measure keeps EVERY own
+// property of the old one (_volta, _timeSig, _key, and any `_` field added
+// later) — a hand-picked list silently dropped the newer ones.
+export function withNoteEdited(
+  measures: Measure[],
+  measureIdx: number,
+  noteIdx: number,
+  updated: Partial<NoteObject>,
+): Measure[] {
+  return measures.map((measure, mi) => {
+    if (mi !== measureIdx || !Array.isArray(measure)) return measure
+    const old = measure as MeasureArray
+    if (!old[noteIdx]) return measure
+    const arr = [...old] as unknown as MeasureArray
+    for (const key of Object.keys(old)) {
+      if (!/^\d+$/.test(key)) (arr as unknown as Record<string, unknown>)[key] = (old as unknown as Record<string, unknown>)[key]
+    }
+    arr[noteIdx] = { ...old[noteIdx], ...updated }
+    return arr
+  })
 }
 
 // ============================================================================
@@ -139,17 +166,6 @@ function directionToTag(dir: string): string {
   return ''
 }
 
-function isWholeMeasureRest(m: Measure): boolean {
-  if (!Array.isArray(m)) return false
-  if (m.length !== 1) return false
-  const n = m[0]
-  if (!n.rest || n.type !== 'whole') return false
-  // Don't collapse if measure carries metadata that needs preserving
-  if (m._repeatStart || m._repeatEnd || m._dynamic || m._wedge || m._direction) return false
-  if (m._volta !== undefined || m._timeSig) return false
-  return true
-}
-
 export function serializeToText(
   measures: Measure[],
   keyStr: string,
@@ -172,10 +188,11 @@ export function serializeToText(
       continue
     }
 
-    // Auto-collapse 2+ consecutive whole-measure rests into [N] block
-    if (isWholeMeasureRest(measure)) {
+    // Auto-collapse 2+ consecutive whole-measure rests into [N] block. A rest
+    // carrying any marking is left out (shared predicate with the renderer)
+    if (isCollapsibleRest(measure)) {
       let runEnd = mi
-      while (runEnd + 1 < measures.length && isWholeMeasureRest(measures[runEnd + 1])) runEnd++
+      while (runEnd + 1 < measures.length && isCollapsibleRest(measures[runEnd + 1])) runEnd++
       const runLen = runEnd - mi + 1
       if (runLen >= 2) {
         body += `| [${runLen}] `
@@ -188,6 +205,8 @@ export function serializeToText(
     body += m._repeatStart ? '|: ' : '| '
 
     // v3 measure-head markers, fixed order: {N} → @N/M → &dyn → wedge
+    // (a mid-piece key change `_key` has no Route B syntax yet, so it is not
+    // written out; the header `Key:` is the only key the text can express)
     if (m._volta !== undefined) {
       body += `{${m._volta}} `
     }
@@ -228,17 +247,17 @@ export function serializeToText(
         tupletRemaining = 0
       }
 
-      if (note.slurStart && !note.rest && !inSlur) {
-        body += '( '
-        inSlur = true
-      }
+      // Stop is handled before start (as in the renderer): a note that ends one
+      // slur and opens the next is written `( 2 )` with the earlier `(` already
+      // open, which parses back to slurStart + slurStop on that same note.
+      const closesSlur: boolean = note.slurStop && inSlur
+      const opensSlur: boolean = note.slurStart && !note.rest && (!inSlur || closesSlur)
+      if (opensSlur) body += '( '
 
       body += serializeNote(note) + ' '
 
-      if (note.slurStop && inSlur) {
-        body += ') '
-        inSlur = false
-      }
+      if (closesSlur) body += ') '
+      inSlur = opensSlur || (inSlur && !closesSlur)
     }
 
     const tag = m._direction ? directionToTag(m._direction) : ''
@@ -457,16 +476,23 @@ export function parseFromText(
   let headerEndIdx = 0
   for (let i = 0; i < Math.min(4, lines.length); i++) {
     const ln = lines[i]
-    if (/^(Title|Key|Time|Tempo)\s*:/.test(ln)) {
+    const field = ln.match(/^(Title|Key|Time|Tempo)\s*:/)
+    if (field) {
       headerEndIdx = i + 1
-      const tlm = ln.match(/Title:\s*(.+?)\s*$/)
-      const km = ln.match(/Key:\s*([A-G][b#]?)/)
-      const tm = ln.match(/Time:\s*(\d+\/\d+)/)
-      const pm = ln.match(/Tempo:\s*(\d+)/)
-      if (tlm) titleStr = tlm[1]
-      if (km) keyStr = km[1]
-      if (tm) timeStr = tm[1]
-      if (pm) tempoStr = pm[1]
+      if (field[1] === 'Title') {
+        // The whole rest of a Title line is the title — never scanned for
+        // Key/Time/Tempo (`Title: Tempo: 60 Key: G study` is just a title)
+        const tlm = ln.match(/^Title:\s*(.+?)\s*$/)
+        if (tlm) titleStr = tlm[1]
+      } else {
+        // Key/Time/Tempo may share one line (`Key: C   Time: 4/4   Tempo: 120`)
+        const km = ln.match(/\bKey:\s*([A-G][b#]?)/)
+        const tm = ln.match(/\bTime:\s*(\d+\/\d+)/)
+        const pm = ln.match(/\bTempo:\s*(\d+)/)
+        if (km) keyStr = km[1]
+        if (tm) timeStr = tm[1]
+        if (pm) tempoStr = pm[1]
+      }
     } else if (ln.trim() === '') {
       continue
     } else {
@@ -755,11 +781,12 @@ export function parseFromText(
     if (o !== undefined) return { ...p, measureIdx: o }
     // No origIdx → this note is inside a whole-rest measure (or some other unhighlightable spot).
     // Check if the original measure is a whole-rest; if so attach restMeasureIdx.
+    // restMeasureIdx is the renderer's data-rest-m: the array index of the rest's
+    // group — for a rest inside a collapsed run, the run's first measure
     const arrayIdx = p.measureIdx
     const m = measures[arrayIdx]
-    const isWholeRest = Array.isArray(m) && m.length === 1 && m[0].rest && m[0].type === 'whole'
-    return isWholeRest
-      ? { ...p, measureIdx: -1, restMeasureIdx: arrayIdx }
+    return isWholeRestMeasure(m)
+      ? { ...p, measureIdx: -1, restMeasureIdx: isCollapsibleRest(m) ? restRunStart(measures, arrayIdx) : arrayIdx }
       : { ...p, measureIdx: -1 }
   })
 
