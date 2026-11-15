@@ -2,12 +2,20 @@ name = "jianpu-ocr"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
-# Secrets — set via:
+# Not secret, so it lives here (and is reviewed in git) rather than in a secret.
+# Requests from any other Origin — or with no Origin — get 403. Add to the list
+# if you serve the app from somewhere else (a custom domain, or `npm run
+# preview` on http://localhost:4173), then `wrangler deploy` again.
+# (If you once ran `wrangler secret put ALLOWED_ORIGINS`, delete that secret
+# first: `wrangler secret delete ALLOWED_ORIGINS`.)
+[vars]
+ALLOWED_ORIGINS = "https://huichiy.github.io,http://localhost:5173,http://localhost:7790"
+
+# Secret — set via:
 #   wrangler secret put GEMINI_API_KEY
-#   (optional) wrangler secret put ALLOWED_ORIGINS  # CSV of origins
 #
 # Then:
-#   wrangler deploy
+#   wrangler deploy      # re-run after EVERY change to src/index.ts or this file
 #
 # After deploy, the Worker URL will be printed (e.g.
 # https://jianpu-ocr.<your-subdomain>.workers.dev).

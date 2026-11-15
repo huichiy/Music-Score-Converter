@@ -25,13 +25,46 @@ wrangler login
 # Get one at: https://aistudio.google.com/apikey
 wrangler secret put GEMINI_API_KEY
 
-# (Optional) restrict CORS to your site only — defaults to "*"
-wrangler secret put ALLOWED_ORIGINS
-# Paste: https://huichiy.github.io,http://localhost:5173
-
 # Deploy. The URL is printed at the end.
+# Allowed origins come from [vars] ALLOWED_ORIGINS in wrangler.toml — edit them
+# there; they are not secret.
 wrangler deploy
 ```
+
+**Re-run `wrangler deploy` after every change** to `src/index.ts` or `wrangler.toml`
+— editing the repo does not touch the live Worker. (Only secrets, like rotating
+`GEMINI_API_KEY`, apply instantly.)
+
+If you earlier created `ALLOWED_ORIGINS` as a *secret*, remove it first, or it
+will clash with the var: `wrangler secret delete ALLOWED_ORIGINS`.
+
+## What the Worker enforces
+
+| Rule | Behaviour |
+|---|---|
+| Origin | When `ALLOWED_ORIGINS` is set (it is, in `wrangler.toml`), any other `Origin` — or none — gets **403**. Unset or `*` means open (local `wrangler dev` only). |
+| Model | Forced to an allowlist (`gemini-2.5-flash`). Whatever the client asks for, including Pro, becomes Flash — the shared key has no Pro quota. |
+| Output size | `max_tokens` is clamped to 8192. |
+| Request size | Bodies over 15 MB get **413**. |
+| Payload | Must contain at least one PNG / JPEG / WebP / GIF image; this is not a general-purpose LLM endpoint. |
+| Bad answers | An empty, safety-blocked or truncated Gemini reply becomes an error with a Chinese message the app shows as-is, never a blank "result". |
+
+## Add a rate-limiting rule (do this)
+
+The `Origin` check stops other *websites* from using your key from a browser.
+It does **not** stop a script: `curl -H "Origin: https://huichiy.github.io" …`
+sets any Origin it likes. So the Origin check is a seatbelt, not a lock, and the
+real cap on abuse is rate limiting:
+
+1. Cloudflare dashboard → **Security → WAF → Rate limiting rules** (this needs the
+   Worker on a route/custom domain of a zone you own — a bare `*.workers.dev`
+   URL has no zone; for that case use Cloudflare's Workers **Rate Limiting**
+   binding instead, configured in `wrangler.toml`).
+2. Rule of thumb: **POST** requests to the Worker, about **10 per minute per IP**,
+   action **Block** for a minute or two. A person uploading scores never gets
+   near that.
+3. For the first few weeks, glance at the usage page in Google AI Studio to
+   confirm nobody else is spending your free quota.
 
 After deploy, copy the printed URL (e.g. `https://jianpu-ocr.your-name.workers.dev`)
 and set it in the main app's build environment:
@@ -51,9 +84,9 @@ Cloudflare Workers free plan:
 
 Gemini free tier (Google AI Studio):
 - Gemini 2.5 Flash: 1500 requests/day
-- Gemini 2.5 Pro: 50 requests/day
+- Gemini 2.5 Pro: no free quota — which is why the Worker never forwards it
 
-If you outgrow either, swap the worker's upstream URL/model in `src/index.ts`.
+If you outgrow either, change the upstream URL or `ALLOWED_MODELS` in `src/index.ts` (and redeploy).
 
 ## Update or rotate the key
 
