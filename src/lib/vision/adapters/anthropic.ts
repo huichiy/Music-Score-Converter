@@ -23,9 +23,11 @@ export function createAnthropicAdapter(apiKey: string, model = DEFAULT_MODELS.an
         },
         body: JSON.stringify({
           model,
-          // 4096 = safe cap across Claude vision models; 2048 truncated long scores
-          max_tokens: 4096,
-          temperature: 0,
+          // Sonnet / Haiku 5.5 think by default and thinking counts against this
+          // cap (the Gemini 2.5 lesson): 4096 risks truncating a dense score.
+          // No `temperature`: these models reject any non-default sampling value
+          // with a 400, so `temperature: 0` broke every BYOK Claude call.
+          max_tokens: 16000,
           system: systemPromptFor(mode),
           messages: [{
             role: 'user',

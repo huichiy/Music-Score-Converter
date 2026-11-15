@@ -460,6 +460,33 @@ describe('worker: empty / blocked / truncated Gemini answers', async () => {
   eq('geminiToText ok', geminiToText({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'a' }] } }] }), { ok: true, text: 'a' })
 })
 
+describe('anthropic adapter request body', async () => {
+  const { createAnthropicAdapter } = await import('../src/lib/vision/adapters/anthropic')
+  const realFetch = globalThis.fetch
+  const realReader = (globalThis as { FileReader?: unknown }).FileReader
+  let body: Record<string, unknown> = {}
+  ;(globalThis as { FileReader?: unknown }).FileReader = class {
+    result = 'data:image/png;base64,AAAA'
+    onload: (() => void) | null = null
+    readAsDataURL() { queueMicrotask(() => this.onload?.()) }
+  }
+  globalThis.fetch = (async (_url: string, init: { body: string }) => {
+    body = JSON.parse(init.body)
+    return new Response(JSON.stringify({ content: [{ type: 'text', text: '| 1 ||' }], stop_reason: 'end_turn' }), { status: 200 })
+  }) as unknown as typeof fetch
+  try {
+    const out = await createAnthropicAdapter('k').transcribe(new Blob(['x'], { type: 'image/png' }), 'jianpu')
+    eq('reply passes through', out, '| 1 ||')
+    // Sonnet / Haiku 5.5 return 400 for any non-default sampling value
+    eq('no temperature sent', 'temperature' in body, false)
+    eq('room for thinking + a dense score', body.max_tokens, 16000)
+    eq('default model', body.model, 'claude-sonnet-5-5')
+  } finally {
+    globalThis.fetch = realFetch
+    ;(globalThis as { FileReader?: unknown }).FileReader = realReader
+  }
+})
+
 // ── run ────────────────────────────────────────────────────────────────────
 
 for (const t of pending) await t()
