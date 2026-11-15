@@ -36,6 +36,7 @@ export interface MeasureArray extends Array<NoteObject> {
   _wedge?: 'cresc' | 'dim' | null
   _volta?: number
   _timeSig?: string
+  _key?: string          // mid-piece key change: degrees from this measure on are relative to this key, e.g. 'D'
 }
 
 export interface MultiRestBlock {
