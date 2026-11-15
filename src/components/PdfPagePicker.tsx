@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import { loadPdf, renderPageToCanvas } from '@/lib/pdfTools'
+import { loadPdf, renderPageToCanvas, canvasToOcrFile } from '@/lib/pdfTools'
 import ImageCropper from './ImageCropper'
 
 interface PdfPagePickerProps {
@@ -219,9 +219,10 @@ export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePicke
         onWhole={() => {
           const t = cropTarget
           setCropTarget(null)
-          t.canvas.toBlob((b) => {
-            if (b) onSelect(new File([b], `${file.name.replace(/\.pdf$/i, '')}_page${t.page}.png`, { type: 'image/png' }))
-          }, 'image/png')
+          // PNG, or a smaller JPEG for a dense page — it must clear the 5 MB image limit
+          canvasToOcrFile(t.canvas, `${file.name.replace(/\.pdf$/i, '')}_page${t.page}`)
+            .then(onSelect)
+            .catch((e) => setError((e as Error).message || '提取失败'))
         }}
         onCancel={() => setCropTarget(null)}
       />

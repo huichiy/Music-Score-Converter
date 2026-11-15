@@ -16,11 +16,33 @@ function normalize(s: string): string {
 }
 
 /**
+ * Names the app invents when a score doesn't name its parts ("Part 2", "Track 3",
+ * MuseScore's "P1"). They say nothing about the instrument, and "Part 2" in one
+ * score is a different instrument in the next — remembering one would auto-select
+ * that index in every unnamed score.
+ */
+export function isGenericPartName(name: string): boolean {
+  return /^(?:part|track|musicxml part|声部|音轨)\s*\d*$/i.test(name.trim())
+    || /^p\d+$/i.test(name.trim())
+}
+
+// "Flute" is a whole-word prefix of "Flute 2" but only an inner substring of
+// "Alto Flute". After an ASCII letter, a prefix must end at a word boundary
+// ("Flute" must not claim "Fluted"); CJK has no spaces, so any prefix counts.
+function isPrefixMatch(a: string, b: string): boolean {
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a]
+  if (!longer.startsWith(shorter)) return false
+  return !/[a-z0-9]$/.test(shorter) || !/^[a-z0-9]/.test(longer.slice(shorter.length))
+}
+
+/**
  * Index of the part matching `remembered`, or -1 when there is no usable match
  * (the caller then falls back to melody scoring).
  *
- * Exact matches win over substring matches, otherwise a remembered "二胡 II"
- * would settle on "二胡 I" simply because it appears earlier.
+ * Tiers, best first: exact, then prefix, then any substring. Exact beats
+ * substring, otherwise a remembered "二胡 II" would settle on "二胡 I" simply
+ * because it appears earlier; prefix beats inner substring, so a remembered
+ * "Flute" picks "Flute 2" rather than "Alto Flute".
  */
 export function matchPartIndex(names: string[], remembered: string | null): number {
   if (!remembered) return -1
@@ -32,6 +54,9 @@ export function matchPartIndex(names: string[], remembered: string | null): numb
   const exact = norm.indexOf(want)
   if (exact !== -1) return exact
 
+  const prefix = norm.findIndex((n) => n.length > 0 && isPrefixMatch(n, want))
+  if (prefix !== -1) return prefix
+
   // Either direction: the score may name the part more fully than the user's
   // remembered label ("Cello 大提琴" vs "大提琴"), or less fully.
   return norm.findIndex((n) => n.length > 0 && (n.includes(want) || want.includes(n)))
@@ -39,10 +64,12 @@ export function matchPartIndex(names: string[], remembered: string | null): numb
 
 /** The instrument the user last chose by hand, or null. */
 export function loadMyPart(): string | null {
-  if (typeof localStorage === 'undefined') return null
+  // No `typeof localStorage` guard outside the try: with storage blocked the
+  // global getter itself throws, and this runs while a score is loading.
   try {
     const v = localStorage.getItem(MY_PART_KEY)
-    return v && v.trim() ? v : null
+    // An auto-generated name saved by an older build would select that index in every unnamed score
+    return v && v.trim() && !isGenericPartName(v) ? v : null
   } catch {
     return null
   }
@@ -50,9 +77,8 @@ export function loadMyPart(): string | null {
 
 /** Remember the part the user just picked, so later scores default to it. */
 export function saveMyPart(name: string): void {
-  if (typeof localStorage === 'undefined') return
   try {
-    if (name.trim()) localStorage.setItem(MY_PART_KEY, name)
+    if (name.trim() && !isGenericPartName(name)) localStorage.setItem(MY_PART_KEY, name)
   } catch {
     // Private-mode or quota failures are not worth surfacing — the feature
     // degrades to "auto-detect every time", which is the old behaviour.
@@ -61,7 +87,6 @@ export function saveMyPart(name: string): void {
 
 /** Forget it — the user changed instrument, or wants auto-detection back. */
 export function clearMyPart(): void {
-  if (typeof localStorage === 'undefined') return
   try {
     localStorage.removeItem(MY_PART_KEY)
   } catch {

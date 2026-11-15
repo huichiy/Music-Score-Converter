@@ -1,5 +1,6 @@
 // Pure geometry for the box-select cropper. No DOM — unit-tested in
-// scripts/test-roundtrip.ts. The cropper (ImageCropper.tsx) uses this to map a
+// scripts/test-roundtrip.ts (computeCropRect) and scripts/test-ocr-fixes.ts
+// (fitDisplaySize, scaleRect). The cropper (ImageCropper.tsx) uses this to map a
 // selection drawn in display (CSS-pixel) space onto the full-resolution source
 // so the crop sent to OCR is sharp, not the shrunk preview.
 
@@ -21,4 +22,32 @@ export function computeCropRect(sel: Rect, display: Size, source: Size): Rect {
   const w = Math.max(1, Math.min(Math.round(sel.w * kx), source.w - x))
   const h = Math.max(1, Math.min(Math.round(sel.h * ky), source.h - y))
   return { x, y, w, h }
+}
+
+/**
+ * Size the cropper preview: as large as the available box allows (never
+ * upscaled past the source), aspect preserved. The width fit wins over the
+ * height limit below `minW` — a short landscape phone would otherwise get a
+ * thumbnail too small to draw on, so the modal scrolls vertically instead.
+ *
+ * `maxW` should be the container's measured width, not a constant: a fixed
+ * 640px preview overflowed (and got clipped) on 360–430px phones.
+ */
+export function fitDisplaySize(source: Size, maxW: number, maxH: number, minW = 0): Size {
+  if (source.w <= 0 || source.h <= 0 || maxW <= 0) return { w: 0, h: 0 }
+  const widthFit = Math.min(1, maxW / source.w)
+  let scale = widthFit
+  if (maxH > 0) {
+    const floor = Math.min(widthFit, minW / source.w)   // never below minW, never past the width fit
+    scale = Math.max(floor, Math.min(widthFit, maxH / source.h))
+  }
+  return { w: Math.max(1, Math.round(source.w * scale)), h: Math.max(1, Math.round(source.h * scale)) }
+}
+
+/** Carry a selection over when the preview is re-fitted (rotation, resize) so the box keeps covering the same part of the page. */
+export function scaleRect(sel: Rect, from: Size, to: Size): Rect {
+  if (from.w <= 0 || from.h <= 0) return sel
+  const kx = to.w / from.w
+  const ky = to.h / from.h
+  return { x: sel.x * kx, y: sel.y * ky, w: sel.w * kx, h: sel.h * ky }
 }

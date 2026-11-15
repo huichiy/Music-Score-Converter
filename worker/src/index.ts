@@ -4,15 +4,24 @@
 // The app speaks the OpenAI chat-completions shape (so other adapters can
 // reuse the same Custom adapter). This worker translates OpenAI → Gemini.
 //
+// Because the key is shared and free-tier, the worker is deliberately narrow:
+// only allowed Origins, only Gemini 2.5 Flash, a capped output size and a
+// capped request body. See README.md for the Cloudflare rate-limiting rule
+// that complements this (an Origin header can be forged outside a browser).
+//
 // Deploy:
 //   1. cd worker/
 //   2. wrangler secret put GEMINI_API_KEY   (paste your Google AI Studio key)
-//   3. wrangler deploy
+//   3. wrangler deploy                      (re-run after ANY change here or in wrangler.toml)
 //   4. Set VITE_OCR_WORKER_URL=<worker url> in your build .env
 
 export interface Env {
   GEMINI_API_KEY: string
-  /** Optional comma-separated list of allowed Origin headers. Defaults to "*". */
+  /**
+   * Comma-separated allowed Origin headers (wrangler.toml [vars]). When set,
+   * a request from any other Origin — or with none — gets 403. Unset, empty
+   * or "*" means open, which is only meant for local `wrangler dev`.
+   */
   ALLOWED_ORIGINS?: string
 }
 
@@ -25,7 +34,7 @@ interface OpenAIChatMessage {
 }
 
 interface OpenAIRequest {
-  model: string
+  model?: string
   messages: OpenAIChatMessage[]
   max_tokens?: number
   temperature?: number
@@ -36,20 +45,125 @@ interface GeminiPart {
   inline_data?: { mime_type: string; data: string }
 }
 
+export const DEFAULT_MODEL = 'gemini-2.5-flash'
+/**
+ * Models a client may ask for. The shared key is free-tier: it has NO Pro
+ * quota, so Pro here would only ever 429 — and an unchecked model string
+ * would also be interpolated straight into the upstream URL. Never add Pro.
+ */
+export const ALLOWED_MODELS = [DEFAULT_MODEL]
+/** Gemini 2.5 counts thinking tokens against this; 2048 truncated long scores. */
+export const MAX_OUTPUT_TOKENS = 8192
+/** Request body cap. A 5 MB image is ~7 MB as base64; this leaves headroom, not a free-for-all. */
+export const MAX_BODY_BYTES = 15 * 1024 * 1024
+
+// ──────────────────────────────────────────────────────────────────────────
+// Pure helpers (exported so scripts/test-ocr-fixes.ts can exercise them)
+// ──────────────────────────────────────────────────────────────────────────
+
+/** The allowed Origins, or null when the worker is open (not configured, or "*"). */
+export function parseAllowedOrigins(env: Env): string[] | null {
+  const list = (env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
+  return list.length === 0 || list.includes('*') ? null : list
+}
+
+export function originAllowed(req: Request, env: Env): boolean {
+  const allowed = parseAllowedOrigins(env)
+  if (allowed === null) return true
+  return allowed.includes(req.headers.get('origin') || '')
+}
+
+/** Only models on the allowlist; anything else (including Pro) falls back to Flash. */
+export function pickModel(requested: unknown): string {
+  return typeof requested === 'string' && ALLOWED_MODELS.includes(requested) ? requested : DEFAULT_MODEL
+}
+
+export function clampMaxTokens(requested: unknown): number {
+  const n = Math.floor(Number(requested))
+  return Number.isFinite(n) && n > 0 ? Math.min(n, MAX_OUTPUT_TOKENS) : MAX_OUTPUT_TOKENS
+}
+
+export type Translated =
+  | { ok: true; text: string }
+  | { ok: false; status: number; message: string }
+
+// Same wording as src/lib/vision/utils.ts — the app shows these as-is
+const EMPTY_MSG = '模型没有返回内容——请重试，或换一张更清晰的图片'
+const TRUNCATED_MSG = '识别结果被截断（输出长度超限）——请用「框选区域」只框住一部分再识别，识别结果会自动接在后面'
+const blockedMsg = (why: string) => `识别被模型拒绝或被安全过滤拦截（${why}）——请换一张图片或换个模型再试`
+
+/**
+ * Gemini generateContent reply → the text, or an error to send back. Joins
+ * every text part (not just the first); an empty, blocked or truncated reply is
+ * an error rather than a fake "（无输出）" result.
+ */
+export function geminiToText(data: {
+  candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>
+  promptFeedback?: { blockReason?: string }
+}): Translated {
+  const cand = data.candidates?.[0]
+  if (!cand) {
+    const why = data.promptFeedback?.blockReason
+    return { ok: false, status: 502, message: why ? blockedMsg(why) : EMPTY_MSG }
+  }
+  const text = (cand.content?.parts ?? []).filter(p => !p.thought).map(p => p.text ?? '').join('').trim()
+  const reason = cand.finishReason
+  if (reason === 'MAX_TOKENS') return { ok: false, status: 502, message: TRUNCATED_MSG }
+  if (reason && reason !== 'STOP' && reason !== 'FINISH_REASON_UNSPECIFIED') {
+    return { ok: false, status: 502, message: blockedMsg(reason) }
+  }
+  return text ? { ok: true, text } : { ok: false, status: 502, message: EMPTY_MSG }
+}
+
+/** Read a request body as text, giving up (null) as soon as it passes `limit` bytes. */
+export async function readBodyLimited(req: Request, limit: number): Promise<string | null> {
+  const declared = Number(req.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > limit) return null
+  if (!req.body) return ''
+  const reader = req.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    // A missing or forged Content-Length can't sneak a huge chunked body past us
+    if (total > limit) { await reader.cancel(); return null }
+    chunks.push(value)
+  }
+  const merged = new Uint8Array(total)
+  let off = 0
+  for (const c of chunks) { merged.set(c, off); off += c.byteLength }
+  return new TextDecoder().decode(merged)
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+
 function corsHeaders(req: Request, env: Env): HeadersInit {
-  const allowed = (env.ALLOWED_ORIGINS || '*').split(',').map(s => s.trim())
+  const allowed = parseAllowedOrigins(env)
   const origin = req.headers.get('origin') || ''
-  const allowOrigin = allowed.includes('*') ? '*' : (allowed.includes(origin) ? origin : 'null')
+  const allowOrigin = allowed === null ? '*' : (allowed.includes(origin) ? origin : 'null')
   return {
     'access-control-allow-origin': allowOrigin,
     'access-control-allow-methods': 'POST, OPTIONS',
     'access-control-allow-headers': 'content-type, authorization',
     'access-control-max-age': '86400',
+    vary: 'Origin',
   }
+}
+
+function errorResponse(req: Request, env: Env, status: number, message: string): Response {
+  return new Response(
+    JSON.stringify({ error: { message } }),
+    { status, headers: { 'content-type': 'application/json', ...corsHeaders(req, env) } },
+  )
 }
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
+    // Checked first, preflight included: a disallowed site never learns anything
+    if (!originAllowed(req, env)) return errorResponse(req, env, 403, 'Origin not allowed')
+
     if (req.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders(req, env) })
     }
@@ -57,25 +171,26 @@ export default {
       return new Response('Method not allowed', { status: 405, headers: corsHeaders(req, env) })
     }
     if (!env.GEMINI_API_KEY) {
-      return new Response(
-        JSON.stringify({ error: { message: 'Worker not configured: GEMINI_API_KEY secret missing' } }),
-        { status: 500, headers: { 'content-type': 'application/json', ...corsHeaders(req, env) } },
-      )
+      return errorResponse(req, env, 500, 'Worker not configured: GEMINI_API_KEY secret missing')
     }
+
+    const raw = await readBodyLimited(req, MAX_BODY_BYTES)
+    if (raw === null) return errorResponse(req, env, 413, 'Request body too large')
 
     let body: OpenAIRequest
     try {
-      body = await req.json()
+      body = JSON.parse(raw)
     } catch {
-      return new Response(
-        JSON.stringify({ error: { message: 'Invalid JSON body' } }),
-        { status: 400, headers: { 'content-type': 'application/json', ...corsHeaders(req, env) } },
-      )
+      return errorResponse(req, env, 400, 'Invalid JSON body')
+    }
+    if (!body || !Array.isArray(body.messages)) {
+      return errorResponse(req, env, 400, 'Invalid request: messages missing')
     }
 
     // Translate OpenAI chat format → Gemini generateContent format
     const parts: GeminiPart[] = []
     let systemText = ''
+    let images = 0
     for (const msg of body.messages) {
       if (msg.role === 'system') {
         systemText += (typeof msg.content === 'string' ? msg.content : '') + '\n'
@@ -84,62 +199,61 @@ export default {
       if (msg.role !== 'user') continue
       if (typeof msg.content === 'string') {
         parts.push({ text: msg.content })
-      } else {
+      } else if (Array.isArray(msg.content)) {
         for (const c of msg.content) {
           if (c.type === 'text') parts.push({ text: c.text })
           else if (c.type === 'image_url') {
-            // OpenAI sends a data URL — split header from data
-            const url = c.image_url.url
-            const m = url.match(/^data:([^;]+);base64,(.+)$/)
-            if (m) parts.push({ inline_data: { mime_type: m[1], data: m[2] } })
+            // OpenAI sends a data URL — split header from data. Only the image
+            // types the app can produce; this endpoint is for reading scores.
+            const m = c.image_url.url.match(/^data:(image\/(?:png|jpeg|webp|gif));base64,(.+)$/)
+            if (m) { parts.push({ inline_data: { mime_type: m[1], data: m[2] } }); images++ }
           }
         }
       }
     }
+    // Not an image-to-text call → not what this proxy is for (and not a free general-purpose LLM)
+    if (images === 0) return errorResponse(req, env, 400, 'Request must include an image')
     if (systemText) parts.unshift({ text: systemText.trim() })
 
-    const model = body.model || 'gemini-2.5-flash'
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`
+    const model = pickModel(body.model)
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
 
     let upstream: Response
     try {
       upstream = await fetch(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        // Header, not ?key=: keeps the secret out of any logged URL or error text
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
         body: JSON.stringify({
           contents: [{ parts }],
           generationConfig: {
             temperature: body.temperature ?? 0,
-            // 8192 default: Gemini 2.5 thinking tokens count against this
-            // budget; 2048 truncated long scores (clients also send 8192)
-            maxOutputTokens: body.max_tokens ?? 8192,
+            maxOutputTokens: clampMaxTokens(body.max_tokens),
           },
         }),
       })
     } catch (e) {
-      return new Response(
-        JSON.stringify({ error: { message: `Upstream fetch failed: ${(e as Error).message}` } }),
-        { status: 502, headers: { 'content-type': 'application/json', ...corsHeaders(req, env) } },
-      )
+      return errorResponse(req, env, 502, `Upstream fetch failed: ${(e as Error).message}`)
     }
 
     if (!upstream.ok) {
       const errText = await upstream.text()
-      return new Response(
-        JSON.stringify({ error: { message: `Gemini ${upstream.status}: ${errText.slice(0, 400)}` } }),
-        { status: upstream.status, headers: { 'content-type': 'application/json', ...corsHeaders(req, env) } },
-      )
+      return errorResponse(req, env, upstream.status, `Gemini ${upstream.status}: ${errText.slice(0, 400)}`)
     }
 
-    const upstreamData = await upstream.json() as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
+    let upstreamData: Parameters<typeof geminiToText>[0]
+    try {
+      upstreamData = await upstream.json()
+    } catch {
+      return errorResponse(req, env, 502, 'Upstream returned an unreadable response')
     }
-    const text = upstreamData.candidates?.[0]?.content?.parts?.[0]?.text || '（无输出）'
+    const result = geminiToText(upstreamData)
+    if (!result.ok) return errorResponse(req, env, result.status, result.message)
 
     // Wrap in OpenAI chat-completions shape so the app's Custom adapter can consume it directly.
     return new Response(
       JSON.stringify({
-        choices: [{ message: { role: 'assistant', content: text } }],
+        choices: [{ message: { role: 'assistant', content: result.text }, finish_reason: 'stop' }],
       }),
       { headers: { 'content-type': 'application/json', ...corsHeaders(req, env) } },
     )

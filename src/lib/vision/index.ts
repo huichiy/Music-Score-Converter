@@ -53,7 +53,11 @@ export function buildAdapter(config: OcrConfig, env: BuildEnv): VisionAdapter {
     case 'custom':
       if (!config.apiKey) throw new Error('Custom 模式需要 API key')
       if (!config.customUrl) throw new Error('Custom 模式需要 endpoint URL')
+      try { new URL(config.customUrl) } catch { throw new Error('Custom endpoint URL 格式不对，应形如 https://api.example.com/v1/chat/completions') }
       return createCustomAdapter(config.customUrl, config.apiKey, config.model || DEFAULT_MODELS.custom)
+    default:
+      // A saved provider this build doesn't know (older/newer version, hand-edited storage)
+      throw new Error('未配置 OCR — 保存的识别渠道无法识别，请在「OCR 设置」里重新选择')
   }
 }
 
@@ -63,9 +67,15 @@ export function buildAdapter(config: OcrConfig, env: BuildEnv): VisionAdapter {
 
 const DEFAULT_CONFIG: OcrConfig = { provider: 'auto' }
 
+// Config the browser refused to persist. Blocked storage (Chrome "block all
+// cookies", some in-app browsers) makes every localStorage access throw; holding
+// the config in memory lets BYOK still work until the tab closes.
+let memoryConfig: OcrConfig | null = null
+
 /**
  * Drop a saved model id the provider no longer offers (e.g. 默认 channel used
- * to list Pro — a stale localStorage entry would keep 429ing forever).
+ * to list Pro — a stale localStorage entry would keep 429ing forever; retired
+ * Claude / Gemini ids would 404).
  * `custom` endpoints accept arbitrary model strings, so they're left alone.
  */
 export function sanitizeOcrConfig(config: OcrConfig): OcrConfig {
@@ -78,27 +88,45 @@ export function sanitizeOcrConfig(config: OcrConfig): OcrConfig {
   return config
 }
 
+// Every storage access — including the `typeof` check, whose getter throws
+// when storage is blocked — lives inside try/catch so it can never reach the
+// caller (the store reads prefs at module init; a throw there is a white screen).
+
 export function loadOcrConfig(): OcrConfig {
-  if (typeof localStorage === 'undefined') return DEFAULT_CONFIG
   try {
     const raw = localStorage.getItem(OCR_CONFIG_KEY)
-    if (!raw) return DEFAULT_CONFIG
-    const parsed = JSON.parse(raw) as OcrConfig
-    if (!parsed.provider) return DEFAULT_CONFIG
-    return sanitizeOcrConfig(parsed)
+    if (raw) {
+      const parsed = JSON.parse(raw) as OcrConfig
+      // An unknown provider would also crash the Settings modal (no model list)
+      if (parsed && typeof parsed.provider === 'string' && Object.prototype.hasOwnProperty.call(MODEL_OPTIONS, parsed.provider)) {
+        return sanitizeOcrConfig(parsed)
+      }
+    }
   } catch {
-    return DEFAULT_CONFIG
+    // blocked / unavailable / corrupt → fall through
+  }
+  return memoryConfig ? sanitizeOcrConfig(memoryConfig) : DEFAULT_CONFIG
+}
+
+/** Returns false when the browser refused to persist it (the config still applies for this session). */
+export function saveOcrConfig(config: OcrConfig): boolean {
+  try {
+    localStorage.setItem(OCR_CONFIG_KEY, JSON.stringify(config))
+    memoryConfig = null
+    return true
+  } catch {
+    memoryConfig = config
+    return false
   }
 }
 
-export function saveOcrConfig(config: OcrConfig): void {
-  if (typeof localStorage === 'undefined') return
-  localStorage.setItem(OCR_CONFIG_KEY, JSON.stringify(config))
-}
-
 export function clearOcrConfig(): void {
-  if (typeof localStorage === 'undefined') return
-  localStorage.removeItem(OCR_CONFIG_KEY)
+  memoryConfig = null
+  try {
+    localStorage.removeItem(OCR_CONFIG_KEY)
+  } catch {
+    // nothing stored, or storage blocked — either way there is nothing to clear
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────

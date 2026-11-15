@@ -54,7 +54,14 @@ export default function OcrSettings({ open, onClose }: OcrSettingsProps) {
       alert('请填写 Custom endpoint URL')
       return
     }
-    saveOcrConfig({ ...config, apiKey: config.apiKey?.trim(), customUrl: config.customUrl?.trim() })
+    const saved = saveOcrConfig({
+      ...config,
+      apiKey: config.apiKey?.trim(),
+      customUrl: config.customUrl?.trim(),
+      model: config.model?.trim() || undefined,   // blank → the provider's default
+    })
+    // The setting still applies until the tab closes; only remembering it failed
+    if (!saved) alert('浏览器禁止保存设置（可能是隐私模式或已屏蔽网站数据）——本次使用有效，关闭页面后需要重新填写')
     onClose()
   }
 
@@ -143,6 +150,28 @@ export default function OcrSettings({ open, onClose }: OcrSettingsProps) {
                 onChange={(e) => setConfig({ ...config, customUrl: e.target.value })}
                 style={inputStyle}
               />
+            </div>
+          )}
+
+          {/* Model — free text for custom endpoints (OpenRouter-style ids such as openai/gpt-4o-mini) */}
+          {needsUrl && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-muted)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+                Model
+              </div>
+              <input
+                type="text"
+                placeholder={DEFAULT_MODELS.custom}
+                value={config.model || ''}
+                onChange={(e) => setConfig({ ...config, model: e.target.value })}
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                style={inputStyle}
+              />
+              <div style={{ fontSize: 10, color: 'var(--color-muted)', marginTop: 6, lineHeight: 1.6 }}>
+                填服务商的模型 id，如 openai/gpt-4o-mini（OpenRouter）。留空用 {DEFAULT_MODELS.custom}。
+              </div>
             </div>
           )}
 

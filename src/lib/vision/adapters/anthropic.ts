@@ -4,11 +4,11 @@
 import type { OcrMode, VisionAdapter } from '../types'
 import { DEFAULT_MODELS } from '../types'
 import { systemPromptFor, userPromptFor } from '../prompts'
-import { blobToBase64, unwrapModeError } from '../utils'
+import { blobToBase64, extractAnthropicText, unwrapModeError } from '../utils'
 
 export function createAnthropicAdapter(apiKey: string, model = DEFAULT_MODELS.anthropic): VisionAdapter {
   return {
-    name: `Anthropic ${model.replace(/^claude-/, 'Claude ').replace(/-2024\d{4}$/, '')}`,
+    name: `Anthropic ${model.replace(/^claude-/, 'Claude ')}`,
     async transcribe(file: File | Blob, mode: OcrMode): Promise<string> {
       const base64 = await blobToBase64(file)
       const mediaType = (file as File).type || 'image/png'
@@ -23,8 +23,7 @@ export function createAnthropicAdapter(apiKey: string, model = DEFAULT_MODELS.an
         },
         body: JSON.stringify({
           model,
-          // 4096 = safe cap across all Claude vision models (3.x caps at 4096);
-          // 2048 truncated long scores
+          // 4096 = safe cap across Claude vision models; 2048 truncated long scores
           max_tokens: 4096,
           temperature: 0,
           system: systemPromptFor(mode),
@@ -44,9 +43,8 @@ export function createAnthropicAdapter(apiKey: string, model = DEFAULT_MODELS.an
         throw new Error(msg)
       }
 
-      const data = await res.json() as { content?: Array<{ text?: string }> }
-      const text = data.content?.[0]?.text?.trim() || '（无输出）'
-      return unwrapModeError(text)
+      // Joins every text block; empty / refused / truncated replies throw a friendly error
+      return unwrapModeError(extractAnthropicText(await res.json()))
     },
   }
 }

@@ -4,7 +4,7 @@
 import type { OcrMode, VisionAdapter } from '../types'
 import { DEFAULT_MODELS } from '../types'
 import { systemPromptFor, userPromptFor } from '../prompts'
-import { blobToBase64, unwrapModeError } from '../utils'
+import { blobToBase64, extractGeminiText, unwrapModeError } from '../utils'
 
 export function createGeminiAdapter(apiKey: string, model = DEFAULT_MODELS.gemini): VisionAdapter {
   return {
@@ -41,11 +41,8 @@ export function createGeminiAdapter(apiKey: string, model = DEFAULT_MODELS.gemin
         throw new Error(msg)
       }
 
-      const data = await res.json() as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
-      }
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '（无输出）'
-      return unwrapModeError(text)
+      // Joins every text part; empty / blocked / truncated replies throw a friendly error
+      return unwrapModeError(extractGeminiText(await res.json()))
     },
   }
 }

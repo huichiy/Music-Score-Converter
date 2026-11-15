@@ -8,8 +8,11 @@ const MEASURES_PER_LINE_KEY = 'jianpu.measuresPerLine.v1'
 export const MEASURES_PER_LINE_OPTIONS = [0, 2, 3, 4, 5, 6]
 export const DEFAULT_MEASURES_PER_LINE = 4
 
+// Storage is only ever touched inside try. A `typeof localStorage` guard
+// outside it is not safe: when storage is blocked the global getter itself
+// throws, and this runs at store init, so an escaped throw white-screens the
+// app. (A missing global — Node tests — is a ReferenceError the catch absorbs.)
 export function loadMeasuresPerLine(): number {
-  if (typeof localStorage === 'undefined') return DEFAULT_MEASURES_PER_LINE
   try {
     const raw = localStorage.getItem(MEASURES_PER_LINE_KEY)
     // Missing or tampered values fall back to the default
@@ -20,7 +23,6 @@ export function loadMeasuresPerLine(): number {
 }
 
 export function saveMeasuresPerLine(n: number): void {
-  if (typeof localStorage === 'undefined') return
   try {
     localStorage.setItem(MEASURES_PER_LINE_KEY, String(n))
   } catch {
