@@ -2,12 +2,12 @@ import { useCallback } from 'react'
 import JSZip from 'jszip'
 import { Midi } from '@tonejs/midi'
 import { useScoreStore } from '@/store/scoreStore'
-import { parseXMLToNoteObjects, transposeNoteObjects, keyMap, scaleDegrees, stepMapDiatonic, pitchToSemitones } from '@/lib/parser'
+import { parseXMLToNoteObjects, transposeNoteObjects, keyMap, midiToJianpu, parseMetronomeTempo } from '@/lib/parser'
 import { renderJianpuSVG } from '@/lib/renderer'
 import { parseABC } from '@/lib/abcParser'
 import { parseFromText } from '@/lib/editor'
 import { matchPartIndex, loadMyPart } from '@/lib/partMatch'
-import type { Measure, MeasureArray, NoteObject } from '@/types/score'
+import type { Measure } from '@/types/score'
 
 const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <score-partwise version="3.1">
@@ -102,7 +102,9 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
     if (partsList.length <= partIdx) throw new Error('Part index out of range')
 
     const dummyDoc = document.implementation.createDocument(null, 'score-partwise')
-    dummyDoc.documentElement.appendChild(xmlDoc.getElementsByTagName('part-list')[0].cloneNode(true))
+    // <part-list> is only a name table; a file without one still renders
+    const partListNode = xmlDoc.getElementsByTagName('part-list')[0]
+    if (partListNode) dummyDoc.documentElement.appendChild(partListNode.cloneNode(true))
     dummyDoc.documentElement.appendChild(partsList[partIdx].cloneNode(true))
 
     let titleStr = 'Untitled'
@@ -126,9 +128,8 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
     else { const fb = xmlDoc.getElementsByTagName('fifths'); if (fb.length > 0) fifths = parseInt(fb[0].textContent!) }
     const keyStr = keyMap[fifths.toString()] || 'C'
 
-    let tempoStr = ''
-    const metronomeNodes = xmlDoc.getElementsByTagName('per-minute')
-    if (metronomeNodes.length > 0) tempoStr = metronomeNodes[0].textContent!.trim()
+    // Quarter notes per minute: "half = 60" is 120, which is what playback counts
+    const tempoStr = parseMetronomeTempo(xmlDoc)
 
     const timeStr = `${beats}/${beatType}`
     const svgMeasures = parseXMLToNoteObjects(dummyDoc)
@@ -164,7 +165,8 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
       }
       if (!targetFile) {
         for (const filename in zip.files) {
-          if (filename.endsWith('.xml') && filename !== 'META-INF/container.xml') {
+          const lower = filename.toLowerCase()
+          if (!lower.startsWith('meta-inf/') && (lower.endsWith('.xml') || lower.endsWith('.musicxml'))) {
             targetFile = zip.files[filename]; break
           }
         }
@@ -232,6 +234,9 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
     store.setMatchedMyPart(mine !== -1)
     store.setShowPartSelector(parts.length > 1)
     store.setShowAutoDetect(parts.length > 1 && mine === -1)
+    // A new file starts in its own key; the previous file's transposition must not
+    // survive into the selector or the next part change
+    store.setTransposeKey('')
 
     return renderSelectedPart(xmlDoc, chosenIdx, file, '')
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -243,120 +248,13 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
   const handleMidiConversion = useCallback(async (file: File): Promise<string> => {
     const arrayBuffer = await fileToArrayBuffer(file)
     const midi = new Midi(arrayBuffer)
-
-    let keyStr = 'C'
-    if (midi.header.keySignatures?.length > 0) keyStr = midi.header.keySignatures[0].key
-
-    let baseTonicStep = keyStr[0]
-    let baseTonicAlter = keyStr.includes('#') ? 1 : keyStr.includes('b') ? -1 : 0
-    let baseTonicSemi = pitchToSemitones(baseTonicStep, baseTonicAlter, 4)
-
-    let bestTrack = null; let maxNotes = -1
-    for (const track of midi.tracks) {
-      if (track.notes.length > maxNotes) { maxNotes = track.notes.length; bestTrack = track }
-    }
-    if (!bestTrack || bestTrack.notes.length === 0) throw new Error('No notes found in MIDI.')
-
-    const TICK_SNAP = Math.max(2, Math.round(midi.header.ppq / 120))
-    const tickMap = new Map<number, { midi: number; ticks: number; durationTicks: number }>()
-    for (const n of bestTrack.notes) {
-      const snapped = Math.round(n.ticks / TICK_SNAP) * TICK_SNAP
-      if (!tickMap.has(snapped) || n.midi > tickMap.get(snapped)!.midi) tickMap.set(snapped, n)
-    }
-    const melodyNotes = [...tickMap.values()].sort((a, b) => a.ticks - b.ticks)
-
-    let beats = 4; let beatType = 4
-    if (midi.header.timeSignatures?.length > 0) {
-      const rawBeats = midi.header.timeSignatures[0].timeSignature[0]
-      const rawBeatType = midi.header.timeSignatures[0].timeSignature[1]
-      if ([2, 4, 8, 16].includes(rawBeatType) && rawBeats >= 2 && rawBeats <= 12) {
-        beats = rawBeats; beatType = rawBeatType
-      }
-    }
-
-    const ppq = midi.header.ppq
-    let measureTicks = beats * (4 / beatType) * ppq
-    const estMeasures = Math.ceil((melodyNotes[melodyNotes.length - 1].ticks + 1) / measureTicks)
-    if (melodyNotes.length / Math.max(1, estMeasures) < 1.5) {
-      beats = 4; beatType = 4; measureTicks = beats * (4 / beatType) * ppq
-    }
-
-    let useFlats = ['F','Bb','Eb','Ab','Db','Gb','Cb'].includes(keyStr)
-    let stepNames = useFlats
-      ? ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B']
-      : ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
-
-    const sortedKeyChanges = (midi.header.keySignatures || []).slice().sort((a, b) => a.ticks - b.ticks)
-    let keyChangeIdx = 1
-
-    const jianpuMeasures: MeasureArray[] = []
-    let currentMeasureNotes: NoteObject[] = []
-    let currentMeasureIdx = 0
-
-    for (let i = 0; i < melodyNotes.length; i++) {
-      const note = melodyNotes[i]
-      const noteMeasureIdx = Math.floor(note.ticks / measureTicks)
-
-      while (currentMeasureIdx < noteMeasureIdx) {
-        if (currentMeasureNotes.length > 0) {
-          jianpuMeasures.push(currentMeasureNotes as unknown as MeasureArray)
-          currentMeasureNotes = []
-        } else {
-          jianpuMeasures.push([{ degree: 0, octave: 0, type: 'whole', dot: false, tie: false, rest: true, accidental: '', slurStart: false, slurStop: false }] as unknown as MeasureArray)
-        }
-        currentMeasureIdx++
-      }
-
-      while (keyChangeIdx < sortedKeyChanges.length && sortedKeyChanges[keyChangeIdx].ticks <= note.ticks) {
-        const newKey = sortedKeyChanges[keyChangeIdx].key
-        baseTonicStep = newKey[0]
-        baseTonicAlter = newKey.includes('#') ? 1 : newKey.includes('b') ? -1 : 0
-        baseTonicSemi = pitchToSemitones(baseTonicStep, baseTonicAlter, 4)
-        useFlats = ['F','Bb','Eb','Ab','Db','Gb','Cb'].includes(newKey)
-        stepNames = useFlats
-          ? ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B']
-          : ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
-        keyChangeIdx++
-      }
-
-      const noteNum = note.midi
-      const octave = Math.floor(noteNum / 12) - 1
-      const semitone = noteNum % 12
-      const stepStr = stepNames[semitone]
-      const step = stepStr[0]
-      const alter = stepStr.includes('b') ? -1 : stepStr.includes('#') ? 1 : 0
-
-      const noteSemi = pitchToSemitones(step, alter, octave)
-      const tonicDiatAbs = stepMapDiatonic[baseTonicStep] + 4 * 7
-      const noteDiatAbs = stepMapDiatonic[step] + octave * 7
-      const degree = ((noteDiatAbs - tonicDiatAbs) % 7 + 7) % 7
-      const shift = Math.round((noteSemi - (baseTonicSemi + scaleDegrees[degree])) / 12)
-      const intendedSemi = baseTonicSemi + shift * 12 + scaleDegrees[degree]
-      const acc: '#' | 'b' | '' = noteSemi > intendedSemi ? '#' : noteSemi < intendedSemi ? 'b' : ''
-
-      const noteBeats = note.durationTicks / ppq
-      let noteType: NoteObject['type'] = 'quarter'; let hasDot = false
-      if (noteBeats >= 3.75) noteType = 'whole'
-      else if (noteBeats >= 2.75) { noteType = 'half'; hasDot = true }
-      else if (noteBeats >= 1.75) noteType = 'half'
-      else if (noteBeats >= 1.25) { noteType = 'quarter'; hasDot = true }
-      else if (noteBeats >= 0.75) noteType = 'quarter'
-      else if (noteBeats >= 0.6) { noteType = 'eighth'; hasDot = true }
-      else if (noteBeats >= 0.35) noteType = 'eighth'
-      else noteType = '16th'
-
-      currentMeasureNotes.push({ degree: degree + 1, octave: shift, type: noteType, dot: hasDot, tie: false, rest: false, accidental: acc, slurStart: false, slurStop: false })
-    }
-    if (currentMeasureNotes.length > 0) jianpuMeasures.push(currentMeasureNotes as unknown as MeasureArray)
-
-    let tempoStr = ''
-    if (midi.header.tempos?.length > 0) tempoStr = Math.round(midi.header.tempos[0].bpm).toString()
-
-    const titleStr = midi.header.name || file.name.replace(/\.[^/.]+$/, '')
-    const timeStr = `${beats}/${beatType}`
+    const { measures: jianpuMeasures, keyStr, timeStr, tempoStr, titleStr: midiTitle } = midiToJianpu(midi)
+    const titleStr = midiTitle || file.name.replace(/\.[^/.]+$/, '')
 
     store.setOriginal(jianpuMeasures, keyStr, timeStr, titleStr, tempoStr)
     store.setCurrent(jianpuMeasures, keyStr)
+    store.setParsedXmlDoc(null)
+    store.setTransposeKey('')
     store.setPartNames(['自动'])
     store.setShowPartSelector(false)
     store.setShowAutoDetect(false)
@@ -377,6 +275,8 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
 
     store.setOriginal(measures, keyStr, timeStr, titleStr, tempoStr)
     store.setCurrent(measures, keyStr)
+    store.setParsedXmlDoc(null)
+    store.setTransposeKey('')
     store.setPartNames(['—'])
     store.setShowPartSelector(false)
     store.setShowAutoDetect(false)
@@ -440,13 +340,29 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const loadFromText = useCallback((text: string): string => {
-    const { originalKeyStr, originalTimeStr, originalTempoStr, originalTitleStr } = useScoreStore.getState()
-    const parsed = parseFromText(text, originalKeyStr, originalTimeStr, originalTempoStr, originalTitleStr)
-    const title = parsed.titleStr || originalTitleStr || '简谱导入'
+  // Two callers. The text editor edits the loaded score in place, so a header it left
+  // out falls back to that score's. OCR text is a different score: it must not inherit
+  // the loaded file's title / key / tempo, and the old file's parts must go, or picking
+  // a part would re-render the old file over it. `fresh` selects the OCR behaviour;
+  // left out, it is on whenever the editor overlay is closed (OCR runs from the sidebar).
+  const loadFromText = useCallback((text: string, opts?: { fresh?: boolean }): string => {
+    const { originalKeyStr, originalTimeStr, originalTempoStr, originalTitleStr, editTextVisible } = useScoreStore.getState()
+    const fresh = opts?.fresh ?? !editTextVisible
+    const parsed = fresh
+      ? parseFromText(text)
+      : parseFromText(text, originalKeyStr, originalTimeStr, originalTempoStr, originalTitleStr)
+    const title = parsed.titleStr || (fresh ? '' : originalTitleStr) || '简谱导入'
     store.setOriginal(parsed.measures, parsed.keyStr, parsed.timeStr, title, parsed.tempoStr)
     store.setCurrent(parsed.measures, parsed.keyStr)
     store.setTransposeKey('')
+    if (fresh) {
+      store.setParsedXmlDoc(null)
+      store.setPartNames([])
+      store.setSelectedPartIdx(0)
+      store.setShowPartSelector(false)
+      store.setShowAutoDetect(false)
+      store.setMatchedMyPart(false)
+    }
     store.setIsConverted(true)
     return renderScore(parsed.measures, parsed.keyStr, parsed.timeStr, title, parsed.tempoStr)
   // eslint-disable-next-line react-hooks/exhaustive-deps
