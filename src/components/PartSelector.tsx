@@ -1,5 +1,5 @@
 import { useScoreStore } from '@/store/scoreStore'
-import { saveMyPart, clearMyPart, loadMyPart } from '@/lib/partMatch'
+import { saveMyPart, clearMyPart, loadMyPart, isGenericPartName } from '@/lib/partMatch'
 
 interface PartSelectorProps {
   onPartChange: (idx: number) => void
@@ -17,11 +17,15 @@ export default function PartSelector({ onPartChange }: PartSelectorProps) {
 
   // Picking a part by hand IS the signal that this is the user's instrument —
   // remember it so every later score defaults here instead of to the melody.
+  // Auto-generated names ("Part 2") are skipped: they identify a slot, not an
+  // instrument, and would auto-select that index in every unnamed score.
   const handleChange = (idx: number) => {
     const name = partNames[idx]
-    if (name) {
+    if (name && !isGenericPartName(name)) {
       saveMyPart(name)
       setMatchedMyPart(true)
+    } else {
+      setMatchedMyPart(false)  // the selection no longer is the remembered part
     }
     onPartChange(idx)
   }

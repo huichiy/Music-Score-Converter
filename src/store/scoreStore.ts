@@ -138,5 +138,11 @@ export const useScoreStore = create<ScoreStore>()((set) => ({
   setOcrMode: (mode) => set({ ocrMode: mode }),
   setOcrResult: (text) => set({ ocrResult: text }),
   setIsDark: (v) => set({ isDark: v }),
-  reset: () => set({ ...initialState, isDark: document.documentElement.getAttribute('data-theme') === 'dark' }),
+  // measuresPerLine is read fresh: initialState's value is a snapshot from page
+  // load, which would undo a choice the user made since (it IS persisted).
+  reset: () => set({
+    ...initialState,
+    measuresPerLine: loadMeasuresPerLine(),
+    isDark: document.documentElement.getAttribute('data-theme') === 'dark',
+  }),
 }))
