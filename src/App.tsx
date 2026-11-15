@@ -9,7 +9,8 @@ import PlaybackBar from '@/components/PlaybackBar'
 import { usePlayback } from '@/hooks/usePlayback'
 import EditNotePopup from '@/components/EditNotePopup'
 import EditTextOverlay from '@/components/EditTextOverlay'
-import type { NoteObject, Measure, MeasureArray } from '@/types/score'
+import { measureIdxFromOrigIdx, withNoteEdited } from '@/lib/editor'
+import type { NoteObject, MeasureArray } from '@/types/score'
 
 export default function App() {
   const mainContentRef = useRef<HTMLDivElement>(null)
@@ -100,10 +101,13 @@ export default function App() {
   }, [store])
 
   // ── Edit Mode A: note click ───────────────────────────────────
+  // `m` is the clicked element's data-m — the renderer's origIdx, NOT an index
+  // into currentMeasures (whole rests and [N] blocks shift the two apart), so it
+  // is mapped back here and in handleNoteConfirm. popupNote.m keeps the data-m.
   const handleNoteClick = useCallback((m: number, n: number) => {
     const { currentMeasures } = useScoreStore.getState()
     if (!currentMeasures) return
-    const measure = currentMeasures[m]
+    const measure = currentMeasures[measureIdxFromOrigIdx(currentMeasures, m)]
     if (!Array.isArray(measure)) return
     const note = (measure as MeasureArray)[n]
     if (!note) return
@@ -116,24 +120,18 @@ export default function App() {
   }, [store])
 
   const handleNoteConfirm = useCallback((m: number, n: number, updated: Partial<NoteObject>) => {
-    const { currentMeasures, currentKeyStr } = useScoreStore.getState()
+    const { currentMeasures, currentKeyStr, originalTimeStr, originalTitleStr, originalTempoStr } = useScoreStore.getState()
     if (!currentMeasures) return
 
-    const newMeasures: Measure[] = currentMeasures.map((measure, mi) => {
-      if (mi !== m) return measure
-      if (!Array.isArray(measure)) return measure
-      const arr = [...(measure as MeasureArray)] as unknown as MeasureArray
-      arr[n] = { ...(measure as MeasureArray)[n], ...updated }
-      // Copy measure metadata
-      arr._repeatStart = (measure as MeasureArray)._repeatStart
-      arr._repeatEnd = (measure as MeasureArray)._repeatEnd
-      arr._direction = (measure as MeasureArray)._direction
-      arr._dynamic = (measure as MeasureArray)._dynamic
-      arr._wedge = (measure as MeasureArray)._wedge
-      return arr
-    })
+    const measureIdx = measureIdxFromOrigIdx(currentMeasures, m)
+    if (measureIdx < 0) return
+    const newMeasures = withNoteEdited(currentMeasures, measureIdx, n, updated)
 
     store.setCurrent(newMeasures, currentKeyStr)
+    // The edit now IS the score: rebase the "original" on it. Otherwise a score
+    // edited while transposed would show 原调 for a score that is in another key,
+    // and the next transpose (which starts from originalMeasures) would throw the edit away.
+    store.setOriginal(newMeasures, currentKeyStr, originalTimeStr, originalTitleStr, originalTempoStr)
     store.setTransposeKey('')
     store.setPopupNote(null)
     // edit mode stays ON — user closes it manually
