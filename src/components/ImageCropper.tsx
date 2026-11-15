@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { computeCropRect, type Rect } from '@/lib/cropTools'
+import { computeCropRect, fitDisplaySize, scaleRect, type Rect } from '@/lib/cropTools'
+import { canvasToOcrFile } from '@/lib/pdfTools'
 
 interface ImageCropperProps {
   source: HTMLCanvasElement | File   // PDF page → canvas (rendered @2.0x); image → File
@@ -9,7 +10,8 @@ interface ImageCropperProps {
   onCancel: () => void
 }
 
-const MAX_W = 640
+const MAX_W = 640        // preview never gets wider than this, however big the screen
+const MIN_PREVIEW_W = 420 // ...and the height limit never squeezes it below this (the modal scrolls instead)
 const MINW = 60
 const MINH = 22
 
@@ -19,9 +21,12 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
   const [previewUrl, setPreviewUrl] = useState('')
   const [srcSize, setSrcSize] = useState({ w: 0, h: 0 })
   const [dispSize, setDispSize] = useState({ w: 0, h: 0 })
+  const [avail, setAvail] = useState({ w: 0, h: 0 })   // room for the preview, measured from the modal
   const [sel, setSel] = useState<Rect>({ x: 0, y: 0, w: 0, h: 0 })
   const [error, setError] = useState('')
   const drawRef = useRef<CanvasImageSource | null>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const prevDisp = useRef({ w: 0, h: 0 })
 
   // Resolve source → preview URL + natural size + a drawable for cropping
   useEffect(() => {
@@ -29,13 +34,9 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
     let objectUrl = ''
     const apply = (w: number, h: number, url: string) => {
       if (cancelled) return
-      const dw = Math.min(MAX_W, w)
-      const dh = Math.round((dw * h) / w)
+      prevDisp.current = { w: 0, h: 0 }   // new source → the fit effect starts over with the default box
       setPreviewUrl(url)
       setSrcSize({ w, h })
-      setDispSize({ w: dw, h: dh })
-      // default box: full width, a strip near the top (总谱 top row = 笛子)
-      setSel({ x: 6, y: 6, w: dw - 12, h: Math.max(MINH, Math.round(dh * 0.18)) })
     }
     if (source instanceof HTMLCanvasElement) {
       drawRef.current = source
@@ -49,6 +50,41 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
     }
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [source])
+
+  // Measure the room the preview actually has. A fixed 640px width overflowed
+  // 360–430px phones, and a tall PDF page ran far off-screen. Only mount and
+  // window resize/rotation re-measure (not a ResizeObserver): a scrollbar
+  // appearing would shrink the width, which re-fits, which toggles the
+  // scrollbar… the body reserves its scrollbar gutter for the same reason.
+  useEffect(() => {
+    const measure = () => {
+      const el = bodyRef.current
+      if (!el) return
+      const w = Math.max(0, el.clientWidth - 32)                         // body has 16px padding each side
+      const h = Math.max(160, Math.round(window.innerHeight * 0.92) - 190) // modal is ≤92vh; header + footer + hint ≈ 190px
+      setAvail((a) => (a.w === w && a.h === h ? a : { w, h }))
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
+
+  // (Re)fit the preview whenever the source or the available room changes. A
+  // re-fit keeps the box on the same part of the page; the very first fit draws
+  // the default box. computeCropRect later maps display → source pixels, so the
+  // display size can change freely without affecting crop accuracy.
+  useEffect(() => {
+    const d = fitDisplaySize(srcSize, Math.min(MAX_W, avail.w), avail.h, MIN_PREVIEW_W)
+    if (d.w === 0) return
+    const p = prevDisp.current
+    if (p.w === d.w && p.h === d.h) return
+    prevDisp.current = d
+    setDispSize(d)
+    setSel((cur) => p.w === 0
+      // default box: full width, a strip near the top (总谱 top row = 笛子)
+      ? { x: 6, y: 6, w: d.w - 12, h: Math.max(MINH, Math.round(d.h * 0.18)) }
+      : scaleRect(cur, p, d))
+  }, [srcSize, avail])
 
   function startDrag(e: React.PointerEvent, mode: DragMode) {
     e.preventDefault()
@@ -90,11 +126,9 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
     const ctx = out.getContext('2d')
     if (!ctx) { setError('裁剪失败'); return }
     ctx.drawImage(src, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h)
-    out.toBlob((b) => {
-      if (!b) { setError('裁剪失败'); return }
-      const base = source instanceof File ? source.name.replace(/\.[^.]+$/, '') : 'page'
-      onCrop(new File([b], `${base}_crop.png`, { type: 'image/png' }))
-    }, 'image/png')
+    const base = source instanceof File ? source.name.replace(/\.[^.]+$/, '') : 'page'
+    // PNG, or a smaller JPEG when the crop is huge — it must clear the 5 MB image limit
+    canvasToOcrFile(out, `${base}_crop`).then(onCrop).catch(() => setError('裁剪失败'))
   }
 
   const canCrop = sel.w >= MINW && sel.h >= MINH
@@ -122,17 +156,17 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
           <button onClick={onCancel} style={{ padding: '4px 12px', fontSize: 12, background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', borderRadius: 6, color: 'var(--color-muted)', cursor: 'pointer' }}>取消</button>
         </div>
 
-        <div style={{ padding: 16, overflow: 'auto' }}>
+        <div ref={bodyRef} style={{ padding: 16, overflow: 'auto', scrollbarGutter: 'stable' }}>
           {error && (
             <div style={{ padding: 12, marginBottom: 12, background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)', borderRadius: 6, color: 'var(--color-accent)', fontSize: 12 }}>{error}</div>
           )}
           <p style={{ fontSize: 11, color: 'var(--color-muted)', margin: '0 0 10px' }}>拖动红框移动，拖四角缩放。默认框住最上面一行（总谱里通常是笛子）。</p>
-          {previewUrl && (
-            <div style={{ position: 'relative', width: dispSize.w, maxWidth: '100%', margin: '0 auto', userSelect: 'none', touchAction: 'none', overflow: 'hidden', borderRadius: 8, border: '1px solid var(--color-border)' }}>
+          {previewUrl && dispSize.w > 0 && (
+            <div style={{ position: 'relative', width: dispSize.w, maxWidth: '100%', margin: '0 auto', userSelect: 'none', overflow: 'hidden', borderRadius: 8, border: '1px solid var(--color-border)' }}>
               <img src={previewUrl} width={dispSize.w} height={dispSize.h} draggable={false} style={{ display: 'block', width: dispSize.w, height: dispSize.h, background: '#fff' }} />
               <div
                 onPointerDown={(e) => { if (e.currentTarget === e.target) startDrag(e, 'move') }}
-                style={{ position: 'absolute', left: sel.x, top: sel.y, width: sel.w, height: sel.h, border: '2px solid var(--color-accent)', borderRadius: 2, cursor: 'move', boxShadow: '0 0 0 9999px rgba(20,15,10,0.42)' }}
+                style={{ position: 'absolute', left: sel.x, top: sel.y, width: sel.w, height: sel.h, border: '2px solid var(--color-accent)', borderRadius: 2, cursor: 'move', touchAction: 'none', boxShadow: '0 0 0 9999px rgba(20,15,10,0.42)' }}
               >
                 {handle('tl', 'tl', 'nwse-resize')}
                 {handle('tr', 'tr', 'nesw-resize')}

@@ -60,6 +60,45 @@ export async function pageToBlob(
   })
 }
 
+// Just under the 5 MB direct-image limit in useOcr. Pages and crops come from
+// our own canvas rather than a user upload, so one that is too big gets
+// re-encoded smaller instead of being rejected for a size the user never chose
+// (a dense scanned page at 2.0x, or a crop of a big photo, easily passes 5 MB as PNG).
+const OCR_SOFT_LIMIT = 4.5 * 1024 * 1024
+
+function canvasBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality))
+}
+
+/**
+ * Canvas → File for OCR. PNG when it fits; otherwise JPEG (0.9, then 0.75).
+ * The JPEG path flattens onto white first — JPEG has no alpha, and transparent
+ * pixels would turn black.
+ */
+export async function canvasToOcrFile(canvas: HTMLCanvasElement, baseName: string): Promise<File> {
+  const png = await canvasBlob(canvas, 'image/png')
+  if (!png) throw new Error('图片导出失败')
+  if (png.size <= OCR_SOFT_LIMIT) return new File([png], `${baseName}.png`, { type: 'image/png' })
+
+  const flat = document.createElement('canvas')
+  flat.width = canvas.width
+  flat.height = canvas.height
+  const ctx = flat.getContext('2d')
+  if (!ctx) throw new Error('图片导出失败')
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, flat.width, flat.height)
+  ctx.drawImage(canvas, 0, 0)
+
+  let jpg: Blob | null = null
+  for (const q of [0.9, 0.75]) {
+    jpg = await canvasBlob(flat, 'image/jpeg', q)
+    if (jpg && jpg.size <= OCR_SOFT_LIMIT) break
+  }
+  // Still over the limit (absurdly large page): hand it over anyway and let
+  // the size check say so, rather than failing silently here
+  return new File([jpg ?? png], `${baseName}.${jpg ? 'jpg' : 'png'}`, { type: jpg ? 'image/jpeg' : 'image/png' })
+}
+
 /** Convenience: rendered page → File the rest of the app can treat like a normal upload. */
 export async function pageToFile(
   pdf: PDFDocumentProxy,
@@ -67,7 +106,6 @@ export async function pageToFile(
   baseName: string,
   scale = 2.0,
 ): Promise<File> {
-  const blob = await pageToBlob(pdf, pageNum, scale)
-  const safeName = baseName.replace(/\.pdf$/i, '')
-  return new File([blob], `${safeName}_page${pageNum}.png`, { type: 'image/png' })
+  const canvas = await renderPageToCanvas(pdf, pageNum, scale)
+  return await canvasToOcrFile(canvas, `${baseName.replace(/\.pdf$/i, '')}_page${pageNum}`)
 }

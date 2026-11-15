@@ -27,6 +27,8 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
   // Route incoming files: PDFs open the page picker; images go straight to OCR.
   const routeFile = useCallback((file: File | null | undefined) => {
     if (!file) return
+    // The picture must not change under a run that is still waiting for its answer
+    if (useScoreStore.getState().isOcrAnalyzing) return
     if (isPdf(file)) {
       if (file.size > 20 * 1024 * 1024) {
         useScoreStore.getState().setOcrError('PDF 不能超过 20MB')
@@ -55,6 +57,7 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
+    if (isOcrAnalyzing) return
     routeFile(e.dataTransfer.files[0])
   }
 
@@ -133,20 +136,22 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
 
           {/* Image drop zone */}
           <div
-            onClick={() => inputRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+            onClick={() => { if (!isOcrAnalyzing) inputRef.current?.click() }}
+            onDragOver={(e) => { e.preventDefault(); if (!isOcrAnalyzing) setIsDragging(true) }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
-            className="rounded-lg border-2 border-dashed p-3 text-center cursor-pointer transition-colors"
+            aria-disabled={isOcrAnalyzing}
+            className={`rounded-lg border-2 border-dashed p-3 text-center transition-colors ${isOcrAnalyzing ? 'cursor-not-allowed' : 'cursor-pointer'}`}
             style={{
               borderColor: isDragging ? 'var(--color-accent)' : 'var(--color-border)',
               background: isDragging ? 'color-mix(in srgb, var(--color-accent) 8%, transparent)' : 'var(--color-surface-2)',
+              opacity: isOcrAnalyzing ? 0.5 : 1,
             }}
           >
             {ocrFile ? (
               <div className="text-xs space-y-0.5">
                 <div className="truncate font-medium">{ocrFile.name}</div>
-                <div style={{ color: 'var(--color-muted)' }}>点击更换图片</div>
+                <div style={{ color: 'var(--color-muted)' }}>{isOcrAnalyzing ? '识别中，请稍候…' : '点击更换图片'}</div>
               </div>
             ) : (
               <div className="text-xs space-y-0.5" style={{ color: 'var(--color-muted)' }}>
@@ -158,7 +163,8 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
           <input
             ref={inputRef}
             type="file"
-            accept="image/*,application/pdf,.pdf"
+            accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf"
+            disabled={isOcrAnalyzing}
             className="hidden"
             onChange={handleInputChange}
             onClick={(e) => { (e.target as HTMLInputElement).value = '' }}
