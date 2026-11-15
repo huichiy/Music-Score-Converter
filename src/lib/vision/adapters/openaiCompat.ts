@@ -4,7 +4,7 @@
 
 import type { OcrMode, VisionAdapter } from '../types'
 import { systemPromptFor, userPromptFor } from '../prompts'
-import { blobToBase64, unwrapModeError } from '../utils'
+import { blobToBase64, extractOpenAIText, unwrapModeError } from '../utils'
 
 interface OpenAICompatOpts {
   name: string
@@ -57,9 +57,8 @@ export function createOpenAICompatAdapter(opts: OpenAICompatOpts): VisionAdapter
         throw new Error(msg)
       }
 
-      const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> }
-      const text = data.choices?.[0]?.message?.content?.trim() || '（无输出）'
-      return unwrapModeError(text)
+      // finish_reason length / content_filter and empty replies throw a friendly error
+      return unwrapModeError(extractOpenAIText(await res.json()))
     },
   }
 }

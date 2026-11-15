@@ -36,7 +36,7 @@ export const DEFAULT_MODELS: Record<OcrProvider, string> = {
   auto:      'gemini-2.5-flash',                   // worker resolves this anyway
   groq:      'meta-llama/llama-4-scout-17b-16e-instruct',
   gemini:    'gemini-2.5-flash',
-  anthropic: 'claude-3-5-sonnet-20241022',
+  anthropic: 'claude-sonnet-5-5',
   openai:    'gpt-4o-mini',
   custom:    'gpt-4o-mini',
 }
@@ -55,19 +55,19 @@ export const MODEL_OPTIONS: Record<OcrProvider, { id: string; label: string; not
   gemini: [
     { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: '1500 req/day 免费' },
     { id: 'gemini-2.5-pro',   label: 'Gemini 2.5 Pro',   note: '更强，需付费额度（免费档无 Pro 配额）' },
-    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', note: '备用' },
   ],
   anthropic: [
-    { id: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet', note: '中文表现极佳' },
-    { id: 'claude-3-5-haiku-20241022',  label: 'Claude 3.5 Haiku',  note: '便宜，速度快' },
+    { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', note: '中文表现极佳' },
+    { id: 'claude-haiku-5-5',  label: 'Claude Haiku 5.5',  note: '便宜，速度快' },
   ],
   openai: [
     { id: 'gpt-4o-mini', label: 'GPT-4o mini', note: '便宜版' },
     { id: 'gpt-4o',      label: 'GPT-4o',      note: '完整版' },
   ],
-  custom: [
-    { id: 'gpt-4o-mini', label: '默认（gpt-4o-mini 形式）' },
-  ],
+  // Custom endpoints (OpenRouter, Together, self-hosted…) use arbitrary model
+  // ids such as `openai/gpt-4o-mini`, so the Settings UI shows a free-text
+  // input instead of a list.
+  custom: [],
 }
 
 /** Where we store the user's BYOK config in the browser. Keys never leave this device. */
