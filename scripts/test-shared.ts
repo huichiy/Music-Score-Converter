@@ -6,6 +6,7 @@ import { classifyDirection } from '../src/lib/directions'
 import { parseMeter, barBeatsOf } from '../src/lib/meter'
 import { HEADER_LINE_RE, cleanTitle, parseHeaderLine } from '../src/lib/textHeader'
 import { tupletFactor } from '../src/lib/renderer'
+import { slurPairs } from '../src/lib/slurs'
 import { buildPlaybackEvents, expandRepeats } from '../src/lib/playback'
 import { isUnpitched } from '../src/types/score'
 import type { Measure, MeasureArray, NoteObject } from '../src/types/score'
@@ -86,6 +87,18 @@ describe('parseHeaderLine', () => {
 describe('tupletFactor: powers of two are compound-meter groups', () => {
   assertEq('2 3 4 5 6 7 8', [2, 3, 4, 5, 6, 7, 8].map(n => +tupletFactor(n).toFixed(4)), [1.5, 0.6667, 0.75, 0.8, 0.6667, 0.5714, 0.75])
   assertEq('a 4:3 group fills three eighths', 4 * 0.5 * tupletFactor(4), 1.5)
+})
+
+describe('slurPairs: only slurs that can be drawn', () => {
+  const n = (d: number, p: Partial<NoteObject> = {}) => note({ degree: d, ...p })
+  const pairs = (...ms: NoteObject[][]) => [...slurPairs(ms.map(m => measure(m)))].map(([a, b]) => `${a.degree}-${b.degree}`)
+  assertEq('a plain slur', pairs([n(1, { slurStart: true }), n(2), n(3, { slurStop: true })]), ['1-3'])
+  assertEq('across a barline', pairs([n(1, { slurStart: true })], [n(2, { slurStop: true })]), ['1-2'])
+  assertEq('chained on one note', pairs([n(1, { slurStart: true }), n(2, { slurStart: true, slurStop: true }), n(3, { slurStop: true })]), ['1-2', '2-3'])
+  assertEq('a start that never closes is not a slur', pairs([n(1, { slurStart: true }), n(2), n(3)]), [])
+  assertEq('…and does not swallow the next one', pairs([n(1, { slurStart: true }), n(2)], [n(3, { slurStart: true }), n(4, { slurStop: true })]), ['3-4'])
+  assertEq('a stop with no start is nothing', pairs([n(1), n(2, { slurStop: true })]), [])
+  assertEq('rests carry no slur', pairs([n(1, { slurStart: true }), n(0, { rest: true, slurStop: true }), n(3)]), [])
 })
 
 describe('Unpitched notes', () => {

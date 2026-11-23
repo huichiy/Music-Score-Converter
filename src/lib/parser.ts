@@ -173,9 +173,13 @@ const staffOf = (n: Element) => n.getElementsByTagName('staff')[0]?.textContent?
 const voiceOf = (n: Element) => n.getElementsByTagName('voice')[0]?.textContent?.trim() || ''
 const isCue = (n: Element) => n.getElementsByTagName('cue').length > 0
 
-export function parseXMLToNoteObjects(xmlDoc: Document): MeasureArray[] {
+// `fallbackKeyStr`: the key for a part that has no key signature of its own. It must be the
+// one the header shows, or the degrees count from a different 1 than the label says
+export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): MeasureArray[] {
   const fifthsNodes = xmlDoc.getElementsByTagName('fifths')
-  let keyStr = (fifthsNodes.length > 0 && keyMap[parseInt(fifthsNodes[0].textContent!).toString()]) || 'C'
+  let keyStr = fifthsNodes.length > 0
+    ? keyMap[parseInt(fifthsNodes[0].textContent!).toString()] || 'C'
+    : fallbackKeyStr
   // Meter in force; a later <time> that differs becomes the measure's _timeSig
   let timeStr = ''
   const firstTime = xmlDoc.getElementsByTagName('time')[0]
