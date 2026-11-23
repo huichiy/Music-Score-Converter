@@ -80,13 +80,15 @@ export function restRunStart(measures: Measure[], i: number): number {
   return s
 }
 
-// Tuplet duration correction: N notes in the time of pow2floor(N) (duplet: 2 in 3)
+// Tuplet duration correction: N notes in the time of pow2floor(N). A power of two can't
+// be that (4 in the time of 4 is no tuplet): those belong to compound meter, where a
+// duplet is 2 in the time of 3, a quadruplet 4 in 3, an octuplet 8 in 6
 export function tupletFactor(n: number | undefined): number {
   if (!n || n < 2) return 1
   if (n === 2) return 3 / 2
   let p = 1
   while (p * 2 <= n) p *= 2
-  return p / n
+  return p === n ? 3 / 4 : p / n
 }
 
 function getBeamingLines(type: string): number {

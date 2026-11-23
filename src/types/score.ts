@@ -13,7 +13,7 @@ export interface GraceNote {
 }
 
 export interface NoteObject {
-  degree: number
+  degree: number          // 1–7; 0 = rest, or an unpitched hit (percussion, drawn X) when `rest` is false
   octave: number
   type: 'whole' | 'half' | 'quarter' | 'eighth' | '16th' | '32nd'
   dot: boolean
@@ -26,6 +26,12 @@ export interface NoteObject {
   articulation?: Articulation
   graceNote?: GraceNote | null
   tuplet?: number
+  tupletLen?: number      // on a tuplet group's FIRST note, when the group isn't `tuplet` notes long: how many it has (quarter + eighth triplet = 2)
+}
+
+/** Percussion hit with no pitch (MusicXML <unpitched>): written X in Jianpu, has a length but no degree. */
+export function isUnpitched(n: NoteObject): boolean {
+  return !n.rest && !n.tie && n.degree === 0
 }
 
 export interface MeasureArray extends Array<NoteObject> {
@@ -37,6 +43,7 @@ export interface MeasureArray extends Array<NoteObject> {
   _volta?: number
   _timeSig?: string
   _key?: string          // mid-piece key change: degrees from this measure on are relative to this key, e.g. 'D'
+  _pickup?: boolean      // 弱起: an incomplete first measure, drawn but not counted in the measure numbers
 }
 
 export interface MultiRestBlock {

@@ -12,27 +12,11 @@ import type { Measure, MeasureArray, MultiRestBlock } from '@/types/score'
 import { noteToMidi } from './parser'
 import { tupletFactor } from './renderer'
 import { computeOrigIdxMap, durationBeats } from './editor'
+import { classifyDirection } from './directions'
+import { barBeatsOf } from './meter'
 
 /** One measure occurrence in performance order; `measureIdx` indexes the ORIGINAL array. */
 export interface ExpandedEntry { measureIdx: number }
-
-type DirectionKind = 'fine' | 'dc' | 'ds' | 'segno' | null
-
-/**
- * Classify a measure's `_direction` text. Matching is by case-insensitive
- * prefix because MusicXML keeps the raw words ("D.C. al Fine", "D.S. al Coda")
- * while Route B only ever produces "Fine" / "D.C." / "D.S.". `Coda` / `To Coda`
- * are deliberately not recognised (see expandRepeats).
- */
-function classifyDirection(direction: string | undefined): DirectionKind {
-  const d = (direction ?? '').trim().toLowerCase()
-  if (!d) return null
-  if (/^fine\b/.test(d)) return 'fine'
-  if (/^(d\.\s*c\.?|da\s+capo)/.test(d)) return 'dc'
-  if (/^(d\.\s*s\.?|dal\s+segno)/.test(d)) return 'ds'
-  if (/^segno\b/.test(d)) return 'segno'
-  return null
-}
 
 /**
  * Unroll `|:` / `:|` repeats, `{N}` voltas and a D.C. / D.S. jump into
@@ -160,16 +144,6 @@ export interface PlaybackEvent {
 /** Grace note (倚音) length, taken from the front of its main note. */
 export const GRACE_BEATS = 0.125
 
-/** Bar length in quarter notes (event times are quarters), matching the
- *  renderer's beatUnit = 4 / denominator convention. The raw numerator only
- *  agrees with this when the denominator is 4. */
-function barBeatsOf(time: string): number {
-  const [numStr, denStr] = time.split('/')
-  const num = parseInt(numStr) || 4
-  const den = parseInt(denStr) || 4
-  return (num * 4) / den
-}
-
 /**
  * Turn performance order into timed events.
  *
@@ -246,6 +220,12 @@ export function buildPlaybackEvents(
         for (const ev of events) {
           if (Math.abs(ev.startBeat + ev.durBeats - beat) < 1e-6) ev.durBeats += dur
         }
+        beat += dur
+        continue
+      }
+
+      // Unpitched percussion (X): there is no pitch to sound, but time still moves
+      if (noteObj.degree === 0) {
         beat += dur
         continue
       }

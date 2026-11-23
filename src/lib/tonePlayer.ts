@@ -33,7 +33,13 @@ type ToneModule = typeof import('tone')
 let tonePromise: Promise<ToneModule> | null = null
 
 async function ensureTone(): Promise<ToneModule> {
-  if (!tonePromise) tonePromise = import('tone')
+  if (!tonePromise) {
+    tonePromise = import('tone').catch((e) => {
+      // Offline once must not mean broken until reload: let the next press try again
+      tonePromise = null
+      throw e
+    })
+  }
   return await tonePromise
 }
 
