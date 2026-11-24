@@ -1,6 +1,6 @@
 import type { Articulation, ChordNote, GraceNote, Measure, MeasureArray, NoteObject } from '@/types/score'
 import { isUnpitched } from '../types/score'
-import { isCollapsibleRest, isWholeRestMeasure, restRunStart, tupletFactor } from './renderer'
+import { blockLengthOf, isCollapsibleRest, isWholeRestMeasure, restRunStart, tupletFactor } from './renderer'
 import { classifyDirection } from './directions'
 import { barBeatsOf } from './meter'
 import { slurPairs } from './slurs'
@@ -17,8 +17,8 @@ export function computeOrigIdxMap(measures: Measure[]): Map<number, number> {
   let i = 0
   while (i < measures.length) {
     const m = measures[i]
-    if (!Array.isArray(m) && (m as { _multiRest?: number })._multiRest !== undefined) {
-      origIdx += (m as { _multiRest: number })._multiRest
+    if (!Array.isArray(m)) {
+      origIdx += blockLengthOf(m)
       i++
       continue
     }
@@ -414,7 +414,7 @@ const VOLTA_AT = /\{\d+\}/y
 /**
  * A chunk that is ENTIRELY notes written without spaces (`1234`, `1/2/`, `#1b2'`), cut into
  * those notes with their offsets in the chunk. Null when any part of it is not a note: such
- * a chunk keeps its old reading (first note only, or ignored), so `4/4` stays a single 4.
+ * a chunk keeps its old reading (first note only, or ignored), so `6/8` stays a single 6.
  */
 function splitGluedNotes(chunk: string): { text: string; start: number; end: number }[] | null {
   const out: { text: string; start: number; end: number }[] = []
@@ -439,6 +439,16 @@ function tupletNumberEnd(text: string, from: number): number {
   return j >= text.length || /[\s:]/.test(text[j]) ? j : from + 1
 }
 
+// Where a closing barline's direction tag (`&fine`) ends, or `from` when there is none. Only
+// the known tags belong to the barline: in `:|&mf 1 2` the `&mf` is the next bar's dynamic.
+const DIRECTION_OF_TAG: Record<string, string> = { fine: 'Fine', dc: 'D.C.', ds: 'D.S.', segno: 'Segno' }
+const DIRECTION_TAG_AT = /&([a-zA-Z]+)/y
+function directionTagEnd(text: string, from: number): number {
+  DIRECTION_TAG_AT.lastIndex = from
+  const m = DIRECTION_TAG_AT.exec(text)
+  return m && DIRECTION_OF_TAG[m[1]] ? from + m[0].length : from
+}
+
 function tokenize(text: string, offset: number = 0): TokenWithPos[] {
   const tokens: TokenWithPos[] = []
   const push = (tok: string, start: number, end: number) => tokens.push({ tok, start: start + offset, end: end + offset })
@@ -450,15 +460,9 @@ function tokenize(text: string, offset: number = 0): TokenWithPos[] {
     // Barlines
     if (ch === '|') {
       if (text[i + 1] === '|') {
-        if (text[i + 2] === '&') {
-          let j = i + 2
-          while (j < text.length && !/\s/.test(text[j])) j++
-          push(text.slice(i, j), i, j)
-          i = j
-        } else {
-          push('||', i, i + 2)
-          i += 2
-        }
+        const j = directionTagEnd(text, i + 2)
+        push(text.slice(i, j), i, j)
+        i = j
       } else if (text[i + 1] === ':') {
         push('|:', i, i + 2)
         i += 2
@@ -470,11 +474,7 @@ function tokenize(text: string, offset: number = 0): TokenWithPos[] {
     }
     if (ch === ':' && text[i + 1] === '|') {
       // `:|&fine`: a repeat end that also carries a direction is one token
-      let j = i + 2
-      if (text[j] === '&') {
-        j++
-        while (j < text.length && /[a-zA-Z]/.test(text[j])) j++
-      }
+      const j = directionTagEnd(text, i + 2)
       push(text.slice(i, j), i, j)
       i = j
       continue
@@ -584,8 +584,6 @@ function applyClose(m: MeasureArray, close?: Close) {
   if (close?.repeat) m._repeatEnd = true
   if (close?.direction) m._direction = close.direction
 }
-
-const DIRECTION_OF_TAG: Record<string, string> = { fine: 'Fine', dc: 'D.C.', ds: 'D.S.', segno: 'Segno' }
 
 export function parseFromText(
   text: string,

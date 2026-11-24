@@ -452,8 +452,8 @@ function planLines(widths: ItemWidth[], available: number, perLine: number): Lin
 
 // How many measures a multi-rest block stands for. Every non-array measure is such a block, so
 // bad data ({ _multiRest: 0 }, a negative, NaN, a missing field) is a block of no length, not a
-// crash. editor.ts's computeOrigIdxMap adds the same max(0, N) to its data-m count.
-function blockLengthOf(m: Measure): number {
+// crash. editor.ts's computeOrigIdxMap imports this for its data-m count.
+export function blockLengthOf(m: Measure): number {
   const n = (m as { _multiRest?: unknown } | null)?._multiRest
   return typeof n === 'number' && Number.isFinite(n) ? Math.max(0, n) : 0
 }
@@ -481,7 +481,8 @@ export function renderJianpuSVG(
   // Mutable: a measure's _timeSig switches the meter from that measure on
   let meter = parseMeter(timeStr)
   let beamGroup = beamGroupLength(meter.beats, meter.beatType)
-  const timeSigWidth = 24
+  // Room for a mid-piece time signature label: "3/4" takes 24px, "12/8" ran into the first note
+  const timeSigWidthOf = (ts: string | undefined) => ts ? 24 + Math.max(0, ts.length - 3) * 8 : 0
   // "1=D" label for a mid-piece key change, drawn before the measure like the time sig
   const keySigWidth = 32
   const maxWidth = Math.max(RENDER_CONFIG.minWidth, containerWidth - RENDER_CONFIG.padding)
@@ -524,7 +525,7 @@ export function renderJianpuSVG(
     }
     return {
       flex: m.reduce((sum, note) => sum + noteWidthOf(note), 0),
-      fixed: (m._timeSig ? timeSigWidth : 0) + (m._key ? keySigWidth : 0)
+      fixed: timeSigWidthOf(m._timeSig) + (m._key ? keySigWidth : 0)
         + (m._repeatStart ? RENDER_CONFIG.repeatSignWidth : 0),
     }
   }
@@ -599,7 +600,7 @@ export function renderJianpuSVG(
 
     let measureWidth = 0
     for (const note of measureArr) measureWidth += noteWidthOf(note)
-    if (measureArr._timeSig) measureWidth += timeSigWidth
+    measureWidth += timeSigWidthOf(measureArr._timeSig)
     if (measureArr._key) measureWidth += keySigWidth
 
     if (plan ? plan.lineStart[i] && i > 0 : currentX + measureWidth > maxWidth && currentX > startX) wrapLine()
@@ -615,7 +616,7 @@ export function renderJianpuSVG(
 
     if (measureArr._timeSig) {
       svgElements.push(`<text x="${currentX + 2}" y="${currentY}" font-family="${FONT_FAMILY}" font-size="13" font-weight="600" fill="${svgColor}">${escapeSVG(measureArr._timeSig)}</text>`)
-      currentX += timeSigWidth
+      currentX += timeSigWidthOf(measureArr._timeSig)
     }
 
     if (measureArr._repeatStart) {

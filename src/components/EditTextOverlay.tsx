@@ -16,7 +16,7 @@ const GUIDE_SECTIONS: { label: string; items: [string, string][] }[] = [
       ['Key: G', '调号，G / Bb / ♭B / 1=G 都行'],
       ['Time: 3/4', '拍号'],
       ['Tempo: 96', '速度，♩=96 也行'],
-      ['key: g', '字段名不分大小写'],
+      ['key: G', '字段名不分大小写'],
     ],
   },
   {

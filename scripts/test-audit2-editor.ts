@@ -4,7 +4,7 @@
 // Run via: npx tsx scripts/test-audit2-editor.ts
 
 import {
-  serializeToText, parseFromText, withNoteEdited, editedNote, measureIdxFromOrigIdx,
+  serializeToText, parseFromText, withNoteEdited, editedNote, measureIdxFromOrigIdx, computeOrigIdxMap,
 } from '../src/lib/editor'
 import { renderJianpuSVG } from '../src/lib/renderer'
 import { isUnpitched } from '../src/types/score'
@@ -316,6 +316,22 @@ describe('13. editedNote', () => {
   assertEq('withNoteEdited uses it', edited[1], note({ degree: 0, rest: true }))
   assertEq('…and leaves the original alone', (m[1] as NoteObject).tie, true)
   assertEq('…and the measure marks', [edited._repeatEnd, edited._wedge], [false, null])
+})
+
+describe('Review: only known tags belong to a closing barline', () => {
+  const p = (t: string) => parseFromText(`Key: C   Time: 4/4\n${t}`).measures as MeasureArray[]
+  const rep = p('|: 1 2 3 4 :|&mf 5 6 7 1 ||')
+  assertEq(':|&mf is a repeat end, and mf belongs to the next bar', [rep[0]._repeatEnd, rep[0]._dynamic, rep[1]._dynamic], [true, '', 'mf'])
+  const dbl = p('| 1 2 3 4 ||&ff 5 6 7 1 ||')
+  assertEq('||&ff likewise', [dbl[0]._direction, dbl[1]._dynamic], ['', 'ff'])
+  const glued = p('| 1 2 3 4 ||&fine| 5 6 7 1 :|&dc| 1 ||')
+  assertEq('a tag glued to the next barline is still read', [glued[0]._direction, glued[1]._direction, glued[1]._repeatEnd], ['Fine', 'D.C.', true])
+})
+
+describe('Review: a block of no length takes no data-m', () => {
+  const b = (n: number) => ({ _multiRest: n }) as unknown as Measure
+  const bar = parseFromText('| 1 2 3 4 | 5 6 7 1 |').measures[0]
+  assertEq('negative, NaN and 0 count as nothing, like the renderer', [0, -3, NaN, 2].map(n => computeOrigIdxMap([bar, b(n), bar]).get(2)), [1, 1, 1, 3])
 })
 
 // ============================================================================
