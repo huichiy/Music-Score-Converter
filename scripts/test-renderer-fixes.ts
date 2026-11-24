@@ -250,9 +250,10 @@ describe('8. Compound meters beam in groups of three eighths', () => {
   assertEq('4/4 measure pairs, then 6/8 measure triples', joined(midSegs).slice(0, 4), [true, false, true, false])
   assertEq('6/8 measure after the switch', joined(midSegs).slice(4), [true, true, false, true, true])
 
-  // Whole-bar rest keeps one 0 per numerator beat
+  // Whole-bar rest: one symbol per beat of the meter. 6/8 beats are dotted quarters, so two
+  // dotted 0s (it used to be six plain ones, as if 6/4) — see test-audit2-renderer.ts item 13
   const rest68 = render([wholeRest()], '6/8')
-  assertEq('6/8 whole rest still draws six 0s', (rest68.match(/>0<\/text>/g) || []).length, 6)
+  assertEq('6/8 whole rest draws two dotted 0s', (rest68.match(/>0<\/text>/g) || []).length, 2)
 })
 
 describe('9/10. Rest highlight indices: editor and renderer agree', () => {
