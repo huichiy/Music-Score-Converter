@@ -20,7 +20,7 @@ interface OpenAICompatOpts {
   /**
    * Output cap. Default `max_tokens: 8192` — a dense score needs ~1-2k output
    * tokens, but thinking models count their thinking against the cap too.
-   * OpenAI's current models reject `max_tokens` and want `max_completion_tokens`.
+   * OpenAI deprecates `max_tokens` in favour of `max_completion_tokens`.
    */
   tokenLimit?: { field: 'max_tokens' | 'max_completion_tokens'; value: number }
   /** Default 0. `null` omits it (OpenAI's reasoning models take no sampling parameters). */

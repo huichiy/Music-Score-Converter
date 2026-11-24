@@ -229,12 +229,12 @@ export function normalizeOcrText(raw: string): string {
   }).join('\n').trim()
 }
 
-/** Split Route B text into header lines + body, mirroring parseFromText (headers = within the first 4 lines). */
+/** Split Route B text into header lines + body, mirroring parseFromText (up to 4 header lines at the top, blank lines not counted). */
 function splitHeader(text: string): { header: string[]; body: string } {
   const lines = text.split('\n')
   const header: string[] = []
   let end = 0
-  for (let i = 0; i < Math.min(4, lines.length); i++) {
+  for (let i = 0; i < lines.length && header.length < 4; i++) {
     if (HEADER_LINE_RE.test(lines[i])) { header.push(lines[i]); end = i + 1 }
     else if (lines[i].trim() === '') continue
     else break

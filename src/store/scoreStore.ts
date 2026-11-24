@@ -47,6 +47,7 @@ interface ScoreStore {
 
   // OCR
   ocrFile: File | null
+  ocrSource: File | null   // the whole picture ocrFile was cropped from (ocrFile itself when it is no crop)
   isOcrAnalyzing: boolean
   ocrError: string
   ocrMode: 'jianpu' | 'western'
@@ -80,7 +81,7 @@ interface ScoreStore {
   setEditModeA: (on: boolean) => void
   setPopupNote: (note: { m: number; n: number; note: NoteObject } | null) => void
   setEditTextVisible: (v: boolean) => void
-  setOcrFile: (file: File | null) => void
+  setOcrFile: (file: File | null, source?: File) => void
   setIsOcrAnalyzing: (v: boolean) => void
   setOcrError: (msg: string) => void
   setOcrMode: (mode: 'jianpu' | 'western') => void
@@ -113,6 +114,7 @@ const initialState = {
   popupNote: null,
   editTextVisible: false,
   ocrFile: null,
+  ocrSource: null,
   isOcrAnalyzing: false,
   ocrError: '',
   ocrMode: 'jianpu' as const,
@@ -142,7 +144,7 @@ export const useScoreStore = create<ScoreStore>()((set) => ({
   setEditModeA: (on) => set({ editModeA: on }),
   setPopupNote: (note) => set({ popupNote: note }),
   setEditTextVisible: (v) => set({ editTextVisible: v }),
-  setOcrFile: (file) => set({ ocrFile: file }),
+  setOcrFile: (file, source) => set({ ocrFile: file, ocrSource: file ? source ?? file : null }),
   setIsOcrAnalyzing: (v) => set({ isOcrAnalyzing: v }),
   setOcrError: (msg) => set({ ocrError: msg }),
   setOcrMode: (mode) => set({ ocrMode: mode }),

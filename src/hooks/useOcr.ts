@@ -5,7 +5,6 @@ import {
   normalizeOcrText, extractOcrError, mergeOcrResults, ocrMergeBase, resolveOcrImageType,
   type MergeRecord,
 } from '@/lib/vision/utils'
-import { rememberCropSource } from '@/lib/cropTools'
 
 // Identifies the latest OCR run. A run only writes its result if it is still
 // the latest AND its file is still the selected one — otherwise the user has
@@ -36,8 +35,8 @@ export function useOcr() {
 
   /**
    * Select `file` for OCR. `source` is the whole picture a crop was cut from
-   * (see cropTools.cropSourceOf): 框选区域 opens on it again, so cropping a
-   * second row never means cropping the first crop.
+   * (store: ocrSource): 框选区域 opens on it again, so cropping a second row
+   * never means cropping the first crop.
    */
   const handleOcrFile = useCallback((file: File | null, source?: File) => {
     if (!file) return
@@ -50,8 +49,7 @@ export function useOcr() {
     if (file.size > 5 * 1024 * 1024) { store.setOcrError('图片不能超过 5MB'); return }
     // Some browsers give an empty type; adapters read file.type, so make it explicit
     const stored = file.type === type ? file : new File([file], file.name, { type })
-    if (source && source !== stored) rememberCropSource(stored, source)
-    store.setOcrFile(stored)
+    store.setOcrFile(stored, source)
     store.setOcrError('')
   }, [store])
 

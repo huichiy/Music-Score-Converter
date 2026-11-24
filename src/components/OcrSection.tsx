@@ -2,7 +2,6 @@ import { useRef, useState, useCallback } from 'react'
 import { useScoreStore } from '@/store/scoreStore'
 import { useOcr } from '@/hooks/useOcr'
 import { parseFromText } from '@/lib/editor'
-import { cropSourceOf } from '@/lib/cropTools'
 import PdfPagePicker from './PdfPagePicker'
 import ImageCropper from './ImageCropper'
 import OcrSettings from './OcrSettings'
@@ -58,7 +57,7 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
   const setOcrResult = useScoreStore((s) => s.setOcrResult)
   // The whole picture 框选区域 opens on. After a crop, ocrFile is only the strip;
   // cropping that again would shrink it further instead of picking another row.
-  const cropBase = ocrFile ? cropSourceOf(ocrFile) : null
+  const cropBase = useScoreStore((s) => s.ocrSource)
   const isCrop = !!ocrFile && cropBase !== ocrFile
 
   const handleDrop = (e: React.DragEvent) => {

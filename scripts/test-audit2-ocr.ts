@@ -16,7 +16,6 @@ import { createGroqAdapter } from '../src/lib/vision/adapters/groq'
 import { createOpenAIAdapter } from '../src/lib/vision/adapters/openai'
 import { createCustomAdapter } from '../src/lib/vision/adapters/custom'
 import { createWorkerAdapter } from '../src/lib/vision/adapters/worker'
-import { rememberCropSource, cropSourceOf } from '../src/lib/cropTools'
 import { parseFromText } from '../src/lib/editor'
 import worker, {
   pickModel, clampMaxTokens, DEFAULT_MODEL, ALLOWED_MODELS, MAX_OUTPUT_TOKENS, type Env,
@@ -385,20 +384,6 @@ describe('item 13: prompts', () => {
     eq(`${name}: tokens are separated by spaces`, name === 'jianpu' ? p.includes('一律用空格隔开') : p.includes('always separated by spaces'), true)
     eq(`${name}: still no underscores`, p.includes('_'), false)
   }
-})
-
-// ── 6. crop source ─────────────────────────────────────────────────────────
-
-describe('item 6: a crop remembers the picture it came from', () => {
-  const whole = new File(['w'], 'score.png', { type: 'image/png' })
-  const crop1 = new File(['1'], 'score_crop.png', { type: 'image/png' })
-  const crop2 = new File(['2'], 'score_crop.png', { type: 'image/png' })
-  eq('a file nobody cropped is its own source', cropSourceOf(whole), whole)
-  rememberCropSource(crop1, whole)
-  eq('a crop points at the whole picture', cropSourceOf(crop1), whole)
-  rememberCropSource(crop2, crop1)
-  eq('a crop of a crop still points at the original', cropSourceOf(crop2), whole)
-  eq('the original is unchanged', cropSourceOf(whole), whole)
 })
 
 // ── run ────────────────────────────────────────────────────────────────────

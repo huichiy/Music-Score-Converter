@@ -44,22 +44,6 @@ export function fitDisplaySize(source: Size, maxW: number, maxH: number, minW = 
   return { w: Math.max(1, Math.round(source.w * scale)), h: Math.max(1, Math.round(source.h * scale)) }
 }
 
-// Which whole picture a cropped file was cut from. Keyed by the File object
-// itself, so it follows the store's `ocrFile` through remounts (leaving the
-// tool layer unmounts the sidebar) and goes away with the file — picking
-// another picture or resetting needs no bookkeeping.
-const cropSources = new WeakMap<File, File>()
-
-/** Remember that `crop` was cut from `source`. A crop of a crop points at the original. */
-export function rememberCropSource(crop: File, source: File): void {
-  cropSources.set(crop, cropSources.get(source) ?? source)
-}
-
-/** The picture 框选区域 should open on: the original a crop came from, or the file itself. */
-export function cropSourceOf(file: File): File {
-  return cropSources.get(file) ?? file
-}
-
 /** Carry a selection over when the preview is re-fitted (rotation, resize) so the box keeps covering the same part of the page. */
 export function scaleRect(sel: Rect, from: Size, to: Size): Rect {
   if (from.w <= 0 || from.h <= 0) return sel
