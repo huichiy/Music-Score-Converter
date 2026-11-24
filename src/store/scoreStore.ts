@@ -2,6 +2,14 @@ import { create } from 'zustand'
 import type { Measure, NoteObject } from '@/types/score'
 import { loadMeasuresPerLine } from '@/lib/layoutPrefs'
 
+// What a finished load (or a part change, or text import) replaces. Applied in one `set`,
+// so no subscriber ever sees the new measures next to the old part list or key.
+type ScoreCore = Pick<ScoreStore,
+  'originalMeasures' | 'originalKeyStr' | 'originalTimeStr' | 'originalTitleStr' | 'originalTempoStr' |
+  'currentMeasures' | 'currentKeyStr' | 'transposeKey'>
+export type ScorePatch = ScoreCore & Partial<Pick<ScoreStore,
+  'currentFile' | 'parsedXmlDoc' | 'partNames' | 'selectedPartIdx' | 'showPartSelector' | 'showAutoDetect' | 'matchedMyPart'>>
+
 interface ScoreStore {
   // File
   currentFile: File | null
@@ -58,6 +66,7 @@ interface ScoreStore {
     tempoStr: string,
   ) => void
   setCurrent: (measures: Measure[], keyStr: string) => void
+  commitScore: (patch: ScorePatch) => void
   setPartNames: (names: string[]) => void
   setSelectedPartIdx: (idx: number) => void
   setShowPartSelector: (v: boolean) => void
@@ -119,6 +128,7 @@ export const useScoreStore = create<ScoreStore>()((set) => ({
   setOriginal: (measures, keyStr, timeStr, titleStr, tempoStr) =>
     set({ originalMeasures: measures, originalKeyStr: keyStr, originalTimeStr: timeStr, originalTitleStr: titleStr, originalTempoStr: tempoStr }),
   setCurrent: (measures, keyStr) => set({ currentMeasures: measures, currentKeyStr: keyStr }),
+  commitScore: (patch) => set({ ...patch, isConverted: true, errorMsg: '' }),
   setPartNames: (names) => set({ partNames: names }),
   setSelectedPartIdx: (idx) => set({ selectedPartIdx: idx }),
   setShowPartSelector: (v) => set({ showPartSelector: v }),
