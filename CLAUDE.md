@@ -414,6 +414,22 @@ If a section of CLAUDE.md ever contradicts the actual code, **fix the doc, not t
 
 ---
 
+## Agent skills
+
+### Issue tracker
+
+Local markdown under `.scratch/`, committed to git. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default roles, written as the `Status:` line of each ticket. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+---
+
 ## Commit Convention
 ```
 type(scope): description
