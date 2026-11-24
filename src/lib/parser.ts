@@ -173,6 +173,67 @@ const staffOf = (n: Element) => n.getElementsByTagName('staff')[0]?.textContent?
 const voiceOf = (n: Element) => n.getElementsByTagName('voice')[0]?.textContent?.trim() || ''
 const isCue = (n: Element) => n.getElementsByTagName('cue').length > 0
 
+// A pitched <note> as the chord machinery needs it: the Jianpu pitch, the absolute
+// semitone (to find the highest member and to compare ties) and the note's own tie flags
+interface ChordMember { pitch: ChordNote; semi: number; tieStop: boolean; tieStart: boolean }
+
+// One slur drawn from `note` (slurStart) until it is stopped. `dead` = cancelled by a
+// slur that starts later while this one was open: the model draws one arc at a time.
+interface SlurArc { note: NoteObject; stopped: boolean; dead: boolean }
+interface SlurEvent { type: 'start' | 'stop'; number: string }
+
+// The kept-voice note being read: a chord stays open until the next note (or the end of
+// the measure) so its members can be sorted before anything is written
+interface PendingNote {
+  rest: boolean
+  pieces: Array<{ type: NoteObject['type']; dot: boolean }>   // more than one → tied pieces
+  members: ChordMember[]
+  firstTieStop: boolean       // for rests and unpitched hits, which have no members
+  tuplet: number | undefined
+  articulation: Articulation | undefined
+  grace: GraceNote | null
+  slurEvents: SlurEvent[]
+}
+
+/** Position differences below this many quarters are rounding, not music */
+const TIMELINE_EPS = 0.1
+
+const durationOf = (el: Element): number | null => {
+  const v = parseFloat(el.getElementsByTagName('duration')[0]?.textContent ?? '')
+  return Number.isFinite(v) ? v : null
+}
+
+const restNote = (type: NoteObject['type'], dot = false): NoteObject => (
+  { degree: 0, octave: 0, type, dot, tie: false, rest: true, accidental: '', slurStart: false, slurStop: false }
+)
+
+function readMember(noteEl: Element, keyStr: string): ChordMember | null {
+  const pitchNode = noteEl.getElementsByTagName('pitch')[0]
+  if (!pitchNode) return null
+  const step = pitchNode.getElementsByTagName('step')[0].textContent!
+  const alterNode = pitchNode.getElementsByTagName('alter')[0]
+  const alter = alterNode ? parseFloat(alterNode.textContent!) : 0
+  const octave = parseInt(pitchNode.getElementsByTagName('octave')[0].textContent!)
+  let tieStop = false
+  let tieStart = false
+  const tieNodes = noteEl.getElementsByTagName('tie')
+  for (let t = 0; t < tieNodes.length; t++) {
+    if (tieNodes[t].getAttribute('type') === 'stop') tieStop = true
+    if (tieNodes[t].getAttribute('type') === 'start') tieStart = true
+  }
+  return { pitch: pitchToJianpu(step, alter, octave, keyStr), semi: pitchToSemitones(step, alter, octave), tieStop, tieStart }
+}
+
+function readSlurEvents(noteEl: Element): SlurEvent[] {
+  const events: SlurEvent[] = []
+  const nodes = noteEl.getElementsByTagName('slur')
+  for (let s = 0; s < nodes.length; s++) {
+    const type = nodes[s].getAttribute('type')
+    if (type === 'start' || type === 'stop') events.push({ type, number: nodes[s].getAttribute('number')?.trim() || '1' })
+  }
+  return events
+}
+
 // `fallbackKeyStr`: the key for a part that has no key signature of its own. It must be the
 // one the header shows, or the degrees count from a different 1 than the label says
 export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): MeasureArray[] {
@@ -197,8 +258,8 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
   const measures = xmlDoc.getElementsByTagName('measure')
   let currentDivisions = 1
   // The previous note (and its semitone) when it carried <tie type="start">;
-  // endsTieSlur = its slurStop came from a converted pitch-changing tie
-  let tieFrom: { note: NoteObject; semi: number; endsTieSlur: boolean } | null = null
+  // `arc` = the slur its pitch-changing tie turned into, when this note ended one
+  let tieFrom: { note: NoteObject; semi: number; arc: SlurArc | null } | null = null
   let wedgeType: 'cresc' | 'dim' | null = null
   // Active volta (跳房子) number, carried across measures until an ending closes it
   let activeVolta: number | null = null
@@ -209,6 +270,52 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
   // Key / meter changes announced after the measure's first note take effect next measure
   let pendingKey = null as string | null
   let pendingTime = null as string | null
+
+  // Slurs are tracked by `number`. The model draws one arc at a time (see slurPairs), so
+  // when a slur starts on a later note while another is open the earlier one is dropped
+  // (nested 1..5 with 2..3 inside shows 2..3); two starts on one note are one arc that
+  // ends at the first stop. A grace note's slur opens its number as null: nothing drawn,
+  // and its stop (which sits on the host note) must not close the phrase slur.
+  const openSlurs = new Map<string, SlurArc | null>()
+  const arcs: SlurArc[] = []
+  let drawn = null as SlurArc | null
+  const startArc = (note: NoteObject, number: string | null): SlurArc => {
+    let arc: SlurArc
+    if (drawn && drawn.note === note) arc = drawn
+    else {
+      if (drawn) {
+        drawn.dead = true
+        const cancelled = drawn
+        // the flag stays when another live arc also starts on that note
+        if (!arcs.some(a => a !== cancelled && !a.dead && a.note === cancelled.note)) cancelled.note.slurStart = false
+      }
+      arc = { note, stopped: false, dead: false }
+      arcs.push(arc)
+      note.slurStart = true
+      drawn = arc
+    }
+    if (number !== null) openSlurs.set(number, arc)
+    return arc
+  }
+  const stopArc = (arc: SlurArc, note: NoteObject) => {
+    arc.stopped = true
+    note.slurStop = true
+    if (drawn === arc) drawn = null
+  }
+  // On one note stops come first, so a note can end one slur and open the next
+  const applySlurs = (note: NoteObject, events: SlurEvent[]) => {
+    for (const e of events) {
+      if (e.type !== 'stop') continue
+      const arc = openSlurs.get(e.number)
+      openSlurs.delete(e.number)
+      if (arc && !arc.stopped && !arc.dead) stopArc(arc, note)
+    }
+    for (const e of events) if (e.type === 'start') startArc(note, e.number)
+  }
+  const applyGraceSlurs = (events: SlurEvent[]) => {
+    for (const e of events) if (e.type === 'stop' && openSlurs.get(e.number) === null) openSlurs.delete(e.number)
+    for (const e of events) if (e.type === 'start') openSlurs.set(e.number, null)
+  }
 
   for (let i = 0; i < measures.length; i++) {
     const measureNotes: MeasureArray = [] as unknown as MeasureArray
@@ -271,42 +378,150 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
       }
     }
 
-    for (const note of kids) {
-      if (note.tagName === 'attributes') { applyAttributes(note); continue }
-      if (note.tagName !== 'note') continue
-      noteSeen = true
-      // Cue notes (small notes quoting another part) and the other voices / staves
-      if (isCue(note) || staffOf(note) !== keepStaff || voiceOf(note) !== keepVoice) continue
+    // Timeline: `pos` runs through the measure in quarters across EVERY voice (a <note>
+    // that isn't a chord member or a grace advances it, <backup> / <forward> move it),
+    // so a kept note's start is known even when another voice was written first.
+    // A measure where some note has no <duration> can't be timed: no gap logic there.
+    const timed = kids.every(k => k.tagName !== 'note' || k.getElementsByTagName('grace').length > 0 || durationOf(k) !== null)
+    let pos = 0
+    let maxPos = 0
+    let keptEnd = 0
+    let pending = null as PendingNote | null
 
-      if (note.getElementsByTagName('grace').length > 0) {
+    const pushRests = (beats: number) => {
+      for (const v of splitDuration(beats)) measureNotes.push(restNote(v.type, v.dot))
+      tieFrom = null
+    }
+
+    // Write the chord / note collected so far: highest pitch is the melody, the rest
+    // stack below it from high to low
+    const flush = () => {
+      if (!pending) return
+      const p = pending
+      pending = null
+      const byPitch = p.members.map((m, k) => ({ m, k })).sort((a, b) => b.m.semi - a.m.semi || a.k - b.k)
+      const seen = new Set<number>()
+      const tones = byPitch.map(x => x.m).filter(m => !seen.has(m.semi) && !!seen.add(m.semi))
+      const main = tones[0] ?? null
+
+      // Tied from the previous note when every member says so. Exporters sometimes omit
+      // <tie type="stop"/>, so a tie start continues into the next note — but only at the
+      // same pitch (the highest one, for a chord). A tie never joins two different
+      // pitches; treating one as a tie drew the note as "-". Noteflight exports phrase
+      // marks drawn with the tie tool exactly this way, so a pitch change turns the arc
+      // into a slur instead.
+      const isTieStop = p.members.length > 0 ? p.members.every(m => m.tieStop) : p.firstTieStop
+      let tie = isTieStop
+      let tieSlurFrom = null as typeof tieFrom
+      if (tieFrom && main && !isTieStop) {
+        if (main.semi === tieFrom.semi) tie = true
+        else tieSlurFrom = tieFrom
+      }
+
+      const note: NoteObject = {
+        degree: main?.pitch.degree ?? 0,
+        octave: main?.pitch.octave ?? 0,
+        type: p.pieces[0].type,
+        dot: p.pieces[0].dot,
+        tie,
+        rest: p.rest,
+        accidental: main?.pitch.accidental ?? '',
+        slurStart: false,
+        slurStop: false,
+      }
+      if (tones.length > 1) note.chordNotes = tones.slice(1).map(m => m.pitch)
+      if (p.grace) note.graceNote = p.grace
+      if (p.tuplet) note.tuplet = p.tuplet
+
+      let tieArc = null as SlurArc | null
+      if (tieSlurFrom) {
+        const prev = tieSlurFrom
+        if (prev.arc && prev.arc.stopped && !prev.arc.dead && drawn === null) {
+          // A chain of these ties is one slur: extend it rather than stopping
+          // and restarting on the same note, which the renderer can't draw
+          tieArc = prev.arc
+          tieArc.stopped = false
+          prev.note.slurStop = false
+          drawn = tieArc
+        } else {
+          tieArc = startArc(prev.note, null)
+        }
+        stopArc(tieArc, note)
+      }
+      applySlurs(note, p.slurEvents)
+      if (p.articulation) note.articulation = p.articulation
+
+      tieFrom = main && main.tieStart ? { note, semi: main.semi, arc: tieArc } : null
+      measureNotes.push(note)
+      p.pieces.slice(1).forEach(v => {
+        // the rest of a long value: same pitch tied on, nothing else repeated
+        const piece = p.rest ? restNote(v.type, v.dot) : { ...note, type: v.type, dot: v.dot, tie: true, slurStart: false, slurStop: false }
+        delete piece.chordNotes
+        delete piece.graceNote
+        delete piece.articulation
+        if (p.tuplet) piece.tuplet = p.tuplet
+        measureNotes.push(piece)
+      })
+    }
+
+    for (const el of kids) {
+      if (el.tagName === 'attributes') { applyAttributes(el); continue }
+      if (el.tagName === 'backup' || el.tagName === 'forward') {
+        const moved = (durationOf(el) ?? 0) / currentDivisions
+        pos = Math.max(0, pos + (el.tagName === 'forward' ? moved : -moved))
+        maxPos = Math.max(maxPos, pos)
+        continue
+      }
+      if (el.tagName !== 'note') continue
+      noteSeen = true
+      const isGrace = el.getElementsByTagName('grace').length > 0
+      const isChord = el.getElementsByTagName('chord').length > 0
+      const startPos = pos
+      if (!isGrace && !isChord) {
+        pos += (durationOf(el) ?? 0) / currentDivisions
+        maxPos = Math.max(maxPos, pos)
+      }
+      // Cue notes (small notes quoting another part) and the other voices / staves
+      if (isCue(el) || staffOf(el) !== keepStaff || voiceOf(el) !== keepVoice) continue
+
+      if (isGrace) {
+        flush()   // the note before it is finished, its slurs must be applied first
         // Consecutive graces: keep only the first (renderer draws a single 倚音)
-        const g = parseChordNote(note, keyStr)
+        const g = parseChordNote(el, keyStr)
         if (g && !pendingGrace) pendingGrace = g
+        applyGraceSlurs(readSlurEvents(el))
         continue
       }
 
-      if (note.getElementsByTagName('chord').length > 0) {
-        if (measureNotes.length > 0) {
-          const prevNote = measureNotes[measureNotes.length - 1]
-          if (!prevNote.chordNotes) prevNote.chordNotes = []
-          const cn = parseChordNote(note, keyStr)
-          if (cn) prevNote.chordNotes.push(cn)
+      if (isChord) {
+        if (pending && !pending.rest) {
+          const member = readMember(el, keyStr)
+          if (member) pending.members.push(member)
+          pending.slurEvents.push(...readSlurEvents(el))
         }
         continue
       }
 
-      const durationNode = note.getElementsByTagName('duration')[0]
-      const duration = durationNode ? parseInt(durationNode.textContent!) : 0
-      const beatValue = duration / currentDivisions
+      flush()   // (a dropped note leaves nothing pending, so its chord members fall away too)
+      if (timed) {
+        // A second layer written without <voice> after a <backup> starts inside the
+        // notes already kept: drop it. A gap before the note is silence in this voice.
+        if (startPos < keptEnd - TIMELINE_EPS) continue
+        if (startPos > keptEnd + TIMELINE_EPS) pushRests(startPos - keptEnd)
+        keptEnd = pos
+      }
+
+      const duration = durationOf(el)
+      const beatValue = (duration ?? 0) / currentDivisions
 
       let noteType: NoteObject['type'] = 'quarter'
-      const typeNode = note.getElementsByTagName('type')[0]
-      let hasDot = note.getElementsByTagName('dot').length > 0
+      const typeNode = el.getElementsByTagName('type')[0]
+      let hasDot = el.getElementsByTagName('dot').length > 0
 
       const mappedType = typeNode ? NOTE_TYPES[typeNode.textContent!.trim()] : undefined
       if (mappedType) {
         noteType = mappedType
-      } else if (durationNode) {
+      } else if (duration !== null) {
         if (beatValue >= 3.75) noteType = 'whole'
         else if (beatValue >= 2.75) { noteType = 'half'; hasDot = true }
         else if (beatValue >= 1.75) noteType = 'half'
@@ -318,115 +533,64 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
         else noteType = '32nd'
       }
 
-      const tieNodes = note.getElementsByTagName('tie')
-      let isTieStop = false
-      let isTieStart = false
-      for (let t = 0; t < tieNodes.length; t++) {
-        if (tieNodes[t].getAttribute('type') === 'stop') isTieStop = true
-        if (tieNodes[t].getAttribute('type') === 'start') isTieStart = true
-      }
-
-      const restNode = note.getElementsByTagName('rest')[0]
+      const restNode = el.getElementsByTagName('rest')[0]
       const isRest = restNode !== undefined
       // A whole-measure rest is a whole rest whatever its <type> or duration say
       // (in 3/4 the duration alone would make it a dotted half)
       if (isRest && restNode.getAttribute('measure') === 'yes') { noteType = 'whole'; hasDot = false }
 
-      const noteObj: NoteObject = {
-        degree: 0,
-        octave: 0,
-        type: noteType,
-        dot: hasDot,
-        tie: isTieStop,
-        rest: isRest,
-        accidental: '',
-        slurStart: false,
-        slurStop: false,
-      }
+      const first = isRest ? null : readMember(el, keyStr)
+      let firstTieStop = false
+      const tieNodes = el.getElementsByTagName('tie')
+      for (let t = 0; t < tieNodes.length; t++) if (tieNodes[t].getAttribute('type') === 'stop') firstTieStop = true
 
-      let pitchSemi: number | null = null
-      if (!isRest) {
-        const pitchNode = note.getElementsByTagName('pitch')[0]
-        if (pitchNode) {
-          const step = pitchNode.getElementsByTagName('step')[0].textContent!
-          let alter = 0
-          const alterNode = pitchNode.getElementsByTagName('alter')[0]
-          if (alterNode) alter = parseFloat(alterNode.textContent!)
-          const octave = parseInt(pitchNode.getElementsByTagName('octave')[0].textContent!)
+      let grace: GraceNote | null = null
+      if (!isRest && pendingGrace) { grace = pendingGrace; pendingGrace = null }
 
-          const pitch = pitchToJianpu(step, alter, octave, keyStr)
-          noteObj.degree = pitch.degree
-          noteObj.octave = pitch.octave
-          noteObj.accidental = pitch.accidental
-          pitchSemi = pitchToSemitones(step, alter, octave)
-        }
-      }
-
-      // Exporters sometimes omit <tie type="stop"/>, so a tie start continues
-      // into the next note — but only at the same pitch. A tie never joins two
-      // different pitches; treating one as a tie drew the note as "-". Noteflight
-      // exports phrase marks drawn with the tie tool exactly this way, so a
-      // pitch change turns the arc into a slur instead.
-      let endsTieSlur = false
-      if (tieFrom && pitchSemi !== null && !isTieStop) {
-        if (pitchSemi === tieFrom.semi) {
-          noteObj.tie = true
-        } else {
-          // A chain of these ties is one slur: extend it rather than stopping
-          // and restarting on the same note, which the renderer can't draw
-          if (tieFrom.endsTieSlur) tieFrom.note.slurStop = false
-          else tieFrom.note.slurStart = true
-          noteObj.slurStop = true
-          endsTieSlur = true
-        }
-      }
-      tieFrom = isTieStart && pitchSemi !== null ? { note: noteObj, semi: pitchSemi, endsTieSlur } : null
-
-      if (!isRest && pendingGrace) {
-        noteObj.graceNote = pendingGrace
-        pendingGrace = null
-      }
-
-      const timeModNode = note.getElementsByTagName('time-modification')[0]
+      let tuplet: number | undefined
+      const timeModNode = el.getElementsByTagName('time-modification')[0]
       if (timeModNode) {
         const actualNode = timeModNode.getElementsByTagName('actual-notes')[0]
         const actual = actualNode ? parseInt(actualNode.textContent!) : 0
-        if (actual >= 2) noteObj.tuplet = actual
+        if (actual >= 2) tuplet = actual
       }
 
       // A note can carry several <notations> blocks (Finale and MuseScore write the
       // slur in one and the articulation in another), so look at the note as a whole
-      const slurNodes = note.getElementsByTagName('slur')
-      for (let s = 0; s < slurNodes.length; s++) {
-        const slurType = slurNodes[s].getAttribute('type')
-        if (slurType === 'start') noteObj.slurStart = true
-        if (slurType === 'stop') noteObj.slurStop = true
-      }
-
       const articMap: Record<string, Articulation> = {
         'accent': 'accent',
         'staccato': 'staccato',
         'tenuto': 'tenuto',
         'strong-accent': 'marcato',
       }
-      const articulationsNodes = note.getElementsByTagName('articulations')
-      for (let n = 0; n < articulationsNodes.length && !noteObj.articulation; n++) {
+      let articulation: Articulation | undefined
+      const articulationsNodes = el.getElementsByTagName('articulations')
+      for (let n = 0; n < articulationsNodes.length && !articulation; n++) {
         for (let a = 0; a < articulationsNodes[n].children.length; a++) {
           const mapped = articMap[articulationsNodes[n].children[a].tagName.toLowerCase()]
           if (mapped) {
-            noteObj.articulation = mapped
+            articulation = mapped
             break
           }
         }
       }
-
       // <fermata> lives directly under <notations>, outside <articulations>
-      if (!noteObj.articulation && note.getElementsByTagName('fermata').length > 0) {
-        noteObj.articulation = 'fermata'
-      }
+      if (!articulation && el.getElementsByTagName('fermata').length > 0) articulation = 'fermata'
 
-      measureNotes.push(noteObj)
+      pending = {
+        rest: isRest,
+        pieces: [{ type: noteType, dot: hasDot }],
+        members: first ? [first] : [],
+        firstTieStop,
+        tuplet,
+        articulation,
+        grace,
+        slurEvents: readSlurEvents(el),
+      }
     }
+    flush()
+    // The kept voice stops short of what another voice (or a <forward>) reached
+    if (timed && measureNotes.length > 0 && maxPos - keptEnd >= TIMELINE_EPS) pushRests(maxPos - keptEnd)
 
     measureNotes._repeatStart = repeatStart
     measureNotes._repeatEnd = repeatEnd
@@ -477,10 +641,19 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
     }
     measureNotes._wedge = wedgeType ?? (closedHere ? openedHere : null)
 
-    if (measureNotes.length > 0 || repeatStart || repeatEnd) {
-      jianpuMeasures.push(measureNotes)
+    // A bar the kept voice is silent in still counts: dropping it shifted every later
+    // bar number. Only a pickup's leftover half bar (implicit, nothing in it at all) goes.
+    if (measureNotes.length === 0) {
+      const leftover = measures[i].getAttribute('implicit') === 'yes' && !kids.some(k => k.tagName === 'note')
+        && !repeatStart && !repeatEnd && directionNodes.length === 0 && !measureNotes._key && !measureNotes._timeSig
+      if (leftover) continue
+      measureNotes.push(restNote('whole'))
     }
+    jianpuMeasures.push(measureNotes)
   }
+
+  // A slur that never closed would trail an arc across the rest of the piece
+  for (const arc of arcs) if (!arc.stopped && !arc.dead) arc.note.slurStart = false
 
   return jianpuMeasures
 }

@@ -132,7 +132,8 @@ describe('MusicXML: only the first voice of the first staff', () => {
     <backup><duration>4</duration></backup>
     ${noteXml('G', 3, 4, 'whole', '<voice>2</voice>')}
   </measure>`)
-  assertEq('<chord/> notes of the kept voice survive', (m3[0][0].chordNotes ?? []).map(c => c.degree), [3])
+  // C5 + E5 listed low to high: the highest note is the melody now, the lower one stacks below
+  assertEq('<chord/> notes of the kept voice survive', [m3[0][0].degree, (m3[0][0].chordNotes ?? []).map(c => c.degree)], [3, [1]])
   assertEq('...and the other voice does not', m3[0].length, 2)
 
   const m4 = parseXml(`<measure number="1">${attrs()}
@@ -144,6 +145,7 @@ describe('MusicXML: only the first voice of the first staff', () => {
 
   const cue = parseXml(`<measure number="1">${attrs()}
     <note><cue/><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><type>half</type></note>
+    <backup><duration>2</duration></backup>
     ${noteXml('C', 5, 4, 'whole')}
   </measure>`)
   assertEq('cue notes are skipped', fmtAll(cue), ["1'/w"])
