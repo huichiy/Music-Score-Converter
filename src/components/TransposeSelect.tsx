@@ -1,10 +1,9 @@
 import { useScoreStore } from '@/store/scoreStore'
+import { transposeOptions } from '@/lib/scoreFile'
 
 interface TransposeSelectProps {
   onTranspose: (key: string) => void
 }
-
-const KEYS = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F']
 
 export default function TransposeSelect({ onTranspose }: TransposeSelectProps) {
   const isConverted = useScoreStore((s) => s.isConverted)
@@ -32,10 +31,8 @@ export default function TransposeSelect({ onTranspose }: TransposeSelectProps) {
             paddingRight: '28px',
           }}
         >
-          {KEYS.map((k) => (
-            <option key={k} value={k}>
-              {k}{k === originalKeyStr ? ' (原调)' : ''}
-            </option>
+          {transposeOptions(originalKeyStr).map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
         <span style={{

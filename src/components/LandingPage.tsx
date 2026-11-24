@@ -33,7 +33,7 @@ const DEGREE_ITALIC = [false, false, false, true, false, false, true]
 
 const PIPELINE = [
   { n: '01', title: '读取 · Ingest',  desc: '上传 MusicXML、MIDI、ABC 或图片',
-    detail: 'MusicXML (.xml/.mxl) · MIDI (.mid) · ABC Notation (.abc) · 图片 OCR（Groq 视觉）' },
+    detail: 'MusicXML (.xml/.mxl) · MIDI (.mid) · ABC Notation (.abc) · 图片 OCR（Gemini 视觉）' },
   { n: '02', title: '解析 · Parse',   desc: '提取音符、调性、时值、拍号',
     detail: '解析音高、时值、升降号；支持中途调性变化、多声部、和弦、多小节休止' },
   { n: '03', title: '映射 · Map',     desc: '音高映射为简谱音级 1–7',
@@ -105,8 +105,8 @@ export default function LandingPage({ onEnterTool, onLoadSample, isDark, onTheme
       </div>
 
       {/* ── Hero ──────────────────────────────────────────────────── */}
-      <div style={{
-        padding: '48px 52px 40px',
+      <div className="lp-px" style={{
+        paddingTop: 48, paddingBottom: 40,
         borderBottom: `0.5px solid ${c.border}`,
         position: 'relative', overflow: 'hidden',
       }}>
@@ -144,17 +144,17 @@ export default function LandingPage({ onEnterTool, onLoadSample, isDark, onTheme
               onMouseLeave={() => setHoveredNum(null)}
               style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
             >
-              <div style={{
+              <div className="lp-hero-digit" style={{
+                '--d': DEGREE_SIZES[i],
                 fontFamily: "Georgia, 'Noto Serif SC', serif",
-                fontSize: DEGREE_SIZES[i], fontWeight: 700,
+                fontWeight: 700,
                 fontStyle: DEGREE_ITALIC[i] ? 'italic' : 'normal',
                 lineHeight: 1,
                 color: activeNum === n ? c.fg : c.muted,
                 transform: activeNum === n ? 'translateY(-6px)' : 'none',
                 transition: 'color 0.2s, transform 0.2s',
                 cursor: 'default', userSelect: 'none',
-                padding: '0 6px',
-              }}>
+              } as React.CSSProperties}>
                 {n}
               </div>
 
@@ -238,10 +238,9 @@ export default function LandingPage({ onEnterTool, onLoadSample, isDark, onTheme
       </div>
 
       {/* ── What is Jianpu ────────────────────────────────────────── */}
-      <div style={{
-        padding: '36px 52px',
+      <div className="lp-px lp-what" style={{
+        paddingTop: 36, paddingBottom: 36,
         borderBottom: `0.5px solid ${c.border}`,
-        display: 'flex', gap: 52, alignItems: 'flex-start', flexWrap: 'wrap',
       }}>
         <div style={{ flex: 1, minWidth: 200 }}>
           <span style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: c.muted, display: 'block', marginBottom: 8, whiteSpace: 'nowrap' }}>
@@ -254,28 +253,28 @@ export default function LandingPage({ onEnterTool, onLoadSample, isDark, onTheme
             简谱用数字 <strong style={{ color: c.fg }}>1–7</strong> 代表音阶，八度用点表示，时值用下划线和横线标记。<br />
             在中国、东南亚及全球华人音乐圈广泛使用。<br /><br />
             <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
-              <span style={{ color: c.fg }}>1̇</span> 上方点 = 高八度
-              <span style={{ color: c.fg }}>2̲</span> 下划线 = 八分音符
-              <span style={{ color: c.fg }}>0</span> = 休止符
+              <span className="lp-legend-item"><span style={{ color: c.fg }}>1̇</span> 上方点 = 高八度</span>
+              <span className="lp-legend-item"><span style={{ color: c.fg }}>2̲</span> 下划线 = 八分音符</span>
+              <span className="lp-legend-item"><span style={{ color: c.fg }}>0</span> = 休止符</span>
             </span>
           </div>
         </div>
 
         {/* Scale grid — cross-highlight with hero (Feature A×B) */}
-        <div style={{ flexShrink: 0 }}>
+        <div className="lp-scale">
           <span style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: c.muted, display: 'block', marginBottom: 10 }}>
             音阶
           </span>
-          <div style={{ display: 'flex', gap: 5, marginBottom: 6 }}>
+          <div className="lp-scale-row" style={{ marginBottom: 6 }}>
             {[1,2,3,4,5,6,7].map((n) => {
               const isActive = activeNum === n
               return (
                 <div
                   key={n}
+                  className="lp-scale-cell"
                   onMouseEnter={() => setHoveredScale(n)}
                   onMouseLeave={() => setHoveredScale(null)}
                   style={{
-                    width: 42, height: 42,
                     background: isActive ? c.accent : c.surface,
                     border: `0.5px solid ${isActive ? c.accent : c.border}`,
                     borderRadius: 8,
@@ -292,9 +291,9 @@ export default function LandingPage({ onEnterTool, onLoadSample, isDark, onTheme
               )
             })}
           </div>
-          <div style={{ display: 'flex', gap: 5 }}>
+          <div className="lp-scale-row">
             {SCALE_NAMES.map((name) => (
-              <div key={name} style={{ width: 42, textAlign: 'center', fontSize: 9, color: c.muted }}>
+              <div key={name} style={{ textAlign: 'center', fontSize: 9, color: c.muted }}>
                 {name}
               </div>
             ))}
@@ -303,8 +302,8 @@ export default function LandingPage({ onEnterTool, onLoadSample, isDark, onTheme
       </div>
 
       {/* ── Output preview ────────────────────────────────────────── */}
-      <div style={{
-        padding: '32px 52px',
+      <div className="lp-px" style={{
+        paddingTop: 32, paddingBottom: 32,
         borderBottom: `0.5px solid ${c.border}`,
       }}>
         <span style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: c.muted, display: 'block', marginBottom: 12 }}>
@@ -329,7 +328,7 @@ export default function LandingPage({ onEnterTool, onLoadSample, isDark, onTheme
       </div>
 
       {/* ── Pipeline (Feature C) ──────────────────────────────────── */}
-      <div style={{ padding: '36px 52px 52px' }}>
+      <div className="lp-px" style={{ paddingTop: 36, paddingBottom: 52 }}>
         <span style={{ fontSize: 9, letterSpacing: 2, textTransform: 'uppercase', color: c.muted, display: 'block', marginBottom: 8 }}>
           HOW IT WORKS
         </span>
@@ -337,11 +336,11 @@ export default function LandingPage({ onEnterTool, onLoadSample, isDark, onTheme
           <span style={{ fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 700, color: c.fg }}>
             从文件到简谱，四步完成
           </span>
-          <span style={{ fontFamily: "Georgia, serif", fontSize: 14, fontStyle: 'italic', color: c.muted, marginLeft: 14 }}>
+          <span style={{ fontFamily: "Georgia, serif", fontSize: 14, fontStyle: 'italic', color: c.muted, marginLeft: 14, display: 'inline-block' }}>
             Four-step pipeline
           </span>
         </div>
-        <div style={{ display: 'flex' }}>
+        <div className="lp-pipeline">
           {PIPELINE.map((step, i) => (
             <PipelineStep
               key={step.n} step={step} index={i}
@@ -378,14 +377,13 @@ function PipelineStep({ step, isFirst, isLast, isExpanded, onToggle }: {
 
   return (
     <div
+      className={`lp-step${isFirst ? ' lp-step-first' : ''}${isLast ? ' lp-step-last' : ''}`}
       onClick={onToggle}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         flex: 1,
         border: `0.5px solid ${isExpanded ? c.accent : c.border}`,
-        marginRight: isLast ? 0 : -0.5,
-        borderRadius: isFirst ? '8px 0 0 8px' : isLast ? '0 8px 8px 0' : 0,
         background: isExpanded ? c.surface2 : hovered ? c.surface : 'transparent',
         transition: 'background 0.2s, border-color 0.2s',
         cursor: 'pointer',
@@ -418,7 +416,7 @@ function PipelineStep({ step, isFirst, isLast, isExpanded, onToggle }: {
         <div style={{ fontSize: 12, fontWeight: 600, color: c.fg, marginBottom: 4 }}>{step.title}</div>
         <div style={{ fontSize: 11, color: c.muted, lineHeight: 1.6 }}>{step.desc}</div>
 
-        <div style={{ maxHeight: isExpanded ? 80 : 0, overflow: 'hidden', transition: 'max-height 0.3s ease' }}>
+        <div className={`lp-step-detail${isExpanded ? ' is-open' : ''}`}>
           <div style={{
             fontSize: 11, color: c.muted, lineHeight: 1.7,
             marginTop: 12, paddingTop: 12,
