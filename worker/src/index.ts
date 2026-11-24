@@ -5,7 +5,7 @@
 // reuse the same Custom adapter). This worker translates OpenAI → Gemini.
 //
 // Because the key is shared and free-tier, the worker is deliberately narrow:
-// only allowed Origins, only Gemini 2.5 Flash, a capped output size and a
+// only allowed Origins, only Gemini 3.6 Flash, a capped output size and a
 // capped request body. See README.md for the Cloudflare rate-limiting rule
 // that complements this (an Origin header can be forged outside a browser).
 //
@@ -45,15 +45,20 @@ interface GeminiPart {
   inline_data?: { mime_type: string; data: string }
 }
 
-export const DEFAULT_MODEL = 'gemini-2.5-flash'
+// The old 2.5 Flash is routed to the weaker 3.5-flash-lite from 2026-12-01; 3.6 Flash
+// transcribed a sample exactly where 3.5-flash-lite made errors.
+export const DEFAULT_MODEL = 'gemini-3.6-flash'
 /**
  * Models a client may ask for. The shared key is free-tier: it has NO Pro
  * quota, so Pro here would only ever 429 — and an unchecked model string
  * would also be interpolated straight into the upstream URL. Never add Pro.
  */
 export const ALLOWED_MODELS = [DEFAULT_MODEL]
-/** Gemini 2.5 counts thinking tokens against this; 2048 truncated long scores. */
-export const MAX_OUTPUT_TOKENS = 8192
+/**
+ * Gemini counts thinking tokens against this. 8192 truncated a dense page after
+ * 9-10 of its 40 bars; with 32768 the same page came back with 39.
+ */
+export const MAX_OUTPUT_TOKENS = 32768
 /** Request body cap. A 5 MB image is ~7 MB as base64; this leaves headroom, not a free-for-all. */
 export const MAX_BODY_BYTES = 15 * 1024 * 1024
 
@@ -113,6 +118,17 @@ export function geminiToText(data: {
     return { ok: false, status: 502, message: blockedMsg(reason) }
   }
   return text ? { ok: true, text } : { ok: false, status: 502, message: EMPTY_MSG }
+}
+
+/**
+ * What to tell the app when Gemini answers with an error. The status is kept
+ * (the app maps 503 / 524 itself); 429 and "busy" get a Chinese message the app
+ * shows as is, anything else passes a slice of Gemini's own text through.
+ */
+export function upstreamErrorMessage(status: number, upstreamText: string): string {
+  if (status === 429) return '识别额度已用完或请求太频繁，请稍后再试，或在「OCR 设置」填自己的 API key'
+  if (status === 503 || status === 524) return '识别模型正忙，请过一会儿再试'
+  return `Gemini ${status}: ${upstreamText.slice(0, 400)}`
 }
 
 /** Read a request body as text, giving up (null) as soon as it passes `limit` bytes. */
@@ -192,6 +208,9 @@ export default {
     let systemText = ''
     let images = 0
     for (const msg of body.messages) {
+      // Anything malformed is skipped rather than thrown on: an uncaught throw
+      // reaches the browser as a CORS error with no message at all
+      if (!msg || typeof msg !== 'object') continue
       if (msg.role === 'system') {
         systemText += (typeof msg.content === 'string' ? msg.content : '') + '\n'
         continue
@@ -200,12 +219,17 @@ export default {
       if (typeof msg.content === 'string') {
         parts.push({ text: msg.content })
       } else if (Array.isArray(msg.content)) {
-        for (const c of msg.content) {
-          if (c.type === 'text') parts.push({ text: c.text })
-          else if (c.type === 'image_url') {
+        for (const c of msg.content as unknown[]) {
+          if (!c || typeof c !== 'object') continue
+          const part = c as { type?: unknown; text?: unknown; image_url?: { url?: unknown } | null }
+          if (part.type === 'text') {
+            if (typeof part.text === 'string') parts.push({ text: part.text })
+          } else if (part.type === 'image_url') {
+            const url = part.image_url?.url
+            if (typeof url !== 'string') continue
             // OpenAI sends a data URL — split header from data. Only the image
             // types the app can produce; this endpoint is for reading scores.
-            const m = c.image_url.url.match(/^data:(image\/(?:png|jpeg|webp|gif));base64,(.+)$/)
+            const m = url.match(/^data:(image\/(?:png|jpeg|webp|gif));base64,(.+)$/)
             if (m) { parts.push({ inline_data: { mime_type: m[1], data: m[2] } }); images++ }
           }
         }
@@ -238,7 +262,7 @@ export default {
 
     if (!upstream.ok) {
       const errText = await upstream.text()
-      return errorResponse(req, env, upstream.status, `Gemini ${upstream.status}: ${errText.slice(0, 400)}`)
+      return errorResponse(req, env, upstream.status, upstreamErrorMessage(upstream.status, errText))
     }
 
     let upstreamData: Parameters<typeof geminiToText>[0]

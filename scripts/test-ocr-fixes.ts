@@ -54,7 +54,7 @@ describe('model lists: retired ids are gone, current ones offered', () => {
   eq('anthropic offers sonnet 5.5 + haiku 5.5', ids('anthropic'), ['claude-sonnet-5-5', 'claude-haiku-5-5'])
   eq('anthropic default is sonnet 5.5', DEFAULT_MODELS.anthropic, 'claude-sonnet-5-5')
   eq('no claude-3-5-* anywhere', Object.values(MODEL_OPTIONS).flat().some(m => m.id.startsWith('claude-3')), false)
-  eq('gemini keeps 2.5 flash', ids('gemini').includes('gemini-2.5-flash'), true)
+  eq('gemini keeps 3.6 flash', ids('gemini').includes('gemini-3.6-flash'), true)
   eq('gemini no longer offers 2.0 flash', ids('gemini').includes('gemini-2.0-flash'), false)
   eq('custom has no fixed list (free-text input)', ids('custom'), [])
 })
@@ -318,8 +318,8 @@ const IMG = 'data:image/png;base64,iVBORw0KGgo='
 
 function chatBody(extra: Record<string, unknown> = {}, image = IMG) {
   return JSON.stringify({
-    model: 'gemini-2.5-flash',
-    max_tokens: 8192,
+    model: 'gemini-3.6-flash',
+    max_tokens: 32768,
     messages: [
       { role: 'system', content: 'SYS' },
       { role: 'user', content: [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: 'go' }] },
@@ -385,10 +385,10 @@ describe('worker: Origin check', async () => {
 })
 
 describe('worker: model allowlist, token clamp, request shape', async () => {
-  eq('flash kept', pickModel('gemini-2.5-flash'), 'gemini-2.5-flash')
-  eq('Pro forced to flash', pickModel('gemini-2.5-pro'), 'gemini-2.5-flash')
-  eq('garbage forced to flash', pickModel('../../evil'), 'gemini-2.5-flash')
-  eq('missing → flash', pickModel(undefined), 'gemini-2.5-flash')
+  eq('flash kept', pickModel('gemini-3.6-flash'), 'gemini-3.6-flash')
+  eq('Pro forced to flash', pickModel('gemini-2.5-pro'), 'gemini-3.6-flash')
+  eq('garbage forced to flash', pickModel('../../evil'), 'gemini-3.6-flash')
+  eq('missing → flash', pickModel(undefined), 'gemini-3.6-flash')
   eq('clamp: above cap', clampMaxTokens(100000), MAX_OUTPUT_TOKENS)
   eq('clamp: within cap', clampMaxTokens(4096), 4096)
   eq('clamp: missing', clampMaxTokens(undefined), MAX_OUTPUT_TOKENS)
@@ -397,14 +397,14 @@ describe('worker: model allowlist, token clamp, request shape', async () => {
   eq('clamp: fractional', clampMaxTokens(100.9), 100)
 
   const pro = await callWorker(post(chatBody({ model: 'gemini-2.5-pro', max_tokens: 999999 })), ENV)
-  eq('Pro request is sent upstream as Flash', pro.sent.url?.includes('/models/gemini-2.5-flash:generateContent'), true)
-  eq('upstream max tokens clamped', pro.sent.body?.generationConfig.maxOutputTokens, 8192)
+  eq('Pro request is sent upstream as Flash', pro.sent.url?.includes('/models/gemini-3.6-flash:generateContent'), true)
+  eq('upstream max tokens clamped', pro.sent.body?.generationConfig.maxOutputTokens, 32768)
   eq('API key travels in a header, not the URL', [pro.sent.headers?.['x-goog-api-key'], pro.sent.url?.includes('test-key')], ['test-key', false])
   eq('system prompt becomes the first part', (pro.sent.body?.contents[0].parts[0] as { text: string }).text, 'SYS')
   eq('image forwarded as inline_data', JSON.stringify(pro.sent.body?.contents[0].parts).includes('inline_data'), true)
 
-  const inject = await callWorker(post(chatBody({ model: 'gemini-2.5-flash/../../v1/x' })), ENV)
-  eq('path-injection model string is neutralised', inject.sent.url?.startsWith('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'), true)
+  const inject = await callWorker(post(chatBody({ model: 'gemini-3.6-flash/../../v1/x' })), ENV)
+  eq('path-injection model string is neutralised', inject.sent.url?.startsWith('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent'), true)
 
   const noImg = await callWorker(post(JSON.stringify({ messages: [{ role: 'user', content: 'write me a poem' }] })), ENV)
   eq('no image → 400, nothing forwarded', [noImg.res.status, noImg.sent.url], [400, undefined])

@@ -18,8 +18,10 @@ export const JIANPU_OCR_PROMPT = `你是简谱专家。仔细分析这张简谱�
 头部行（第一行起）：
 Title: 曲名          ← 图里有标题才输出这行
 Key: C   Time: 4/4   Tempo: 120   ← Tempo 没有就省略
+Key 只写调名字母（C、G、Bb、F#），不要写成 1=Bb、♭B 或 B♭
 
 谱体：小节用 | 分隔，音符之间用空格，结尾用 ||
+所有记号（音符、小节线 |、反复 |: :|、{1}、~3、@3/4、&mf、括号、< > !）一律用空格隔开，不要贴在一起：写 ( 1 2 ) 而不是 (1 2)，写 1 | 2 而不是 1|2
 
 音高：
 - 数字 1-7 是音级，0 是休止符
@@ -39,7 +41,7 @@ Key: C   Time: 4/4   Tempo: 120   ← Tempo 没有就省略
 - 力度：小节开头 &mf &f &p 等
 - 渐强渐弱：< 渐强开始，> 渐弱开始，! 结束
 - 连线：( 1 2 3 )
-- 三连音：~3 后跟 3 个音，如 ~3 1/ 2/ 3/
+- 三连音：~3 后跟 3 个音，如 ~3 1/ 2/ 3/；组里的音数不是 N 时（如三连音只写了 2 个音）写成 ~3:2，冒号后是组里实际的音数
 - 中途变拍号：小节开头 @3/4
 - 表情：1[>] 重音，1[.] 顿音，1[$] 延长号
 - 倚音：1[2]（2 是装饰音）
@@ -62,8 +64,10 @@ Strict rules:
 Header lines (from the first line):
 Title: name              ← only if a title is visible
 Key: C   Time: 4/4   Tempo: 120   ← omit Tempo if not printed
+Key is a plain letter (C, G, Bb, F#) — never write 1=Bb, ♭B or B♭
 
 Body: measures separated by |, notes separated by spaces, end with ||
+Tokens (notes, barlines |, repeats |: :|, {1}, ~3, @3/4, &mf, parentheses, < > !) are always separated by spaces, never glued together: write ( 1 2 ) not (1 2), and 1 | 2 not 1|2
 
 Pitch:
 - Digits 1-7 are scale degrees, 0 is a rest
@@ -83,7 +87,7 @@ Write these only when present in the image:
 - Dynamics at measure start: &mf &f &p
 - Hairpins: < crescendo start, > diminuendo start, ! stop
 - Slurs: ( 1 2 3 )
-- Triplet: ~3 followed by three notes, e.g. ~3 1/ 2/ 3/
+- Triplet: ~3 followed by three notes, e.g. ~3 1/ 2/ 3/; when the group holds a different number of notes than N (a triplet written with only 2 notes), write ~3:2 — the number after the colon is the actual note count
 - Mid-piece time signature change: @3/4 at measure start
 - Articulations: 1[>] accent, 1[.] staccato, 1[$] fermata
 - Grace notes: 1[2]

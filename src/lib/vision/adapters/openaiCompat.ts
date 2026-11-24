@@ -4,7 +4,10 @@
 
 import type { OcrMode, VisionAdapter } from '../types'
 import { systemPromptFor, userPromptFor } from '../prompts'
-import { blobToBase64, extractOpenAIText, unwrapModeError } from '../utils'
+import {
+  blobToBase64, extractOpenAIText, unwrapModeError, withTimeout, httpErrorMessage,
+  OWN_KEY_429_MSG, DEFAULT_CHANNEL_429_MSG,
+} from '../utils'
 
 interface OpenAICompatOpts {
   name: string
@@ -12,53 +15,63 @@ interface OpenAICompatOpts {
   apiKey: string
   model: string
   extraHeaders?: Record<string, string>
+  /** True for our own Worker: a 429 there means the shared free quota, not the user's key. */
+  viaWorker?: boolean
+  /**
+   * Output cap. Default `max_tokens: 8192` — a dense score needs ~1-2k output
+   * tokens, but thinking models count their thinking against the cap too.
+   * OpenAI's current models reject `max_tokens` and want `max_completion_tokens`.
+   */
+  tokenLimit?: { field: 'max_tokens' | 'max_completion_tokens'; value: number }
+  /** Default 0. `null` omits it (OpenAI's reasoning models take no sampling parameters). */
+  temperature?: number | null
+  /** Provider-specific body fields (Groq `reasoning_format`, OpenAI `reasoning_effort`). */
+  extraBody?: Record<string, unknown>
 }
 
 export function createOpenAICompatAdapter(opts: OpenAICompatOpts): VisionAdapter {
+  const limit = opts.tokenLimit ?? { field: 'max_tokens', value: 8192 }
+  const temperature = opts.temperature === undefined ? 0 : opts.temperature
   return {
     name: opts.name,
-    async transcribe(file: File | Blob, mode: OcrMode): Promise<string> {
-      const base64 = await blobToBase64(file)
-      const mediaType = (file as File).type || 'image/png'
+    transcribe(file: File | Blob, mode: OcrMode, signal?: AbortSignal): Promise<string> {
+      return withTimeout(async (sig) => {
+        const base64 = await blobToBase64(file)
+        const mediaType = (file as File).type || 'image/png'
 
-      const res = await fetch(opts.endpoint, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          Authorization: `Bearer ${opts.apiKey}`,
-          ...(opts.extraHeaders || {}),
-        },
-        body: JSON.stringify({
-          model: opts.model,
-          // 8192: a dense score needs ~1-2k output tokens, and the default path
-          // (Worker → Gemini 2.5 Flash) counts THINKING tokens against this
-          // budget — 2048 used to truncate long scores after a few measures
-          max_tokens: 8192,
-          temperature: 0,
-          messages: [
-            { role: 'system', content: systemPromptFor(mode) },
-            {
-              role: 'user',
-              content: [
-                { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
-                { type: 'text', text: userPromptFor(mode) },
-              ],
-            },
-          ],
-        }),
-      })
+        const res = await fetch(opts.endpoint, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            Authorization: `Bearer ${opts.apiKey}`,
+            ...(opts.extraHeaders || {}),
+          },
+          signal: sig,
+          body: JSON.stringify({
+            model: opts.model,
+            [limit.field]: limit.value,
+            ...(temperature === null ? {} : { temperature }),
+            ...(opts.extraBody || {}),
+            messages: [
+              { role: 'system', content: systemPromptFor(mode) },
+              {
+                role: 'user',
+                content: [
+                  { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
+                  { type: 'text', text: userPromptFor(mode) },
+                ],
+              },
+            ],
+          }),
+        })
 
-      if (!res.ok) {
-        if (res.status === 429) {
-          throw new Error('识别额度不足或请求太频繁（HTTP 429）——默认渠道只支持 Gemini 2.5 Flash；要用更强的模型请在「OCR 设置」填自己的 API key，或稍后再试')
+        if (!res.ok) {
+          throw new Error(await httpErrorMessage(res, opts.name, opts.viaWorker ? DEFAULT_CHANNEL_429_MSG : OWN_KEY_429_MSG))
         }
-        const errBody = await res.json().catch(() => ({}))
-        const msg = (errBody as { error?: { message?: string } }).error?.message || `${opts.name} 调用失败：HTTP ${res.status}`
-        throw new Error(msg)
-      }
 
-      // finish_reason length / content_filter and empty replies throw a friendly error
-      return unwrapModeError(extractOpenAIText(await res.json()))
+        // finish_reason length / content_filter and empty replies throw a friendly error
+        return unwrapModeError(extractOpenAIText(await res.json()))
+      }, { signal })
     },
   }
 }

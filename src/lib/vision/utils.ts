@@ -1,5 +1,7 @@
 // Shared helpers used by every adapter.
 
+import { HEADER_LINE_RE, parseHeaderLine, type HeaderFields } from '../textHeader'
+
 /** Convert a File/Blob to a base64 string (no data: prefix). */
 export async function blobToBase64(blob: Blob): Promise<string> {
   return await new Promise((resolve, reject) => {
@@ -19,6 +21,63 @@ export function unwrapModeError(text: string): string {
     throw new Error(text.replace(/^\[错误：|^\[Error:\s*/, '').replace(/\]$/, ''))
   }
   return text
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Time limit + HTTP errors
+// ──────────────────────────────────────────────────────────────────────────
+
+/** A request that has not answered after this long is given up on (a dense page can think for a minute or two). */
+export const OCR_TIMEOUT_MS = 180_000
+export const OCR_TIMEOUT_MSG = '识别超时（3 分钟），请重试或用「框选区域」只框一部分'
+
+/**
+ * Run one adapter call under the time limit. `run` gets an AbortSignal to hand
+ * to fetch; it fires on timeout and when the caller's own `signal` (the 取消
+ * button) fires. The limit covers the whole call, reply body included — a
+ * server that sends headers and then stalls must not hang the UI either.
+ */
+export function withTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  opts: { signal?: AbortSignal; ms?: number } = {},
+): Promise<T> {
+  const outer = opts.signal
+  if (outer?.aborted) return Promise.reject(new DOMException('aborted', 'AbortError'))
+  const ctrl = new AbortController()
+  const onOuterAbort = () => ctrl.abort()
+  outer?.addEventListener('abort', onOuterAbort)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      // Reject first: the fetch's own AbortError settles a tick later and must not win the race
+      reject(new Error(OCR_TIMEOUT_MSG))
+      ctrl.abort()
+    }, opts.ms ?? OCR_TIMEOUT_MS)
+  })
+  return Promise.race([run(ctrl.signal), timedOut]).finally(() => {
+    clearTimeout(timer)
+    outer?.removeEventListener('abort', onOuterAbort)
+  })
+}
+
+/** 429 for the user's OWN key (OpenAI / Groq / Gemini / custom). */
+export const OWN_KEY_429_MSG = '你的 API key 额度不足或请求太频繁（HTTP 429）'
+/** 429 on the built-in channel: the shared free quota ran out, the user can bring their own key. */
+export const DEFAULT_CHANNEL_429_MSG = '识别额度已用完或请求太频繁（HTTP 429），请稍后再试，或在「OCR 设置」填自己的 API key'
+/** 503 / 524: the model is overloaded or timed out upstream — not the user's fault, retrying helps. */
+export const isBusyStatus = (status: number) => status === 503 || status === 524
+export const busyMsg = (status: number) => `识别模型正忙（HTTP ${status}），请过一会儿再试`
+
+/**
+ * The message for a non-2xx reply. 503 / 524 say the model is busy and 429 uses
+ * `rateLimit` when the adapter has wording for it; anything else shows the
+ * provider's own error text (or HTTP n).
+ */
+export async function httpErrorMessage(res: Response, name: string, rateLimit?: string): Promise<string> {
+  if (isBusyStatus(res.status)) return busyMsg(res.status)
+  if (res.status === 429 && rateLimit) return rateLimit
+  const errBody = await res.json().catch(() => ({}))
+  return (errBody as { error?: { message?: string } }).error?.message || `${name} 调用失败：HTTP ${res.status}`
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -49,7 +108,7 @@ export function extractGeminiText(data: GeminiResponse): string {
   // Thought parts are the model's scratchpad, not transcription
   const text = (cand.content?.parts ?? []).filter(p => !p.thought).map(p => p.text ?? '').join('').trim()
   const reason = cand.finishReason
-  // Checked before "empty": Gemini 2.5 can burn the whole budget on thinking
+  // Checked before "empty": a thinking model can burn the whole budget on thinking
   if (reason === 'MAX_TOKENS') throw new Error(TRUNCATED_MSG)
   if (reason && reason !== 'STOP' && reason !== 'FINISH_REASON_UNSPECIFIED') throw new Error(blockedMsg(reason))
   if (!text) throw new Error(EMPTY_MSG)
@@ -125,49 +184,50 @@ export function resolveOcrImageType(name: string, type: string): string | null {
 // OCR text: normalize → merge
 // ──────────────────────────────────────────────────────────────────────────
 
-// Same four keys as parseFromText's header detection (editor.ts). Tolerant of
-// case and leading space because the model's output can drift.
-const HEADER_LINE_RE = /^\s*(?:Title|Key|Time|Tempo)\s*:/i
+// Header detection is the text editor's own (textHeader.ts): a line one of them
+// calls a header is never read as notes by the other. Case-insensitive, and
+// both `:` and `：` count.
+const TITLE_LINE_RE = /^\s*Title\s*[:：]/i
+
+const FULL_WIDTH_ASCII_RE = /[！-～]/g
+const toHalfWidth = (c: string) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)
+const FULL_WIDTH_DIGIT_RE = /[０-９]/g
 
 /**
  * Normalize raw OCR model output into Route B text (docs/JIANPU_FORMAT.md):
  * - strip markdown code fences
- * - full-width punctuation/digits/space → half-width (｜ ： ． ， ＃ and ０-９)
- * - body lines only: look-alike glyphs → Route B — curly/prime apostrophes
- *   ’ ‘ ′ → ' (high octave), full-width/em/en dashes － — – → - (extension),
- *   full-width parens （ ） → ( ) (slurs)
- * - body lines only: legacy dialect fallback `_` → `/` (underscore has no
- *   meaning in Route B). A header line such as `Title: my_song` is free text
- *   and is left alone.
+ * - body lines: EVERY full-width ASCII character (U+FF01–U+FF5E: ／ ｛ ｝ ［ ］
+ *   ＠ ＆ ＜ ＞ ！ ｜ ： ． ， ＃ （ ） ０-９ …) and the ideographic space →
+ *   half-width, and the wave marks ～ 〜 → `~` (tuplet). Vision models happily
+ *   answer in full-width when the picture is Chinese.
+ * - body lines: look-alike glyphs → Route B — curly/prime apostrophes ’ ‘ ′ →
+ *   ' (high octave), em/en dashes — – − → - (extension)
+ * - body lines: legacy dialect fallback `_` → `/` (underscore has no meaning in
+ *   Route B)
+ * - Key / Time / Tempo lines hold nothing but ASCII-ish tokens, so they get the
+ *   same full-width → half-width mapping (`Time： ４／４`, `Key： Ｆ＃`)
+ * - Title lines are free text: only the colon after `Title` and full-width
+ *   digits change; `Title: my_song`, `月亮（变奏）！` are left exactly as printed
  * - deliberately does NOT touch `1.` — the dot is the dotted-quarter suffix and
  *   cannot be safely disambiguated from a legacy low-octave dot; the prompts
  *   forbid the dot dialect instead.
  */
 export function normalizeOcrText(raw: string): string {
-  let s = raw.replace(/```[a-zA-Z]*\n?/g, '')
-  const charMap: Record<string, string> = {
-    '｜': '|', '：': ':', '．': '.', '，': ',', '＃': '#', '　': ' ',
-  }
-  s = s.replace(/[｜：．，＃　]/g, (c) => charMap[c])
-  s = s.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFF10 + 0x30))
+  const s = raw.replace(/```[a-zA-Z]*\n?/g, '')
   return s.split('\n').map((line) => {
-    if (HEADER_LINE_RE.test(line)) return line.trimEnd()
-    return line
+    if (TITLE_LINE_RE.test(line)) {
+      return line.replace(/^(\s*Title\s*)：/i, '$1:').replace(FULL_WIDTH_DIGIT_RE, toHalfWidth).trimEnd()
+    }
+    const ascii = line.replace(FULL_WIDTH_ASCII_RE, toHalfWidth).replace(/　/g, ' ')
+    if (HEADER_LINE_RE.test(ascii)) return ascii.trimEnd()
+    return ascii
+      .replace(/[～〜]/g, '~')
       .replace(/[’‘′]/g, "'")
-      .replace(/[－—–−]/g, '-')
-      .replace(/（/g, '(').replace(/）/g, ')')
+      .replace(/[—–−]/g, '-')
       .replace(/_/g, '/')
       .trimEnd()
   }).join('\n').trim()
 }
-
-const HEADER_FIELDS = {
-  Title: /Title:\s*(.+?)\s*$/,
-  Key: /Key:\s*([A-G][b#]?)/,
-  Time: /Time:\s*(\d+\/\d+)/,
-  Tempo: /Tempo:\s*(\d+)/,
-} as const
-type HeaderField = keyof typeof HEADER_FIELDS
 
 /** Split Route B text into header lines + body, mirroring parseFromText (headers = within the first 4 lines). */
 function splitHeader(text: string): { header: string[]; body: string } {
@@ -182,16 +242,23 @@ function splitHeader(text: string): { header: string[]; body: string } {
   return { header, body: lines.slice(end).join('\n').trim() }
 }
 
-function readHeaderFields(lines: string[]): Partial<Record<HeaderField, string>> {
-  const out: Partial<Record<HeaderField, string>> = {}
+/** The fields on a set of header lines; the first line to give a field wins. */
+function readHeaderFields(lines: string[]): HeaderFields {
+  const out: HeaderFields = {}
   for (const ln of lines) {
-    for (const f of Object.keys(HEADER_FIELDS) as HeaderField[]) {
-      const m = ln.match(HEADER_FIELDS[f])
-      if (m && out[f] === undefined) out[f] = m[1]
-    }
+    const f = parseHeaderLine(ln)
+    if (!f) continue
+    out.title ??= f.title
+    out.key ??= f.key
+    out.time ??= f.time
+    out.tempo ??= f.tempo
   }
   return out
 }
+
+// A bar ends / starts with one of | || |: :| ||&tag (the tokens editor.ts tokenizes).
+const ENDS_WITH_BARLINE_RE = /(?:\|\|?|\|:|:\|)(?:&[^\s|]*)?$/
+const STARTS_WITH_BARLINE_RE = /^(?:\|\|?|\|:|:\|)/
 
 /**
  * Accumulate OCR results: each 框选 crop is a separate request, but the result
@@ -200,6 +267,10 @@ function readHeaderFields(lines: string[]): Partial<Record<HeaderField, string>>
  * (a Key: line in the middle of the body would be read as junk notes); a field
  * only `next` has (say, the crop that happened to include the title) is
  * folded into `prev`'s header instead of being lost.
+ *
+ * A crop that ends mid-bar (the model left off the closing barline) followed by
+ * one that starts without an opening barline would fuse into ONE bar — line
+ * breaks mean nothing to the parser — so a ` |` closes the first.
  */
 export function mergeOcrResults(prev: string | null | undefined, next: string): string {
   if (!prev || !prev.trim()) return next
@@ -210,13 +281,16 @@ export function mergeOcrResults(prev: string | null | undefined, next: string): 
   const have = readHeaderFields(a.header)
   const extra = readHeaderFields(b.header)
   const header = [...a.header]
-  if (extra.Title !== undefined && have.Title === undefined) header.unshift(`Title: ${extra.Title}`)
-  const missing = (['Key', 'Time', 'Tempo'] as const)
+  if (extra.title !== undefined && have.title === undefined) header.unshift(`Title: ${extra.title}`)
+  const missing = (['key', 'time', 'tempo'] as const)
     .filter(f => extra[f] !== undefined && have[f] === undefined)
-    .map(f => `${f}: ${extra[f]}`)
+    .map(f => `${f[0].toUpperCase()}${f.slice(1)}: ${extra[f]}`)
   if (missing.length > 0) header.push(missing.join('   '))
 
-  const body = [a.body, b.body].filter(Boolean).join('\n')
+  const joined = a.body && !ENDS_WITH_BARLINE_RE.test(a.body) && !STARTS_WITH_BARLINE_RE.test(b.body)
+    ? `${a.body} |`
+    : a.body
+  const body = [joined, b.body].filter(Boolean).join('\n')
   return [...header, body].join('\n')
 }
 

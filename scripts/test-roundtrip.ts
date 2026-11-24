@@ -600,14 +600,14 @@ describe('OCR model options match shared-key quota reality', () => {
   // The 默认 (worker) provider uses the shared free-tier Gemini key, which has
   // NO Pro quota — offering Pro there guarantees a 429
   assertEq('auto (worker) offers no Pro model', MODEL_OPTIONS.auto.some(m => m.id.includes('pro')), false)
-  assertEq('auto still offers Flash', MODEL_OPTIONS.auto.some(m => m.id === 'gemini-2.5-flash'), true)
+  assertEq('auto still offers Flash', MODEL_OPTIONS.auto.some(m => m.id === 'gemini-3.6-flash'), true)
 })
 
 describe('sanitizeOcrConfig drops stale saved model ids', () => {
   // localStorage may hold a model the provider no longer offers (auto+pro)
   assertEq('stale auto+pro model dropped', sanitizeOcrConfig({ provider: 'auto', model: 'gemini-2.5-pro' }).model ?? null, null)
-  assertEq('valid auto+flash kept', sanitizeOcrConfig({ provider: 'auto', model: 'gemini-2.5-flash' }).model, 'gemini-2.5-flash')
-  assertEq('BYOK gemini keeps Pro', sanitizeOcrConfig({ provider: 'gemini', model: 'gemini-2.5-pro', apiKey: 'k' }).model, 'gemini-2.5-pro')
+  assertEq('valid auto+flash kept', sanitizeOcrConfig({ provider: 'auto', model: 'gemini-3.6-flash' }).model, 'gemini-3.6-flash')
+  assertEq('BYOK gemini keeps its stronger model', sanitizeOcrConfig({ provider: 'gemini', model: 'gemini-3.8-flash', apiKey: 'k' }).model, 'gemini-3.8-flash')
   assertEq('custom keeps arbitrary model', sanitizeOcrConfig({ provider: 'custom', model: 'llava:13b', apiKey: 'k', customUrl: 'https://x' }).model, 'llava:13b')
 })
 
