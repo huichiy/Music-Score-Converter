@@ -47,7 +47,7 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 
 | Feature | Details |
 |---|---|
-| **MusicXML, MIDI & ABC Support** | Accepts `.xml`, `.mxl`, `.mid`, `.midi`, `.abc` |
+| **MusicXML, MIDI & ABC Support** | Accepts `.xml`, `.musicxml`, `.mxl`, `.mid`, `.midi`, `.abc` |
 | **Auto Melody Detection** | Scores multi-part files by instrument name keywords, note density, and average pitch. Recognises winds (笛, 箫, 唢呐, 笙, 管子), bowed strings (二胡, 高胡, 中胡, 板胡, 京胡) and plucked strings (琵琶, 柳琴, 古筝, 三弦), and deprioritises typical accompaniment parts (大阮, 中阮, 扬琴, 革胡, 低音, 打击). **Playing one of the deprioritised parts?** Pick it once from the part selector and the app remembers your instrument — every later score defaults to your part instead of the melody |
 | **Accurate Music Theory** | Handles key signatures, mid-piece key changes, accidentals, flat/sharp contexts, ties across measures, dotted notes, and all standard rhythmic durations |
 | **Authentic Jianpu Output** | Renders proper 延音线 (extension dashes), 减时线 (beaming underlines with beat-boundary grouping), and octave dots above/below numbers |
@@ -59,12 +59,12 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | **Measures per Line** | Four measures per line by default, the way Chinese orchestra parts are printed (or 2 / 3 / 5 / 6, or auto-wrap by width). Lines are stretched edge to edge so barlines line up; on a narrow screen a line holds fewer measures instead of shrinking the score. Your choice is remembered |
 | **Click-to-Edit (Route A)** | Click any number in the rendered score to open a popup and change pitch, duration, accidental, or octave; re-renders instantly |
 | **Text Editor (Route B)** | Toolbar `≡` button opens a dedicated full-screen editor with a 番茄简谱-aligned text format, live preview underneath, and bidirectional cursor sync between text and rendered notes |
-| **PDF Input + Page Picker** | Drop a multi-page PDF into the OCR drop zone — page thumbnails appear, click any page to extract it as an image and feed the existing OCR pipeline |
+| **PDF Input + Page Picker** | Drop a multi-page PDF into the OCR drop zone — page thumbnails appear; click a page, then box-select the part you want or use the whole page for OCR |
 | **Box-Select Crop** | On a 总谱 (full score) page or photo, drag a box around one instrument's row (e.g. 笛子) and send just that strip to OCR — crop images too via the 框选区域 button; iterate row by row into the editable result box |
 | **Playback** | Hear the converted score: repeats and voltas are expanded like a real performance, the sounding note is highlighted as it plays, and you get pause/resume, a draggable progress bar, click-a-note-to-start-there, and a 0.5×–1.5× speed slider for checking dense passages |
-| **Image OCR — Jianpu Recognition** | Upload a Jianpu image (`.jpg`, `.png`, `.pdf`) — AI transcribes it straight into the Route B text format; the result is editable and renders as a real score with one click (Beta) |
+| **Image OCR — Jianpu Recognition** | Upload a Jianpu image (`.jpg`, `.png`, `.webp`, `.pdf`) — AI transcribes it straight into the Route B text format; the result is editable and renders as a real score with one click (Beta) |
 | **Image OCR — Staff to Jianpu** | Upload a Western staff notation image — AI converts it to editable, renderable Jianpu text (Beta) |
-| **BYOK Multi-Provider OCR** | Default OCR runs Gemini 2.5 Flash via a Cloudflare Worker proxy (key stays on the Worker, never in the JS bundle). Power users can paste their own key for Gemini Pro, Claude 3.5 Sonnet, GPT-4o, Groq, or any OpenAI-compatible endpoint — keys live in browser `localStorage` only |
+| **BYOK Multi-Provider OCR** | Default OCR runs Gemini 3.6 Flash via a Cloudflare Worker proxy (key stays on the Worker, never in the JS bundle). Power users can paste their own key for Gemini, Claude, OpenAI, Groq, or any OpenAI-compatible endpoint — keys live in browser `localStorage` only |
 | **SVG Score Rendering** | Output is a fully scalable SVG with correct measure layout, barlines, line wrapping, and multi-measure rest brackets |
 | **Multiple Export Formats** | `.PNG` and `.JPEG` via Canvas renderer |
 | **Try with Sample File** | One-click demo with a built-in sample score — no file upload needed to try the tool |
@@ -86,7 +86,6 @@ As a flute player in a Chinese orchestra, I built this tool to automate that con
 | [Vite 6](https://vitejs.dev/) | Dev server + build tooling |
 | [Tailwind CSS v4](https://tailwindcss.com/) | Utility-first styling |
 | [Zustand](https://zustand-demo.pmnd.rs/) | Lightweight global state |
-| [Radix UI](https://www.radix-ui.com/) | Accessible primitives (dialog, select, tooltip) |
 | [@tonejs/midi](https://github.com/Tonejs/Midi) | MIDI file parsing |
 | [Tone.js](https://tonejs.github.io/) | Playback engine — lazy-loaded, only downloaded when you press play |
 | [JSZip](https://stuk.github.io/jszip/) | `.mxl` compressed file extraction |
@@ -108,8 +107,7 @@ Music-Score-Converter/
 │   ├── JIANPU_FORMAT.md          — Route B text editor format spec
 │   └── screenshots/              — README screenshots
 ├── scripts/
-│   ├── test-roundtrip.ts         — Route B + renderer + OCR + crop + playback tests
-│   ├── test-parser.ts            — MusicXML import tests (via linkedom)
+│   ├── test-*.ts                 — Unit tests (run by `npm run test`)
 │   └── screenshots.mjs           — README screenshot capture (Playwright)
 ├── tests/                        — Sample scores used for manual verification
 ├── worker/                       — Optional Cloudflare Worker (OCR proxy)
@@ -155,8 +153,8 @@ Music-Score-Converter/
 │   │       ├── adapters/
 │   │       │   ├── gemini.ts     — Google Gemini direct
 │   │       │   ├── anthropic.ts  — Claude with browser-direct header
-│   │       │   ├── openai.ts     — GPT-4o
-│   │       │   ├── groq.ts       — Llama 4 Scout (legacy fallback)
+│   │       │   ├── openai.ts     — OpenAI (GPT-6 family)
+│   │       │   ├── groq.ts       — Groq (Qwen vision; dev fallback)
 │   │       │   ├── custom.ts     — Any OpenAI-compatible endpoint
 │   │       │   └── openaiCompat.ts — Shared chat-completions helper
 │   │       ├── types.ts          — VisionAdapter interface + provider config
@@ -207,7 +205,7 @@ The text format is aligned with the 番茄简谱 convention so users familiar wi
 - `|:` `:|` `||&fine` `||&dc` for repeats and directions
 - `(1 2 3)` slurs, `1[>]` `1[.]` articulations, `1[2]` grace notes
 - `[N]` multi-measure rest compression
-- `{1}` `{2}` volta / 跳房子 endings, `~3` triplets (and other tuplets), `@3/4` mid-piece time signature changes
+- `{1}` `{2}` volta / 跳房子 endings, `~3` triplets (and other tuplets; `~3:2` for a group of 2 notes), `@3/4` mid-piece time signature changes, `X` unpitched percussion
 
 ### 4. SVG Rendering
 
@@ -249,7 +247,7 @@ npm run build       # type-check + bundle into dist/
 npm run preview     # serve the built bundle locally
 ```
 
-To run the Route B round-trip tests:
+To run the tests:
 
 ```bash
 npm run test
@@ -264,7 +262,7 @@ OCR will work in BYOK mode out of the box — users paste their own API key in O
 VITE_OCR_WORKER_URL=https://your-worker.your-name.workers.dev
 ```
 
-Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the app falls back to BYOK-only.
+Without `VITE_OCR_WORKER_URL`, choosing the "默认" provider shows a message asking for a key in OCR Settings, so OCR is BYOK-only.
 
 ---
 
@@ -275,7 +273,7 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 | **Single melody line only** | Chord voices and harmony notes are intentionally folded into stacked chord notes; full multi-voice rendering is not yet supported |
 | **MIDI triplets approximate** | MIDI has no semantic triplet encoding; durations are snapped to nearest binary value |
 | **MIDI key detection** | Relies on the key signature event in the MIDI header; files exported without this metadata default to C major |
-| **Volta import from MusicXML** | `{N}` endings work in the text editor; MusicXML `<ending>` elements are not yet imported |
+| **Third endings and Coda** | Playback follows first / second endings, D.C., D.S. and Fine; a third ending and To Coda are drawn but not followed |
 | **Flute-specific ornaments** | 颤音 / 波音 / 叠音 / 打音 / 花舌 etc. are intentionally not rendered — most are inferred by performers from context |
 
 ---
@@ -298,8 +296,8 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 - [x] Route B text editor — 番茄简谱-aligned syntax, live preview, bidirectional cursor sync, mobile responsive
 - [x] Landing page / tool layer separation
 - [x] PDF input + page picker (lazy-loaded pdfjs)
-- [x] BYOK multi-provider OCR — Gemini / Claude / GPT-4o / Groq / custom OpenAI-compatible
-- [x] Cloudflare Worker proxy — default OCR uses Gemini 2.5 Flash with key off the bundle
+- [x] BYOK multi-provider OCR — Gemini / Claude / OpenAI / Groq / custom OpenAI-compatible
+- [x] Cloudflare Worker proxy — default OCR uses Gemini Flash with key off the bundle
 - [x] Volta / 跳房子 (`{1}` `{2}`), tuplets (`~3`), and mid-piece time signature changes (`@3/4`) in the text editor
 - [x] MusicXML import of articulations, fermata, grace notes (倚音), and tuplets (`<time-modification>`)
 - [x] Route C: OCR output is Route B text — normalized, hand-editable, and rendered as a real score in one click
@@ -353,7 +351,7 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 
 | 功能 | 说明 |
 |---|---|
-| **支持 MusicXML、MIDI 与 ABC** | 接受 `.xml`、`.mxl`、`.mid`、`.midi`、`.abc` |
+| **支持 MusicXML、MIDI 与 ABC** | 接受 `.xml`、`.musicxml`、`.mxl`、`.mid`、`.midi`、`.abc` |
 | **智能旋律识别** | 综合乐器名称关键词、音符密度与平均音高自动评分选择主旋律声部。认得吹管（笛、箫、唢呐、笙、管子）、拉弦（二胡、高胡、中胡、板胡、京胡）与弹拨（琵琶、柳琴、古筝、三弦）；大阮、中阮、扬琴、革胡、低音、打击等通常作伴奏的声部会降权。**你就是拉这些声部的？** 用声部选择器选一次，之后会记住你的乐器——以后每份总谱都默认给你自己的声部，不用再选 |
 | **精准乐理解析** | 处理调号、中途变调、临时升降号、跨小节延音线、附点音符及所有标准时值 |
 | **标准简谱输出** | 输出包含增时线、按拍分组的减时线与高低八度点 |
@@ -365,10 +363,10 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 | **每行小节数** | 默认每行 4 小节，跟华乐团分谱的排法一样（也可选 2 / 3 / 5 / 6，或「自动」按宽度换行）。每行左右撑满、小节线对齐；屏幕太窄时自动少放几个小节，不会把谱缩小。会记住你的选择 |
 | **点击编辑（Route A）** | 点击渲染谱面上任何数字，弹出 popup 改音高 / 时值 / 升降号 / 八度 |
 | **文本编辑器（Route B）** | 工具栏 `≡` 按钮打开全屏编辑器：上下分栏，文本在上，实时预览在下，光标双向同步；格式说明可侧滑抽屉显示。文本格式对齐番茄简谱约定 |
-| **PDF 输入 + 页面选择器** | 把多页 PDF 拖进 OCR 区，弹出页面缩略图网格，点任一页即提取为图片送 OCR |
+| **PDF 输入 + 页面选择器** | 把多页 PDF 拖进 OCR 区，弹出页面缩略图网格，点任一页后框选要的部分，或整页送 OCR |
 | **图片识别 — 简谱识别** | 上传简谱图片（JPG / PNG / PDF），AI 直接转录成 Route B 文本格式——识别结果可手改，一键渲染成真谱（Beta）|
 | **图片识别 — 五线谱转简谱** | 上传五线谱图片，AI 转换成可编辑、可渲染的简谱文本（Beta）|
-| **BYOK 多模型 OCR** | 默认走 Cloudflare Worker 代理 Gemini 2.5 Flash（key 在 Worker 里，不进 bundle）。进阶用户可在「OCR 设置」里粘自己的 key，切换 Gemini Pro / Claude 3.5 Sonnet / GPT-4o / Groq / 任意 OpenAI 兼容端点。Key 只存浏览器 localStorage |
+| **BYOK 多模型 OCR** | 默认走 Cloudflare Worker 代理 Gemini 3.6 Flash（key 在 Worker 里，不进 bundle）。进阶用户可在「OCR 设置」里粘自己的 key，切换 Gemini / Claude / OpenAI / Groq / 任意 OpenAI 兼容端点。Key 只存浏览器 localStorage |
 | **SVG 乐谱渲染** | 输出可缩放 SVG，自动换行、多小节休止括号 |
 | **多格式导出** | `.PNG` 与 `.JPEG`（Canvas 渲染） |
 | **内置示例试用** | 一键加载示例乐谱 |
@@ -390,7 +388,6 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 | Vite 6 | 开发服务器与打包 |
 | Tailwind CSS v4 | 原子化样式 |
 | Zustand | 轻量全局状态 |
-| Radix UI | 无障碍组件原语 |
 | @tonejs/midi | MIDI 解析 |
 | JSZip | `.mxl` 解压 |
 | pdfjs-dist | PDF 页面渲染为图片（懒加载）|
@@ -424,7 +421,7 @@ Without `VITE_OCR_WORKER_URL`, the "默认" provider button is disabled and the 
 - `|:` `:|` `||&fine` `||&dc` 反复与段落
 - `(1 2 3)` 连线、`1[>]` `1[.]` 表情、`1[2]` 倚音
 - `[N]` 多小节休止压缩
-- `{1}` `{2}` 跳房子、`~3` 三连音（及其他连音）、`@3/4` 中途变拍号
+- `{1}` `{2}` 跳房子、`~3` 三连音（及其他连音；`~3:2` 表示这一组只有 2 个音）、`@3/4` 中途变拍号、`X` 无固定音高的打击乐
 
 #### 4. SVG 渲染
 自定义排版引擎：预计算小节宽度 → 自动换行 → 绘制纵线、小节编号、八度点、减时线、增时线、连续休止合并括号、反复符号、指示文字、力度、hairpin、连音弧、表情、倚音、跳房子括号、连音括号（时值修正）、中途变拍号
@@ -467,7 +464,7 @@ OCR 默认就支持 BYOK——用户在「OCR 设置」里填自己的 key 即�
 VITE_OCR_WORKER_URL=https://你的-worker.你的名字.workers.dev
 ```
 
-没设的话，「默认」按钮会被禁用，只能走 BYOK 路径。
+没设的话，选「默认」会提示去「OCR 设置」填 key，只能走 BYOK 路径。
 
 ---
 
@@ -478,7 +475,7 @@ VITE_OCR_WORKER_URL=https://你的-worker.你的名字.workers.dev
 | **单旋律线** | 和弦折叠为垂直堆叠，完整多声部尚未支持 |
 | **MIDI 三连音近似** | MIDI 无三连音语义，时值对齐至最近二进制 |
 | **MIDI 调号依赖文件头** | 无调号元数据时默认 C 大调 |
-| **MusicXML 跳房子导入** | 文本编辑器已支持 `{N}` 语法；MusicXML `<ending>` 元素的导入暂未实现 |
+| **第三结尾与 Coda** | 播放会走第一、第二结尾、D.C.、D.S.、Fine；第三结尾和 To Coda 只画不执行 |
 | **暂不支持笛子专属技巧** | 颤音 / 波音 / 叠音 / 打音 / 花舌等暂不渲染——演奏者按语境补 |
 
 ---
@@ -501,8 +498,8 @@ VITE_OCR_WORKER_URL=https://你的-worker.你的名字.workers.dev
 - [x] Route B 文本编辑器 — 番茄式语法、实时预览、光标双向同步、移动端响应式
 - [x] Landing / 工具两层分离
 - [x] PDF 输入 + 页面选择器（pdfjs 懒加载）
-- [x] BYOK 多模型 OCR — Gemini / Claude / GPT-4o / Groq / Custom
-- [x] Cloudflare Worker 代理 — 默认走 Gemini 2.5 Flash，key 不进 bundle
+- [x] BYOK 多模型 OCR — Gemini / Claude / OpenAI / Groq / Custom
+- [x] Cloudflare Worker 代理 — 默认走 Gemini Flash，key 不进 bundle
 - [x] 跳房子 `{1}` `{2}`、连音 `~3`、中途变拍号 `@3/4`（文本编辑器）
 - [x] MusicXML 导入表情记号、fermata、倚音、连音（`<time-modification>`）、跳房子（`<ending>`）
 - [x] 总谱框选裁剪 — 在 PDF 页/照片上框一行声部（如笛子）单独送识别
