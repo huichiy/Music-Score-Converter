@@ -1,5 +1,6 @@
 import type { NoteObject, MeasureArray, Measure, ChordNote, GraceNote, Articulation } from '@/types/score'
 import type { Midi } from '@tonejs/midi'
+import { classifyDirection } from './directions'
 
 export function pitchToSemitones(step: string, alter: number, octave: number): number {
   const stepMap: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
@@ -57,6 +58,9 @@ export function pitchToJianpu(step: string, alter: number, octave: number, keySt
   const degree = mod(diatonicDiff, 7)
   const shift = Math.round((noteSemi - (tonicSemi + scaleDegrees[degree])) / 12)
   const intended = tonicSemi + shift * 12 + scaleDegrees[degree]
+  // F## or Bbb needs two semitones of alteration, which one accidental can't say (it came
+  // out as a plain sharp / flat and the pitch was wrong): spell by the sounding pitch instead
+  if (Math.abs(noteSemi - intended) >= 2) return semitoneToJianpu(Math.round(noteSemi), keyStr)
   const accidental: '#' | 'b' | '' = noteSemi > intended ? '#' : noteSemi < intended ? 'b' : ''
   return { degree: degree + 1, octave: shift, accidental }
 }
@@ -120,23 +124,37 @@ const BEAT_UNIT_QUARTERS: Record<string, number> = {
   breve: 8, whole: 4, half: 2, quarter: 1, eighth: 0.5, '16th': 0.25, '32nd': 0.125,
 }
 
+// Quarter notes per minute of one <metronome>, or null when it gives no per-minute
+function metronomeQuarters(metronome: Element): string | null {
+  const text = metronome.getElementsByTagName('per-minute')[0]?.textContent ?? ''
+  const perMinute = parseFloat(text.match(/\d+(?:\.\d+)?/)?.[0] ?? '')
+  if (!(perMinute > 0)) return null
+  const unit = metronome.getElementsByTagName('beat-unit')[0]?.textContent?.trim() ?? 'quarter'
+  let quarters = BEAT_UNIT_QUARTERS[unit] ?? 1
+  if (metronome.getElementsByTagName('beat-unit-dot').length > 0) quarters *= 1.5
+  return String(Math.round(perMinute * quarters))
+}
+
 /**
- * Tempo in quarter notes per minute, from the first <metronome> that has a
- * <per-minute>. Playback BPM counts quarters, so "half = 60" is 120 and
- * "dotted quarter = 60" is 90. '' when the score gives none.
+ * Tempo in quarter notes per minute: the first tempo in document order, whether a
+ * <metronome> with a <per-minute> or a <sound tempo="…"> (already quarters per minute;
+ * some exporters write only that). Playback BPM counts quarters, so "half = 60" is 120
+ * and "dotted quarter = 60" is 90. '' when the score gives none.
  */
 export function parseMetronomeTempo(xmlDoc: Document): string {
-  const metronomes = xmlDoc.getElementsByTagName('metronome')
-  for (let i = 0; i < metronomes.length; i++) {
-    const text = metronomes[i].getElementsByTagName('per-minute')[0]?.textContent ?? ''
-    const perMinute = parseFloat(text.match(/\d+(?:\.\d+)?/)?.[0] ?? '')
-    if (!(perMinute > 0)) continue
-    const unit = metronomes[i].getElementsByTagName('beat-unit')[0]?.textContent?.trim() ?? 'quarter'
-    let quarters = BEAT_UNIT_QUARTERS[unit] ?? 1
-    if (metronomes[i].getElementsByTagName('beat-unit-dot').length > 0) quarters *= 1.5
-    return String(Math.round(perMinute * quarters))
+  const find = (el: Element): string | null => {
+    if (el.tagName === 'metronome') return metronomeQuarters(el)
+    if (el.tagName === 'sound') {
+      const tempo = parseFloat(el.getAttribute('tempo') ?? '')
+      return tempo > 0 ? String(Math.round(tempo)) : null
+    }
+    for (const child of Array.from(el.children)) {
+      const found = find(child)
+      if (found !== null) return found
+    }
+    return null
   }
-  return ''
+  return xmlDoc.documentElement ? find(xmlDoc.documentElement) ?? '' : ''
 }
 
 function parseChordNote(noteEl: Element, keyStr: string): ChordNote | null {
@@ -193,6 +211,7 @@ interface PendingNote {
   articulation: Articulation | undefined
   grace: GraceNote | null
   slurEvents: SlurEvent[]
+  marks: TupletMarks          // <tuplet> start / stop on any member
 }
 
 /** Position differences below this many quarters are rounding, not music */
@@ -201,6 +220,91 @@ const TIMELINE_EPS = 0.1
 const durationOf = (el: Element): number | null => {
   const v = parseFloat(el.getElementsByTagName('duration')[0]?.textContent ?? '')
   return Number.isFinite(v) ? v : null
+}
+
+// Written length in quarters of a NoteObject value (before any tuplet scaling)
+const NOTE_QUARTERS: Record<NoteObject['type'], number> = { whole: 4, half: 2, quarter: 1, eighth: 0.5, '16th': 0.25, '32nd': 0.125 }
+const writtenQuarters = (n: NoteObject) => NOTE_QUARTERS[n.type] * (n.dot ? 1.5 : 1)
+
+// Two-note tremolo (start / stop): <duration> is the sounding length, the <type> and any
+// <time-modification> 2:1 only describe how it is drawn. type="single" is one note.
+const isPairedTremolo = (el: Element) =>
+  Array.from(el.getElementsByTagName('tremolo')).some(t => ['start', 'stop'].includes(t.getAttribute('type') ?? ''))
+
+interface TupletMarks { start: number; stop: number }
+
+function readTupletMarks(el: Element): TupletMarks {
+  const marks = { start: 0, stop: 0 }
+  const nodes = el.getElementsByTagName('tuplet')
+  for (let t = 0; t < nodes.length; t++) {
+    const type = nodes[t].getAttribute('type')
+    if (type === 'start') marks.start++
+    if (type === 'stop') marks.stop++
+  }
+  return marks
+}
+
+// `tuplet` says "N in the time of M"; a group that isn't N notes long (quarter + eighth
+// triplet) records its real length on its first note as `tupletLen`, so the bracket closes
+// where the group does. Groups never cross a barline: this runs on one measure.
+function markTupletLengths(notes: NoteObject[], marks: Map<NoteObject, TupletMarks>) {
+  const close = (from: number, to: number) => {
+    const count = to - from + 1
+    if (count !== notes[from].tuplet) notes[from].tupletLen = count
+  }
+  const isMultiple = (len: number, n: number) => {
+    const l = Math.log2(len / n)
+    return Math.abs(l - Math.round(l)) < 1e-9
+  }
+
+  // No <tuplet> elements: N notes of one value are a group; otherwise a group is as many
+  // notes as it takes to add up to N × 2^k quarters (at least two)
+  const guess = (a: number, b: number) => {
+    const n = notes[a].tuplet!
+    let k = a
+    while (k < b) {
+      if (k + n <= b && notes.slice(k, k + n).every(x => x.type === notes[k].type && x.dot === notes[k].dot)) { k += n; continue }
+      let len = 0
+      let j = k
+      while (j < b) {
+        len += writtenQuarters(notes[j])
+        j++
+        if (j - k >= 2 && isMultiple(len, n)) break
+      }
+      if (j - k < 2 || !isMultiple(len, n)) return
+      close(k, j - 1)
+      k = j
+    }
+  }
+
+  // <tuplet type="start|stop">: the outermost pair of a run is the group
+  const marked = (a: number, b: number) => {
+    let depth = 0
+    let from = a
+    for (let k = a; k < b; k++) {
+      const m = marks.get(notes[k])
+      if (!m) continue
+      if (m.start > 0) { if (depth === 0) from = k; depth += m.start }
+      if (m.stop > 0 && depth > 0) {
+        depth -= m.stop
+        if (depth <= 0) { depth = 0; close(from, k) }
+      }
+    }
+  }
+
+  for (let i = 0; i < notes.length;) {
+    if (!notes[i].tuplet) { i++; continue }
+    let end = i
+    while (end < notes.length && notes[end].tuplet) end++
+    if (notes.slice(i, end).some(n => marks.has(n))) marked(i, end)
+    else for (let a = i; a < end;) {
+      let b = a
+      while (b < end && notes[b].tuplet === notes[a].tuplet) b++
+      guess(a, b)
+      a = b
+    }
+    i = end
+  }
 }
 
 const restNote = (type: NoteObject['type'], dot = false): NoteObject => (
@@ -387,6 +491,12 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
     let maxPos = 0
     let keptEnd = 0
     let pending = null as PendingNote | null
+    const tupletMarks = new Map<NoteObject, TupletMarks>()
+    // A typeless rest that is the only note of the measure is a bar rest
+    const keptHere = kids.filter(k => k.tagName === 'note' && !isCue(k) && staffOf(k) === keepStaff && voiceOf(k) === keepVoice
+      && k.getElementsByTagName('grace').length === 0 && k.getElementsByTagName('chord').length === 0)
+    const loneRest = keptHere.length === 1 && keptHere[0].getElementsByTagName('rest').length > 0 && keptHere[0].getElementsByTagName('type').length === 0
+      ? keptHere[0] : null
 
     const pushRests = (beats: number) => {
       for (const v of splitDuration(beats)) measureNotes.push(restNote(v.type, v.dot))
@@ -449,6 +559,7 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
         stopArc(tieArc, note)
       }
       applySlurs(note, p.slurEvents)
+      if (p.marks.start > 0 || p.marks.stop > 0) tupletMarks.set(note, p.marks)
       if (p.articulation) note.articulation = p.articulation
 
       tieFrom = main && main.tieStart ? { note, semi: main.semi, arc: tieArc } : null
@@ -498,6 +609,8 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
           const member = readMember(el, keyStr)
           if (member) pending.members.push(member)
           pending.slurEvents.push(...readSlurEvents(el))
+          const m = readTupletMarks(el)
+          pending.marks = { start: pending.marks.start + m.start, stop: pending.marks.stop + m.stop }
         }
         continue
       }
@@ -537,7 +650,19 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
       const isRest = restNode !== undefined
       // A whole-measure rest is a whole rest whatever its <type> or duration say
       // (in 3/4 the duration alone would make it a dotted half)
-      if (isRest && restNode.getAttribute('measure') === 'yes') { noteType = 'whole'; hasDot = false }
+      const barRest = isRest && (restNode.getAttribute('measure') === 'yes' || el === loneRest)
+      if (barRest) { noteType = 'whole'; hasDot = false }
+      let pieces = [{ type: noteType, dot: hasDot }]
+      const dots = el.getElementsByTagName('dot').length
+      const paired = isPairedTremolo(el)
+      if (paired && duration !== null && beatValue > 0) {
+        pieces = splitDuration(beatValue)
+      } else if (dots >= 2 && !barRest) {
+        // A NoteObject holds one dot: a double-dotted half (3.5 beats) was read as 3.
+        // Tie on the rest of the written length instead.
+        const base = BEAT_UNIT_QUARTERS[typeNode?.textContent?.trim() ?? '']
+        if (base !== undefined) pieces = splitDuration(base * (2 - 2 ** -dots))
+      }
 
       const first = isRest ? null : readMember(el, keyStr)
       let firstTieStop = false
@@ -552,7 +677,7 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
       if (timeModNode) {
         const actualNode = timeModNode.getElementsByTagName('actual-notes')[0]
         const actual = actualNode ? parseInt(actualNode.textContent!) : 0
-        if (actual >= 2) tuplet = actual
+        if (actual >= 2 && !paired) tuplet = actual
       }
 
       // A note can carry several <notations> blocks (Finale and MuseScore write the
@@ -579,18 +704,20 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
 
       pending = {
         rest: isRest,
-        pieces: [{ type: noteType, dot: hasDot }],
+        pieces,
         members: first ? [first] : [],
         firstTieStop,
         tuplet,
         articulation,
         grace,
         slurEvents: readSlurEvents(el),
+        marks: readTupletMarks(el),
       }
     }
     flush()
     // The kept voice stops short of what another voice (or a <forward>) reached
     if (timed && measureNotes.length > 0 && maxPos - keptEnd >= TIMELINE_EPS) pushRests(maxPos - keptEnd)
+    markTupletLengths(measureNotes, tupletMarks)
 
     measureNotes._repeatStart = repeatStart
     measureNotes._repeatEnd = repeatEnd
@@ -601,28 +728,56 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
     if (activeVolta !== null) measureNotes._volta = activeVolta
     if (endingCloses) activeVolta = null
 
+    // Directions, dynamics and hairpins written for another staff belong to that staff
+    const allDirections = Array.from(measures[i].getElementsByTagName('direction'))
+    const directionNodes = allDirections.filter(d => {
+      const staff = Array.from(d.children).find(c => c.tagName === 'staff')?.textContent?.trim()
+      return !staff || (parseInt(staff) || 1) === parseInt(keepStaff)
+    })
+
     let directionText = ''
-    const directionNodes = measures[i].getElementsByTagName('direction')
     const knownKeywords = ['d.c.', 'd.s.', 'fine', 'coda', 'segno', 'al fine', 'al coda']
-    for (let d = 0; d < directionNodes.length; d++) {
+    for (let d = 0; d < directionNodes.length && !directionText; d++) {
       const wordsNodes = directionNodes[d].getElementsByTagName('words')
       for (let w = 0; w < wordsNodes.length; w++) {
         const text = wordsNodes[w].textContent!.trim()
-        if (knownKeywords.some(kw => text.toLowerCase().includes(kw))) {
+        if (knownKeywords.some(kw => text.toLowerCase().includes(kw)) || classifyDirection(text) !== null) {
           directionText = text
           break
         }
       }
-      if (directionText) break
+    }
+    if (!directionText) {
+      // No printed words: the sign itself (a D.S. needs its Segno to jump to), then <sound>
+      if (directionNodes.some(d => d.getElementsByTagName('segno').length > 0)) directionText = 'Segno'
+      else if (directionNodes.some(d => d.getElementsByTagName('coda').length > 0)) directionText = 'Coda'
+      else {
+        const given = (sound: Element, name: string) => {
+          const v = sound.getAttribute(name)?.trim()
+          return !!v && v !== 'no'
+        }
+        for (const sound of Array.from(measures[i].getElementsByTagName('sound'))) {
+          const owner = sound.parentNode as Element | null
+          if (owner?.tagName === 'direction' && !directionNodes.includes(owner)) continue
+          if (sound.getAttribute('dacapo') === 'yes') directionText = 'D.C.'
+          else if (given(sound, 'dalsegno')) directionText = 'D.S.'
+          else if (given(sound, 'fine')) directionText = 'Fine'
+          else if (given(sound, 'segno')) directionText = 'Segno'
+          if (directionText) break
+        }
+      }
     }
     measureNotes._direction = directionText
 
     let dynamicText = ''
-    for (let d = 0; d < directionNodes.length; d++) {
+    for (let d = 0; d < directionNodes.length && !dynamicText; d++) {
       const dynamicsNode = directionNodes[d].getElementsByTagName('dynamics')[0]
       if (dynamicsNode && dynamicsNode.children.length > 0) {
-        dynamicText = dynamicsNode.children[0].tagName.toLowerCase()
-        break
+        const mark = dynamicsNode.children[0]
+        // <other-dynamics>sffz</other-dynamics> carries the mark as text; Route B's &xx holds only letters
+        dynamicText = mark.tagName.toLowerCase() === 'other-dynamics'
+          ? (mark.textContent ?? '').replace(/[^A-Za-z]/g, '')
+          : mark.tagName.toLowerCase()
       }
     }
     measureNotes._dynamic = dynamicText
@@ -630,7 +785,7 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
     // Walk every wedge in order: a hairpin that opens and closes inside this
     // measure must not stay open for the rest of the piece. Such a measure still
     // draws its own hairpin; only the next measure starts clean.
-    const wedgeNodes = measures[i].getElementsByTagName('wedge')
+    const wedgeNodes = directionNodes.flatMap(d => Array.from(d.getElementsByTagName('wedge')))
     let openedHere: 'cresc' | 'dim' | null = null
     let closedHere = false
     for (let w = 0; w < wedgeNodes.length; w++) {
@@ -645,10 +800,12 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
     // bar number. Only a pickup's leftover half bar (implicit, nothing in it at all) goes.
     if (measureNotes.length === 0) {
       const leftover = measures[i].getAttribute('implicit') === 'yes' && !kids.some(k => k.tagName === 'note')
-        && !repeatStart && !repeatEnd && directionNodes.length === 0 && !measureNotes._key && !measureNotes._timeSig
+        && !repeatStart && !repeatEnd && allDirections.length === 0 && !measureNotes._key && !measureNotes._timeSig
       if (leftover) continue
       measureNotes.push(restNote('whole'))
     }
+    // 弱起: an incomplete first measure (MusicXML marks it implicit or numbers it 0)
+    if (jianpuMeasures.length === 0 && (measures[i].getAttribute('implicit') === 'yes' || measures[i].getAttribute('number') === '0')) measureNotes._pickup = true
     jianpuMeasures.push(measureNotes)
   }
 
@@ -837,13 +994,12 @@ export function transposeNoteObjects(
       if (shifted !== toKey) { toKey = shifted; newKey = shifted }
     }
     const newMeasure = measure.map(n => transposeNote(n, fromKey, toKey)) as MeasureArray
-    newMeasure._repeatStart = measure._repeatStart
-    newMeasure._repeatEnd = measure._repeatEnd
-    newMeasure._direction = measure._direction
-    newMeasure._dynamic = measure._dynamic
-    newMeasure._wedge = measure._wedge
-    newMeasure._volta = measure._volta
-    newMeasure._timeSig = measure._timeSig
+    // Every property the measure carries (_pickup, and whatever is added next), not a list
+    // that has to be kept in step; only _key is the transposition's own to set
+    for (const k of Object.keys(measure)) {
+      if (!/^\d+$/.test(k)) (newMeasure as unknown as Record<string, unknown>)[k] = (measure as unknown as Record<string, unknown>)[k]
+    }
+    delete newMeasure._key
     if (newKey) newMeasure._key = newKey
     return newMeasure
   })

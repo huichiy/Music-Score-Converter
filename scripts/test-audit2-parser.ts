@@ -315,6 +315,201 @@ describe('4. MusicXML timeline: forward, gaps, second layers', () => {
   assertEq('a short measure is never padded to the bar', fmt(short), '1/q')
 })
 
+// ============================================================================
+// 5-7. Directions
+// ============================================================================
+
+describe('5. a direction written for another staff supplies nothing', () => {
+  const two = (dirs: string) => parseXml(`<measure number="1">${attrs()}${dirs}
+    ${noteXml('C', 5, 4, 'whole', '<voice>1</voice><staff>1</staff>')}<backup><duration>4</duration></backup>
+    ${noteXml('C', 3, 4, 'whole', '<voice>5</voice><staff>2</staff>')}</measure>`)[0]
+  const dirs = (staff: string) => `<direction><direction-type><dynamics><f/></dynamics></direction-type>${staff}</direction>
+    <direction><direction-type><wedge type="crescendo"/></direction-type>${staff}</direction>
+    <direction><direction-type><words>D.C. al Fine</words></direction-type>${staff}</direction>`
+  const other = two(dirs('<staff>2</staff>'))
+  assertEq('staff 2 dynamic, wedge and words are ignored', [other._dynamic, other._wedge, other._direction], ['', null, ''])
+  const mine = two(dirs('<staff>1</staff>'))
+  assertEq('the kept staff\'s own are read', [mine._dynamic, mine._wedge, mine._direction], ['f', 'cresc', 'D.C. al Fine'])
+  const none = two(dirs(''))
+  assertEq('a direction without <staff> is read', [none._dynamic, none._wedge, none._direction], ['f', 'cresc', 'D.C. al Fine'])
+
+  const ms = parseXml(`<measure number="1">${attrs()}<direction><direction-type><wedge type="crescendo"/></direction-type><staff>1</staff></direction>
+      ${noteXml('C', 5, 4, 'whole', '<staff>1</staff>')}</measure>
+    <measure number="2"><direction><direction-type><wedge type="stop"/></direction-type><staff>2</staff></direction>
+      ${noteXml('D', 5, 4, 'whole', '<staff>1</staff>')}</measure>
+    <measure number="3"><direction><direction-type><wedge type="stop"/></direction-type><staff>1</staff></direction>
+      ${noteXml('E', 5, 4, 'whole', '<staff>1</staff>')}</measure>`)
+  assertEq('another staff\'s wedge stop does not close this staff\'s hairpin', ms.map(m => m._wedge), ['cresc', 'cresc', null])
+})
+
+describe('6. <other-dynamics> keeps only its letters', () => {
+  const dyn = (inner: string) => parseXml(`<measure number="1">${attrs()}<direction><direction-type><dynamics>${inner}</dynamics></direction-type></direction>${noteXml('C', 5, 4, 'whole')}</measure>`)[0]._dynamic
+  assertEq('sffz', dyn('<other-dynamics>sffz</other-dynamics>'), 'sffz')
+  assertEq('"sf-fz 3" → sffz', dyn('<other-dynamics>sf-fz 3</other-dynamics>'), 'sffz')
+  assertEq('no letters → empty', dyn('<other-dynamics>123</other-dynamics>'), '')
+  assertEq('a plain mark still reads from its tag', dyn('<mf/>'), 'mf')
+})
+
+describe('7. direction signs: words, <segno/>, <coda/>, <sound>', () => {
+  const dirOf = (inner: string) => parseXml(`<measure number="1">${attrs()}${inner}${noteXml('C', 5, 4, 'whole')}</measure>`)[0]._direction
+  const words = (w: string) => `<direction><direction-type><words>${w}</words></direction-type></direction>`
+  const el = (e: string) => `<direction><direction-type>${e}</direction-type></direction>`
+  assertEq('"D.S" without the last dot', dirOf(words('D.S')), 'D.S')
+  assertEq('"Da Capo"', dirOf(words('Da Capo')), 'Da Capo')
+  assertEq('"DC al Fine"', dirOf(words('DC al Fine')), 'DC al Fine')
+  assertEq('"Dal Segno al Coda"', dirOf(words('Dal Segno al Coda')), 'Dal Segno al Coda')
+  assertEq('other words are not directions', dirOf(words('rit.')), '')
+  assertEq('<segno/> alone', dirOf(el('<segno/>')), 'Segno')
+  assertEq('<coda/> alone', dirOf(el('<coda/>')), 'Coda')
+  assertEq('<segno/> beats <coda/>', dirOf(el('<coda/>') + el('<segno/>')), 'Segno')
+  assertEq('recognised words win over a sign', dirOf(el('<segno/>') + words('D.C.')), 'D.C.')
+  const sound = (soundAttrs: string, where: 'in' | 'out' = 'in') => where === 'in'
+    ? `<direction><direction-type><words>rit.</words></direction-type><sound ${soundAttrs}/></direction>`
+    : `<sound ${soundAttrs}/>`
+  assertEq('<sound dacapo="yes"/> → D.C.', dirOf(sound('dacapo="yes"')), 'D.C.')
+  assertEq('<sound dalsegno="s1"/> → D.S.', dirOf(sound('dalsegno="s1"')), 'D.S.')
+  assertEq('<sound fine="yes"/> → Fine', dirOf(sound('fine="yes"')), 'Fine')
+  assertEq('<sound segno="s1"/> → Segno', dirOf(sound('segno="s1"')), 'Segno')
+  assertEq('a <sound> straight under <measure> counts', dirOf(sound('dacapo="yes"', 'out')), 'D.C.')
+  assertEq('a sign beats a <sound>', dirOf(sound('dacapo="yes"') + el('<coda/>')), 'Coda')
+  assertEq('a <sound> with only a tempo is nothing', dirOf(sound('tempo="90"')), '')
+  assertEq('dacapo="no" is nothing', dirOf(sound('dacapo="no"')), '')
+  const otherStaff = parseXml(`<measure number="1">${attrs()}<direction><direction-type><words>x</words></direction-type><staff>2</staff><sound dacapo="yes"/></direction>
+    ${noteXml('C', 5, 4, 'whole', '<staff>1</staff>')}<backup><duration>4</duration></backup>${noteXml('C', 3, 4, 'whole', '<staff>2</staff>')}</measure>`)[0]
+  assertEq('a <sound> inside another staff\'s direction is ignored', otherStaff._direction, '')
+})
+
+// ============================================================================
+// 8-12. Note values
+// ============================================================================
+
+describe('8. two or more dots are tied pieces that add up', () => {
+  const dd = parseXml(`<measure number="1">${attrs(0, 4, 4, 2)}
+    ${noteXml('C', 4, 7, 'half', `<dot/><dot/>${notations(slur('start', 1), '<articulations><staccato/></articulations>')}`)}
+    ${noteXml('D', 4, 1, 'eighth', notations(slur('stop', 1)))}</measure>`)[0]
+  assertEq('double-dotted half = half. + tied eighth', fmt(dd), '1/h. ~1/e 2/e')
+  assertEq('slur and articulation sit on the first piece', [slurs(dd), dd.map(n => n.articulation ?? null)], [['(', '', ')'], ['staccato', null, null]])
+
+  const triple = parseXml(`<measure number="1">${attrs(0, 4, 4, 8)}${noteXml('C', 4, 30, 'half', '<dot/><dot/><dot/>')}${noteXml('D', 4, 2, 'eighth')}</measure>`)[0]
+  assertEq('three dots: half + 3 dots = 3.75 beats', fmt(triple), '1/h. ~1/e. 2/e')
+
+  const rest = parseXml(`<measure number="1">${attrs(0, 4, 4, 2)}<note><rest/><duration>7</duration><type>half</type><dot/><dot/></note>${noteXml('D', 4, 1, 'eighth')}</measure>`)[0]
+  assertEq('a double-dotted rest is rests (never tied)', fmt(rest), '0/h. 0/e 2/e')
+
+  const chord = parseXml(`<measure number="1">${attrs(0, 4, 4, 2)}${noteXml('C', 4, 7, 'half', '<dot/><dot/>')}${chordXml('E', 4, '<dot/><dot/>', 7, 'half')}${noteXml('D', 4, 1, 'eighth')}</measure>`)[0]
+  assertEq('a chord keeps its notes on the first piece only', [chord[0].chordNotes?.map(c => c.degree), chord[1].chordNotes ?? null, chord[0].degree, chord[1].degree], [[1], null, 3, 3])
+
+  const trip = parseXml(`<measure number="1">${attrs(0, 4, 4, 6)}${noteXml('C', 4, 7, 'quarter', '<dot/><dot/><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>')}</measure>`)[0]
+  assertEq('tuplet goes on every piece', [fmt(trip), trip.map(n => n.tuplet)], ['1/q. ~1/s', [3, 3]])
+
+  const single = parseXml(`<measure number="1">${attrs(0, 4, 4, 2)}${noteXml('C', 4, 3, 'quarter', '<dot/>')}</measure>`)[0]
+  assertEq('one dot is untouched', fmt(single), '1/q.')
+})
+
+describe('9. pitchToJianpu with a double alteration', () => {
+  const j = (step: string, alter: number, octave: number, key = 'C') => { const p = pitchToJianpu(step, alter, octave, key); return `${p.accidental}${p.degree}:${p.octave}` }
+  assertEq('F## in C is G (5)', j('F', 2, 4), '5:0')
+  assertEq('Bbb in C is A (6)', j('B', -2, 4), '6:0')
+  assertEq('C## is D', j('C', 2, 5), '2:1')
+  assertEq('a single sharp keeps its spelling', j('F', 1, 4), '#4:0')
+  assertEq('a single flat keeps its spelling', j('B', -1, 4), 'b7:0')
+  assertEq('E## in G is F# (the 7th, an octave down)', j('E', 2, 4, 'G'), '7:-1')
+  assertEq('F## in G is one step above the 7th: still one accidental', j('F', 2, 4, 'G'), '#7:-1')
+  assertEq('a quarter-tone stays an accidental', j('F', 0.5, 4), '#4:0')
+  const ms = parseXml(`<measure number="1">${attrs()}<note><pitch><step>F</step><alter>2</alter><octave>4</octave></pitch><duration>4</duration><type>whole</type></note></measure>`)
+  assertEq('...also through MusicXML', fmt(ms[0]), '5/w')
+})
+
+describe('10. a rest with no <type> that fills its measure is a whole rest', () => {
+  const m3 = (inner: string) => parseXml(`<measure number="1">${attrs(0, 3, 4)}${inner}</measure>`)[0]
+  assertEq('3/4 bar rest', fmt(m3('<note><rest/><duration>3</duration></note>')), '0/w')
+  assertEq('...not a dotted half, and it collapses like one', [m3('<note><rest/><duration>3</duration></note>')[0].dot, m3('<note><rest/><duration>3</duration></note>')[0].type], [false, 'whole'])
+  assertEq('a typeless rest among notes keeps its duration', fmt(m3(`<note><rest/><duration>1</duration></note>${noteXml('C', 4, 2, 'half')}`)), '0/q 1/h')
+  assertEq('a rest that has a <type> keeps it', fmt(m3('<note><rest/><duration>3</duration><type>half</type><dot/></note>')), '0/h.')
+})
+
+describe('11. tempo from <sound tempo>', () => {
+  const metro = '<direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>100</per-minute></metronome></direction-type></direction>'
+  const doc = (inner: string) => xmlDoc(`<part><measure>${inner}</measure></part>`)
+  assertEq('only a <sound tempo>', parseMetronomeTempo(doc('<sound tempo="96.4"/>')), '96')
+  assertEq('inside a <direction>', parseMetronomeTempo(doc('<direction><sound tempo="80"/></direction>')), '80')
+  assertEq('the first in document order wins: sound first', parseMetronomeTempo(doc(`<sound tempo="90"/>${metro}`)), '90')
+  assertEq('...metronome first', parseMetronomeTempo(doc(`${metro}<sound tempo="90"/>`)), '100')
+  assertEq('a zero tempo is skipped', parseMetronomeTempo(doc(`<sound tempo="0"/>${metro}`)), '100')
+  assertEq('a metronome without per-minute is skipped', parseMetronomeTempo(doc('<direction><direction-type><metronome><beat-unit>quarter</beat-unit></metronome></direction-type></direction><sound tempo="70"/>')), '70')
+  assertEq('a later measure counts too', parseMetronomeTempo(xmlDoc('<part><measure/><measure><sound tempo="60"/></measure></part>')), '60')
+  assertEq('nothing → empty', parseMetronomeTempo(doc('<sound dacapo="yes"/>')), '')
+})
+
+describe('12. two-note tremolo is not a tuplet', () => {
+  const trem = (type: string, dur: number) =>
+    `<note><pitch><step>C</step><octave>5</octave></pitch><duration>${dur}</duration><type>whole</type>
+      <time-modification><actual-notes>2</actual-notes><normal-notes>1</normal-notes></time-modification>
+      <notations><ornaments><tremolo type="${type}">3</tremolo></ornaments></notations></note>`
+  const ms = parseXml(`<measure number="1">${attrs(0, 4, 4, 4)}${trem('start', 8)}${trem('stop', 8)}</measure>`)[0]
+  assertEq('two written wholes of 2 beats each make a 4-beat bar', [fmt(ms), ms.map(n => n.tuplet ?? null)], ["1'/h 1'/h", [null, null]])
+  const long = parseXml(`<measure number="1">${attrs(0, 4, 4, 4)}${trem('start', 20)}</measure>`)[0]
+  assertEq('a value that needs a tie is split from the duration', fmt(long), "1'/w ~1'/q")
+  const single = parseXml(`<measure number="1">${attrs(0, 4, 4, 1)}<note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><type>quarter</type><notations><ornaments><tremolo type="single">3</tremolo></ornaments></notations></note></measure>`)[0]
+  assertEq('a one-note tremolo is just its note', fmt(single), "1'/q")
+})
+
+// ============================================================================
+// 13-15. tupletLen, _pickup, transposition keeps measure properties
+// ============================================================================
+
+describe('13. tupletLen: a tuplet group that is not `tuplet` notes long', () => {
+  const tm = '<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>'
+  const t = (step: string, d: number, type: string, mark = '') => noteXml(step, 4, d, type, tm + mark)
+  const mark = (type: 'start' | 'stop', number = 1) => notations(`<tuplet type="${type}" number="${number}"/>`)
+  const lens = (m: MeasureArray) => m.map(n => n.tupletLen ?? null)
+  const bar = (inner: string, divisions = 3) => parseXml(`<measure number="1">${attrs(0, 4, 4, divisions)}${inner}</measure>`)[0]
+
+  const qe = bar(`${t('C', 2, 'quarter')}${t('D', 1, 'eighth')}${t('E', 2, 'quarter')}${t('F', 1, 'eighth')}${noteXml('G', 4, 6, 'half')}`)
+  assertEq('quarter + eighth triplet: tupletLen 2 on the first note of each group', lens(qe), [2, null, 2, null, null])
+  assertEq('...tuplet itself is untouched', qe.map(n => n.tuplet ?? null), [3, 3, 3, 3, null])
+
+  const marked = bar(`${t('C', 2, 'quarter', mark('start'))}${t('D', 1, 'eighth', mark('stop'))}${t('E', 2, 'quarter', mark('start'))}${t('F', 1, 'eighth', mark('stop'))}${noteXml('G', 4, 6, 'half')}`)
+  assertEq('the same with <tuplet> start / stop', lens(marked), [2, null, 2, null, null])
+
+  const three = bar(`${t('C', 1, 'eighth')}${t('D', 1, 'eighth')}${t('E', 1, 'eighth')}${noteXml('F', 4, 9, 'half', '<dot/>')}`)
+  assertEq('a plain eighth triplet needs none', lens(three), [null, null, null, null])
+
+  const sext = bar(Array(6).fill(0).map(() => noteXml('C', 4, 1, '16th', '<time-modification><actual-notes>6</actual-notes><normal-notes>4</normal-notes></time-modification>')).join('') + noteXml('G', 4, 12, 'half', '<dot/>'), 6)
+  assertEq('six 16ths of a sextuplet are one group of 6', lens(sext), [null, null, null, null, null, null, null])
+
+  const restIn = bar(`${t('C', 2, 'quarter')}<note><rest/><duration>1</duration><type>eighth</type>${tm}</note>${noteXml('G', 4, 9, 'half', '<dot/>')}`)
+  assertEq('a rest is a member of the group', lens(restIn), [2, null, null])
+
+  const nested = bar(['C', 'D', 'E', 'F'].map((s, k) => t(s, 1, 'eighth', k === 0 ? mark('start', 1) : k === 1 ? mark('start', 2) : k === 2 ? mark('stop', 2) : mark('stop', 1))).join(''))
+  assertEq('nested tuplets: the outermost start / stop pair is the group', lens(nested), [4, null, null, null])
+
+  const split = parseXml(`<measure number="1">${attrs(0, 4, 4, 3)}${noteXml('C', 4, 9, 'half', '<dot/>')}${t('D', 2, 'quarter')}</measure>
+    <measure number="2">${t('E', 1, 'eighth')}${noteXml('F', 4, 9, 'half', '<dot/>')}</measure>`)
+  assertEq('a group never crosses a barline', [lens(split[0]), lens(split[1])], [[null, null], [null, null]])
+})
+
+describe('14. _pickup on the first measure', () => {
+  const implicit = parseXml(`<measure number="0" implicit="yes">${attrs()}${noteXml('C', 5, 1)}</measure><measure number="1">${noteXml('D', 5, 4, 'whole')}</measure>`)
+  assertEq('implicit="yes" → _pickup', implicit.map(x => x._pickup ?? false), [true, false])
+  const zero = parseXml(`<measure number="0">${attrs()}${noteXml('C', 5, 1)}</measure><measure number="1">${noteXml('D', 5, 4, 'whole')}</measure>`)
+  assertEq('number="0" → _pickup', zero.map(x => x._pickup ?? false), [true, false])
+  const plain = parseXml(`<measure number="1">${attrs()}${noteXml('C', 5, 4, 'whole')}</measure><measure number="2" implicit="yes">${noteXml('D', 5, 1)}</measure>`)
+  assertEq('a normal first measure is not a pickup, an implicit later one is not either', plain.map(x => x._pickup ?? false), [false, false])
+})
+
+describe('15. transposeNoteObjects keeps every measure property', () => {
+  const one = { degree: 1, octave: 0, type: 'quarter', dot: false, tie: false, rest: false, accidental: '', slurStart: false, slurStop: false }
+  const src = [Object.assign([one] as unknown as MeasureArray, { _pickup: true, _repeatStart: true, _custom: 'x' } as Record<string, unknown>)] as Measure[]
+  const out = transposeNoteObjects(src, 'C', 'D')[0] as MeasureArray & Record<string, unknown>
+  assertEq('_pickup and unknown properties survive', [out._pickup, out._repeatStart, out._custom], [true, true, 'x'])
+  assertEq('the notes were transposed', out[0].degree, 7)
+  assertEq('the new array carries no stray keys', Object.keys(out).sort(), ['0', '_custom', '_pickup', '_repeatStart'])
+
+  const keyed = [Object.assign([one] as unknown as MeasureArray, { _key: 'C' })] as Measure[]
+  assertEq('a _key equal to the source key is not carried over', '_key' in (transposeNoteObjects(keyed, 'C', 'D')[0] as MeasureArray), false)
+})
+
 // @@SECTIONS@@
 
 // ============================================================================
