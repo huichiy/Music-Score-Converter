@@ -510,6 +510,70 @@ describe('15. transposeNoteObjects keeps every measure property', () => {
   assertEq('a _key equal to the source key is not carried over', '_key' in (transposeNoteObjects(keyed, 'C', 'D')[0] as MeasureArray), false)
 })
 
+// ============================================================================
+// 16-17. MIDI: meter changes, the no-notes message
+// ============================================================================
+
+describe('16. MIDI: bars follow every time signature', () => {
+  // notes are [pitch, start tick, duration ticks]; sigs [tick, beats, beat type]; ppq 480, one 4/4 bar = 1920
+  const midiWith = (notes: Array<[number, number, number]>, sigs: Array<[number, number, number]>, keys: Array<[number, string]> = []) => {
+    const midi = new Midi()
+    for (const [ticks, n, d] of sigs) midi.header.timeSignatures.push({ ticks, timeSignature: [n, d] })
+    for (const [ticks, key] of keys) midi.header.keySignatures.push({ ticks, key, scale: 'major' })
+    const t = midi.addTrack()
+    for (const [pitch, ticks, durationTicks] of notes) t.addNote({ midi: pitch, ticks, durationTicks })
+    return midi
+  }
+  const timeSigs = (ms: MeasureArray[]) => ms.map(m => m._timeSig ?? null)
+
+  const change = midiToJianpu(midiWith([[60, 0, 1920], [62, 1920, 1920], [64, 3840, 1440], [65, 5280, 1440]], [[0, 4, 4], [3840, 3, 4]]))
+  assertEq('4/4 for two bars, then 3/4: 4-beat bars then 3-beat bars', fmtAll(change.measures), ['1/w', '2/w', '3/h.', '4/h.'])
+  assertEq('_timeSig on the first measure of the new meter only', timeSigs(change.measures), [null, null, '3/4', null])
+  assertEq('the header keeps the opening meter', change.timeStr, '4/4')
+
+  const unsorted = midiToJianpu(midiWith([[60, 0, 1920], [62, 1920, 1920], [64, 3840, 1440]], [[3840, 3, 4], [0, 4, 4]]))
+  assertEq('signatures given out of order are sorted', [fmtAll(unsorted.measures), unsorted.timeStr], [['1/w', '2/w', '3/h.'], '4/4'])
+
+  const cut = midiToJianpu(midiWith([[60, 0, 1920], [62, 1920, 960], [64, 2880, 960], [65, 3840, 960]], [[0, 4, 4], [2880, 2, 4]]))
+  assertEq('a bar the next signature cuts short ends there', fmtAll(cut.measures), ['1/w', '2/h', '3/h', '4/h'])
+  assertEq('...and the new meter starts on the next bar', timeSigs(cut.measures), [null, null, '2/4', null])
+
+  const pickup = midiToJianpu(midiWith([[67, 0, 480], [60, 480, 1920], [62, 2400, 1920]], [[0, 1, 4], [480, 4, 4]]))
+  assertEq('a 1/4 bar before 4/4 is a pickup', [fmtAll(pickup.measures), pickup.measures.map(m => m._pickup ?? false)], [['5/q', '1/w', '2/w'], [true, false, false]])
+  assertEq('...the header is the real meter and nothing marks a change', [pickup.timeStr, timeSigs(pickup.measures)], ['4/4', [null, null, null]])
+
+  const sameTick = midiToJianpu(midiWith([[60, 0, 1440]], [[0, 3, 4], [0, 6, 8]]))
+  assertEq('a later signature on the same tick wins', sameTick.timeStr, '6/8')
+
+  const trailing = midiToJianpu(midiWith([[60, 0, 1920], [62, 3840, 1920]], [[0, 4, 4], [3840, 1, 4]]))
+  assertEq('a 1-beat signature with nothing after it is ignored', [fmtAll(trailing.measures), timeSigs(trailing.measures)], [['1/w', '0/w', '2/w'], [null, null, null]])
+
+  const silent = midiToJianpu(midiWith([[60, 0, 1920], [62, 3360, 1440]], [[0, 4, 4], [1920, 3, 4]]))
+  assertEq('a silent bar of the new meter is one whole rest', [fmtAll(silent.measures), timeSigs(silent.measures)], [['1/w', '0/w', '2/h.'], [null, '3/4', null]])
+
+  const tied = midiToJianpu(midiWith([[60, 0, 2400], [62, 2400, 960]], [[0, 4, 4], [1920, 3, 4]]))
+  assertEq('a note across the meter change is cut and tied', fmtAll(tied.measures), ['1/w', '~1/q 2/h'])
+
+  const keyed = midiToJianpu(midiWith([[60, 0, 1920], [62, 1920, 1440], [64, 3360, 1440], [65, 4800, 1440]], [[0, 4, 4], [1920, 3, 4]], [[0, 'C'], [3840, 'D']]))
+  assertEq('a key change lands on the first bar at or after its tick, whatever the bar length', keyed.measures.map(m => m._key ?? null), [null, null, null, 'D'])
+
+  const six8 = midiToJianpu(midiWith([[60, 0, 1440], [62, 1440, 1440], [64, 2880, 960], [65, 3840, 960]], [[0, 6, 8], [2880, 2, 4]]))
+  assertEq('6/8 then 2/4', [fmtAll(six8.measures), timeSigs(six8.measures)], [['1/h.', '2/h.', '3/h', '4/h'], [null, null, '2/4', null]])
+})
+
+describe('17. MIDI: a file without a melody says so in Chinese', () => {
+  const onlyDrums = new Midi()
+  const d = onlyDrums.addTrack()
+  d.channel = 9
+  d.addNote({ midi: 36, ticks: 0, durationTicks: 120 })
+  let message = ''
+  try { midiToJianpu(onlyDrums) } catch (e) { message = (e as Error).message }
+  assertEq('message', message, '这个 MIDI 里没有可转换的音符（打击乐轨不算）')
+  let empty = ''
+  try { midiToJianpu(new Midi()) } catch (e) { empty = (e as Error).message }
+  assertEq('a file with no tracks says the same', empty, '这个 MIDI 里没有可转换的音符（打击乐轨不算）')
+})
+
 // @@SECTIONS@@
 
 // ============================================================================

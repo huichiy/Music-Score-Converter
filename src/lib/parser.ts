@@ -838,7 +838,7 @@ export function midiToJianpu(midi: Midi): {
     if (track.instrument.percussion || track.channel === 9) continue
     if (track.notes.length > maxNotes) { maxNotes = track.notes.length; bestTrack = track }
   }
-  if (!bestTrack) throw new Error('No notes found in MIDI.')
+  if (!bestTrack) throw new Error('这个 MIDI 里没有可转换的音符（打击乐轨不算）')
 
   // Chords keep their highest pitch per tick
   const TICK_SNAP = Math.max(2, Math.round(ppq / 120))
@@ -849,18 +849,6 @@ export function midiToJianpu(midi: Midi): {
   }
   const melodyNotes = [...tickMap.values()].sort((a, b) => a.ticks - b.ticks)
 
-  // A valid time signature always wins; 4/4 is only the answer when there is none
-  let beats = 4
-  let beatType = 4
-  if (midi.header.timeSignatures?.length > 0) {
-    const [rawBeats, rawBeatType] = midi.header.timeSignatures[0].timeSignature
-    if ([2, 4, 8, 16].includes(rawBeatType) && rawBeats >= 2 && rawBeats <= 12) {
-      beats = rawBeats
-      beatType = rawBeatType
-    }
-  }
-  const measureTicks = beats * (4 / beatType) * ppq
-
   // Grid: 16ths, or 32nds when the file really contains them (onsets sitting
   // exactly on odd 32nd positions)
   const on32nd = melodyNotes.filter(n => {
@@ -869,7 +857,25 @@ export function midiToJianpu(midi: Midi): {
   }).length
   const unit = on32nd >= Math.max(2, melodyNotes.length * 0.05) ? ppq / 8 : ppq / 4
   const unitsPerBeat = ppq / unit
-  const measureUnits = Math.round(measureTicks / unit)
+
+  // Meter: every valid signature in tick order, a later one on the same tick winning.
+  // A 1-beat signature is believed only when another follows it (a pickup written as
+  // 1/4); a lone 1/4 is how some exporters spell "no meter". 4/4 until the first one.
+  interface MeterSegment { startUnit: number; barUnits: number; label: string; beats: number }
+  const segments: MeterSegment[] = []
+  const rawSigs = (midi.header.timeSignatures ?? [])
+    .map((s, k) => ({ ticks: s.ticks, beats: s.timeSignature[0], beatType: s.timeSignature[1], k }))
+    .filter(s => Number.isInteger(s.beats) && s.beats >= 1 && s.beats <= 12 && [1, 2, 4, 8, 16].includes(s.beatType))
+    .sort((a, b) => a.ticks - b.ticks || a.k - b.k)
+  const barUnitsOf = (beats: number, beatType: number) => Math.max(1, Math.round(beats * (4 / beatType) * ppq / unit))
+  for (const s of rawSigs) {
+    const seg = { startUnit: Math.round(s.ticks / unit), barUnits: barUnitsOf(s.beats, s.beatType), label: `${s.beats}/${s.beatType}`, beats: s.beats }
+    if (segments.length > 0 && segments[segments.length - 1].startUnit === seg.startUnit) segments[segments.length - 1] = seg
+    else segments.push(seg)
+  }
+  while (segments.length > 0 && segments[segments.length - 1].beats === 1) segments.pop()
+  if (segments.length === 0 || segments[0].startUnit > 0) segments.unshift({ startUnit: 0, barUnits: barUnitsOf(4, 4), label: '4/4', beats: 4 })
+  const longestBar = Math.max(...segments.map(g => g.barUnits))
 
   // Notes landing on the same grid point collapse to the higher one
   const quantized: Array<{ s: number; n: { midi: number; ticks: number; durationTicks: number } }> = []
@@ -890,22 +896,42 @@ export function midiToJianpu(midi: Midi): {
     const { s, n } = quantized[k]
     const next = quantized[k + 1]
     // (a stray never-ending note must not turn into thousands of tied bars)
-    const ownEnd = Math.min(s + measureUnits * 8, Math.max(s + 1, Math.round((n.ticks + n.durationTicks) / unit)))
+    const ownEnd = Math.min(s + longestBar * 8, Math.max(s + 1, Math.round((n.ticks + n.durationTicks) / unit)))
     const e = !next ? ownEnd
       : next.n.ticks - (n.ticks + n.durationTicks) <= LEGATO_TICKS ? next.s
       : Math.min(next.s, ownEnd)
     events.push({ s, e, midi: n.midi })
     if (next && e < next.s) events.push({ s: e, e: next.s, midi: null })
   }
+  const endUnit = events[events.length - 1].e
+
+  // Bars, from each signature's tick on, each with its own length; a bar the next
+  // signature arrives in the middle of ends there
+  const bars: Array<{ start: number; end: number; seg: number; natural: boolean }> = []
+  segments.forEach((seg, g) => {
+    const limit = g + 1 < segments.length ? segments[g + 1].startUnit : Infinity
+    for (let cur = seg.startUnit; cur < limit && cur < endUnit;) {
+      const end = Math.min(cur + seg.barUnits, limit)
+      bars.push({ start: cur, end, seg: g, natural: end - cur === seg.barUnits })
+      cur = end
+    }
+  })
+
+  // A first segment that is one short bar, shorter than the meter after it, is a pickup
+  // (弱起 written as 1/4 then 4/4): the header shows the real meter
+  let timeStr = segments[0].label
+  const pickup = segments.length > 1 && bars.filter(b => b.seg === 0).length === 1
+    && bars[0].end - bars[0].start < segments[1].barUnits
+  if (pickup) timeStr = segments[1].label
 
   // Cut the timeline at barlines; a note running across one continues, tied
-  const pieces: Array<Array<{ len: number; midi: number | null; tiedIn: boolean }>> = []
+  const pieces: Array<Array<{ len: number; midi: number | null; tiedIn: boolean }>> = bars.map(() => [])
+  let bi = 0
   for (const ev of events) {
     for (let cur = ev.s; cur < ev.e;) {
-      const mi = Math.floor(cur / measureUnits)
-      const end = Math.min(ev.e, (mi + 1) * measureUnits)
-      if (!pieces[mi]) pieces[mi] = []
-      pieces[mi].push({ len: end - cur, midi: ev.midi, tiedIn: cur > ev.s })
+      while (bi < bars.length - 1 && cur >= bars[bi].end) bi++
+      const end = bi === bars.length - 1 ? ev.e : Math.min(ev.e, bars[bi].end)
+      pieces[bi].push({ len: end - cur, midi: ev.midi, tiedIn: cur > ev.s })
       cur = end
     }
   }
@@ -913,36 +939,42 @@ export function midiToJianpu(midi: Midi): {
   // A key signature change belongs to the first measure at or after it
   const keyChanges = new Map<number, string>()
   for (const k of keySigs.slice(1)) {
-    if (k.key) keyChanges.set(Math.max(0, Math.ceil((k.ticks - ppq / 8) / measureTicks)), k.key)
+    const at = bars.findIndex(b => b.start * unit >= k.ticks - ppq / 8)
+    if (k.key && at >= 0) keyChanges.set(at, k.key)
   }
 
   const measures: MeasureArray[] = []
   let currentKey = keyStr
-  for (let mi = 0; mi < pieces.length; mi++) {
+  let meter = timeStr
+  for (let mi = 0; mi < bars.length; mi++) {
     const measure = [] as unknown as MeasureArray
     const newKey = keyChanges.get(mi)
     if (newKey && newKey !== currentKey) { currentKey = newKey; measure._key = newKey }
+    // The first measure of a changed meter says so; the header covers the opening one
+    const label = segments[bars[mi].seg].label
+    if (mi > 0 && bars[mi].seg !== bars[mi - 1].seg && label !== meter) { measure._timeSig = label; meter = label }
 
     const ps = pieces[mi]
-    if (ps.length === 1 && ps[0].midi === null && ps[0].len === measureUnits) {
-      measure.push({ degree: 0, octave: 0, type: 'whole', dot: false, tie: false, rest: true, accidental: '', slurStart: false, slurStop: false })
+    if (ps.length === 1 && ps[0].midi === null && bars[mi].natural && ps[0].len === bars[mi].end - bars[mi].start) {
+      measure.push(restNote('whole'))
     } else {
       for (const p of ps) {
         const pitch = p.midi === null ? null : semitoneToJianpu(p.midi - 12, currentKey)
         splitDuration(p.len / unitsPerBeat).forEach((v, vi) => {
           measure.push(pitch
             ? { ...pitch, type: v.type, dot: v.dot, tie: p.tiedIn || vi > 0, rest: false, slurStart: false, slurStop: false }
-            : { degree: 0, octave: 0, type: v.type, dot: v.dot, tie: false, rest: true, accidental: '', slurStart: false, slurStop: false })
+            : restNote(v.type, v.dot))
         })
       }
     }
+    if (mi === 0 && pickup) measure._pickup = true
     measures.push(measure)
   }
 
   return {
     measures,
     keyStr,
-    timeStr: `${beats}/${beatType}`,
+    timeStr,
     tempoStr: midi.header.tempos?.length > 0 ? Math.round(midi.header.tempos[0].bpm).toString() : '',
     titleStr: midi.header.name || '',
   }

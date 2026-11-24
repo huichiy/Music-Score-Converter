@@ -412,7 +412,7 @@ describe('MIDI: percussion is never the melody', () => {
   d.addNote({ midi: 36, ticks: 0, durationTicks: 120 })
   let message = ''
   try { midiToJianpu(onlyDrums) } catch (e) { message = (e as Error).message }
-  assertEq('a file with only drums has no melody', message, 'No notes found in MIDI.')
+  assertEq('a file with only drums has no melody', message, '这个 MIDI 里没有可转换的音符（打击乐轨不算）')
 })
 
 // ============================================================================
