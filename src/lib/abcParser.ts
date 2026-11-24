@@ -206,17 +206,22 @@ export function parseABC(text: string, filename: string): {
     if (voltaNum !== undefined) cur._volta = voltaNum
   }
 
-  // Call right after flush(): the ending's measures are all in `measures` by then
-  const closeEnding = () => {
+  // Call right after flush(): the ending's measures are all in `measures` by then. A later
+  // ending closed by nothing of its own (the next |: or the end of the tune) must not cover
+  // everything up to there: it is as long as the first ending of its repeat was
+  const closeEnding = (explicit: boolean) => {
     if (voltaNum === undefined) return
     const len = measures.length - endingStart
     if (voltaNum === 1 && len > 0) firstEndingLen = len
+    if (!explicit && voltaNum >= 2 && firstEndingLen !== null) {
+      for (let k = endingStart + firstEndingLen; k < measures.length; k++) delete measures[k]._volta
+    }
     voltaNum = undefined
   }
 
   const startEnding = (num: number) => {
     flush()
-    closeEnding()
+    closeEnding(true)
     voltaNum = num
     endingStart = measures.length
   }
@@ -363,8 +368,8 @@ export function parseABC(text: string, filename: string): {
         const closing = cur.length > 0 ? cur : measures[measures.length - 1]
         if ((bar.includes(':|') || bar.includes('::')) && closing) closing._repeatEnd = true
         flush()
-        // A plain | goes on inside an ending; ||  |]  :|  |: all close it
-        if (bar !== '|') closeEnding()
+        // A plain | goes on inside an ending; ||  |]  :|  |: all close it, |: only by starting something else
+        if (bar !== '|') closeEnding(/:\||\|\||\|\]|::|\[\|/.test(bar))
         if (bar.includes('|:') || bar.includes('::')) { cur._repeatStart = true; firstEndingLen = null }
         // |1  :|2 — the ending's number sits right against the barline
         const ending = body.slice(i).match(/^(\d+)(?:[,-]\d+)*/)
@@ -517,12 +522,7 @@ export function parseABC(text: string, filename: string): {
   }
 
   if (cur.length > 0) measures.push(cur)
-
-  // A later ending that nothing closed must not run to the end of the tune: it is as
-  // long as the first ending of its repeat was
-  if (voltaNum !== undefined && voltaNum >= 2 && firstEndingLen !== null) {
-    for (let k = endingStart + firstEndingLen; k < measures.length; k++) delete measures[k]._volta
-  }
+  closeEnding(false)
 
   // 弱起: a first measure shorter than the bar, with a tune after it. The meter is the
   // one in force at that measure (a body M: before the first note counts)

@@ -279,6 +279,12 @@ describe('_pickup on a short first measure', () => {
   assertEq('the meter of the first measure is used when the body sets one', pick('M:3/4\nG A B|C D E|'), [false, false])
 })
 
+describe('Review: a second ending that only a new |: ends', () => {
+  const voltas = (body: string) => parseABC(`X:1\nT:t\nM:4/4\nL:1/4\nK:C\n${body}`, 'f').measures.map(m => m._volta ?? 0)
+  assertEq('is as long as the first one', voltas('|:CDEF|1 GABc:|2 cBAG|CDEF|GABc|:CDEF:|'), [0, 1, 2, 0, 0, 0])
+  assertEq('a double bar still ends it where it stands', voltas('|:CDEF|1 GABc:|2 cBAG|CDEF||GABc|'), [0, 1, 2, 2, 0])
+})
+
 // ============================================================================
 
 console.log(`\n${'='.repeat(50)}`)
