@@ -11,10 +11,20 @@ interface EditTextOverlayProps {
 
 const GUIDE_SECTIONS: { label: string; items: [string, string][] }[] = [
   {
+    label: '描述头',
+    items: [
+      ['Key: G', '调号，G / Bb / ♭B / 1=G 都行'],
+      ['Time: 3/4', '拍号'],
+      ['Tempo: 96', '速度，♩=96 也行'],
+      ['key: g', '字段名不分大小写'],
+    ],
+  },
+  {
     label: '音符',
     items: [
       ['1–7', '度数'],
       ['0', '休止符'],
+      ['X', '无音高打击（鼓、锣），可加时值'],
       ["1'", '高八度'],
       ["1''", '高八度×2'],
       ['1,', '低八度'],
@@ -35,6 +45,8 @@ const GUIDE_SECTIONS: { label: string; items: [string, string][] }[] = [
       ['1.', '附点四分'],
       ['1./', '附点八分'],
       ['1.//', '附点十六分'],
+      ['1234', '不加空格连写也行'],
+      ['1/2/', '八分音符连写'],
     ],
   },
   {
@@ -93,12 +105,14 @@ const GUIDE_SECTIONS: { label: string; items: [string, string][] }[] = [
       ['||&fine', 'Fine 终止'],
       ['||&dc', 'D.C. 从头反复'],
       ['||&ds', 'D.S. 从记号反复'],
+      ['||&segno', 'Segno 记号'],
+      [':|&fine', '反复结束 + Fine（dc / ds / segno 同理）'],
     ],
   },
   {
     label: '休止',
     items: [
-      ['[N]', 'N 小节休止压缩'],
+      ['[N]', 'N 小节休止压缩（最多 999）'],
     ],
   },
   {
@@ -106,6 +120,7 @@ const GUIDE_SECTIONS: { label: string; items: [string, string][] }[] = [
     items: [
       ['{1}', '第 1 遍结尾（跳房子），写在小节线后'],
       ['~3', '三连音：其后 3 个音一组'],
+      ['~3:2', '三连音只含其后 2 个音（四分+八分）'],
       ['@3/4', '从本小节起变拍号'],
     ],
   },
@@ -125,6 +140,9 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
   const [previewSvg, setPreviewSvg] = useState('')
   const [caretPos, setCaretPos] = useState(0)
   const [previewWidth, setPreviewWidth] = useState(540)
+  // Why the last 保存 did nothing; shown in the title bar, because anything the app
+  // reports (errorMsg) is painted behind this full-screen overlay
+  const [saveError, setSaveError] = useState('')
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 600px)').matches)
 
   useEffect(() => {
@@ -255,16 +273,34 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
     }
   }, [])
 
+  // The message belongs to the text it was raised for
+  useEffect(() => { setSaveError('') }, [text, editTextVisible])
+
+  // One path for the 保存 button and ⌘↵. Saving text with no measures replaced the score
+  // with nothing and there was no way back, so it is refused here, before onSave
+  const handleSave = useCallback(() => {
+    const parsed = parseFromText(text, currentKeyStr, originalTimeStr, originalTempoStr, originalTitleStr)
+    if (parsed.measures.length === 0) {
+      setSaveError('没有可以渲染的小节，未保存')
+      return
+    }
+    onSave(text)
+  }, [text, currentKeyStr, originalTimeStr, originalTempoStr, originalTitleStr, onSave])
+
   // Keyboard shortcuts
   useEffect(() => {
     if (!editTextVisible) return
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') onSave(text)
+      // Esc / ⌘↵ pressed to pick or confirm an IME candidate (Chinese input) are not
+      // ours: they used to close the overlay and throw the edits away. 229 = Safari's
+      // composing keyCode, whose isComposing is already false
+      if (e.isComposing || e.keyCode === 229) return
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleSave()
       if (e.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [editTextVisible, text, onSave, onClose])
+  }, [editTextVisible, handleSave, onClose])
 
   if (!editTextVisible) return null
 
@@ -298,6 +334,12 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
           简谱 · Jianpu Notation
         </div>
 
+        {saveError && (
+          <div role="alert" style={{ flex: 1, minWidth: 0, margin: '0 12px', fontSize: '12px', color: 'var(--color-accent)', textAlign: 'right' }}>
+            {saveError}
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button
             onClick={() => setShowGuide(v => !v)}
@@ -328,7 +370,7 @@ export default function EditTextOverlay({ onSave, onClose }: EditTextOverlayProp
             取消
           </button>
           <button
-            onClick={() => onSave(text)}
+            onClick={handleSave}
             style={{
               padding: '4px 16px',
               borderRadius: '6px',

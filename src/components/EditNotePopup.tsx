@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useScoreStore } from '@/store/scoreStore'
 import type { NoteObject } from '@/types/score'
+import { useBackdropClose } from '@/hooks/useBackdropClose'
 
 interface EditNotePopupProps {
   onConfirm: (m: number, n: number, updated: Partial<NoteObject>) => void
@@ -11,6 +12,9 @@ const DEGREES = [1, 2, 3, 4, 5, 6, 7]
 
 export default function EditNotePopup({ onConfirm, onClose }: EditNotePopupProps) {
   const popupNote = useScoreStore((s) => s.popupNote)
+  // Close only when the press began on the backdrop: dragging inside the card (a select,
+  // a text selection) and releasing outside used to dismiss it
+  const backdrop = useBackdropClose(onClose)
 
   const [degree, setDegree] = useState(1)
   const [octave, setOctave] = useState(0)
@@ -88,7 +92,7 @@ export default function EditNotePopup({ onConfirm, onClose }: EditNotePopupProps
   }
 
   return (
-    <div style={overlayStyle} onClick={onClose}>
+    <div style={overlayStyle} {...backdrop}>
       <div style={cardStyle} onClick={(e) => e.stopPropagation()}>
         <div style={{ fontWeight: 700, fontSize: '15px' }}>编辑音符</div>
 
