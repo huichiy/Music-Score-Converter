@@ -241,6 +241,7 @@ export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePicke
       <ImageCropper
         source={cropTarget.canvas}
         title={`${file.name} · 第 ${cropTarget.page} 页`}
+        cropName={`${baseName}_page${cropTarget.page}`}
         onCrop={(img) => {
           const t = cropTarget
           const gen = fileGen.current
