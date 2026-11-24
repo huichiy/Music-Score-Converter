@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { computeCropRect, fitDisplaySize, scaleRect, type Rect } from '@/lib/cropTools'
 import { canvasToOcrFile } from '@/lib/pdfTools'
+import { useBackdropClose } from '@/hooks/useBackdropClose'
 
 interface ImageCropperProps {
   source: HTMLCanvasElement | File   // PDF page → canvas (rendered @2.0x); image → File
@@ -27,6 +28,11 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
   const drawRef = useRef<CanvasImageSource | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const prevDisp = useRef({ w: 0, h: 0 })
+  const backdrop = useBackdropClose(onCancel)
+  // Detaches the window listeners of the drag in progress, if any
+  const endDrag = useRef<(() => void) | null>(null)
+  // The modal can close mid-drag (Esc, a new source): never leave listeners on window
+  useEffect(() => () => endDrag.current?.(), [])
 
   // Resolve source → preview URL + natural size + a drawable for cropping
   useEffect(() => {
@@ -89,6 +95,7 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
   function startDrag(e: React.PointerEvent, mode: DragMode) {
     e.preventDefault()
     e.stopPropagation()
+    endDrag.current?.()   // a second finger must not stack a second drag on the first
     const sx = e.clientX, sy = e.clientY
     const s0 = { ...sel }
     const move = (ev: PointerEvent) => {
@@ -112,9 +119,15 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
     const up = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      if (endDrag.current === up) endDrag.current = null
     }
+    endDrag.current = up
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+    // The browser takes the gesture over (a touch turns into a scroll, the page
+    // loses focus): no pointerup follows, and the drag would otherwise stick
+    window.addEventListener('pointercancel', up)
   }
 
   function doCrop() {
@@ -141,7 +154,7 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
 
   return (
     <div
-      onClick={onCancel}
+      {...backdrop}
       style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
     >
       <div

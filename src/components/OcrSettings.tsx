@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useBackdropClose } from '@/hooks/useBackdropClose'
 import {
   loadOcrConfig, saveOcrConfig, clearOcrConfig,
   MODEL_OPTIONS, DEFAULT_MODELS,
@@ -29,6 +30,10 @@ const PROVIDER_LINKS: Partial<Record<OcrProvider, { label: string; url: string }
 export default function OcrSettings({ open, onClose }: OcrSettingsProps) {
   const [config, setConfig] = useState<OcrConfig>({ provider: 'auto' })
   const [showKey, setShowKey] = useState(false)
+  // Must stay above the early return below (hook order). Closes only when the
+  // press STARTED on the backdrop: selecting the text of the API-key field and
+  // releasing outside the modal used to close it and lose the typed key.
+  const backdrop = useBackdropClose(onClose)
 
   // Re-seed from localStorage every time the modal opens
   useEffect(() => {
@@ -73,7 +78,7 @@ export default function OcrSettings({ open, onClose }: OcrSettingsProps) {
 
   return (
     <div
-      onClick={onClose}
+      {...backdrop}
       style={{
         position: 'fixed', inset: 0, zIndex: 70,
         background: 'rgba(0,0,0,0.6)',

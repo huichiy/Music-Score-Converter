@@ -1,13 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { loadPdf, renderPageToCanvas, canvasToOcrFile } from '@/lib/pdfTools'
+import { useBackdropClose } from '@/hooks/useBackdropClose'
 import ImageCropper from './ImageCropper'
 
 interface PdfPagePickerProps {
   file: File | null         // when non-null, modal is open
-  onSelect: (img: File) => void  // user picked a page; receives a PNG File
+  /**
+   * The user picked a page (or a box on it). `img` is what goes to OCR; `page`
+   * is the whole page as an image when `img` is only a crop of it, so the other
+   * rows of the same page can be cropped later without opening the PDF again.
+   */
+  onSelect: (img: File, page?: File) => void
   onCancel: () => void
 }
+
+const NO_PAGES_MSG = '没能显示这份 PDF 的任何页面——可能是浏览器太旧，或 PDF 已损坏。请换新版浏览器，或把 PDF 转成图片后再上传。'
 
 export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePickerProps) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null)
@@ -16,9 +24,16 @@ export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePicke
   const [extracting, setExtracting] = useState<number | null>(null)
   const [cropTarget, setCropTarget] = useState<{ canvas: HTMLCanvasElement; page: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const backdrop = useBackdropClose(onCancel)
+  // Bumped whenever `file` changes: a page that finishes rendering for a PDF
+  // that has since been closed or replaced must not open over the next one
+  const fileGen = useRef(0)
 
   // Load the PDF whenever a new file is provided
   useEffect(() => {
+    fileGen.current++
+    setCropTarget(null)
+    setExtracting(null)
     if (!file) {
       setPdf(null); setError(''); setLoading(false)
       return
@@ -42,14 +57,18 @@ export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePicke
     }
   }, [file])
 
-  // Render all page thumbnails once the doc is open
+  // Render all page thumbnails once the doc is open. Depends on the document
+  // only — onSelect is a fresh function on every parent render and is not used
+  // here, so listing it restarted every thumbnail on each keystroke elsewhere.
   useEffect(() => {
-    if (!pdf || !containerRef.current) return
-    let cancelled = false
     const container = containerRef.current
+    if (!container) return
     container.innerHTML = ''  // clear previous renders
+    if (!pdf) return
+    let cancelled = false
 
     ;(async () => {
+      let shown = 0
       for (let i = 1; i <= pdf.numPages; i++) {
         if (cancelled) return
         try {
@@ -71,25 +90,30 @@ export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePicke
           card.appendChild(canvas)
           card.appendChild(label)
           card.onclick = () => {
+            const gen = fileGen.current
             setExtracting(i)
             renderPageToCanvas(pdf, i, 2.0)
-              .then((canvas) => setCropTarget({ canvas, page: i }))
-              .catch((e) => setError((e as Error).message || '提取失败'))
-              .finally(() => setExtracting(null))
+              .then((canvas) => { if (gen === fileGen.current) setCropTarget({ canvas, page: i }) })
+              .catch((e) => { if (gen === fileGen.current) setError((e as Error).message || '提取失败') })
+              .finally(() => { if (gen === fileGen.current) setExtracting(null) })
           }
           card.onmouseenter = () => { card.style.borderColor = 'var(--color-accent)'; card.style.transform = 'translateY(-2px)' }
           card.onmouseleave = () => { card.style.borderColor = 'var(--color-border)'; card.style.transform = 'translateY(0)' }
           container.appendChild(card)
+          shown++
         } catch (e) {
           if (!cancelled) console.error(`Failed to render page ${i}`, e)
         }
       }
+      // Every page failed (an engine too old for pdf.js, a broken file): say so
+      // instead of leaving an empty grid that looks like it is still loading
+      if (!cancelled && shown === 0) setError(NO_PAGES_MSG)
     })()
 
     return () => {
       cancelled = true
     }
-  }, [pdf, file, onSelect])
+  }, [pdf])
 
   // Cleanup PDF resources on unmount
   useEffect(() => {
@@ -100,16 +124,18 @@ export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePicke
 
   if (!file) return null
 
+  const baseName = file.name.replace(/\.pdf$/i, '')
+
   return (
     <>
     <div
+      {...backdrop}
       style={{
         position: 'fixed', inset: 0, zIndex: 60,
         background: 'rgba(0,0,0,0.6)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 20,
       }}
-      onClick={onCancel}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -206,7 +232,7 @@ export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePicke
           fontSize: 11, color: 'var(--color-muted)',
           flexShrink: 0,
         }}>
-          点击任意一页 → 自动提取为图片送去 OCR 识别
+          点击任意一页 → 框选要识别的部分，或整页识别
         </div>
       </div>
     </div>
@@ -215,14 +241,24 @@ export default function PdfPagePicker({ file, onSelect, onCancel }: PdfPagePicke
       <ImageCropper
         source={cropTarget.canvas}
         title={`${file.name} · 第 ${cropTarget.page} 页`}
-        onCrop={(img) => { setCropTarget(null); onSelect(img) }}
+        onCrop={(img) => {
+          const t = cropTarget
+          const gen = fileGen.current
+          setCropTarget(null)
+          // Keep the whole page too: the other rows of this page are cropped from
+          // it later (OcrSection's 框选区域) without opening the PDF again
+          canvasToOcrFile(t.canvas, `${baseName}_page${t.page}`)
+            .then((page) => { if (gen === fileGen.current) onSelect(img, page) })
+            .catch(() => { if (gen === fileGen.current) onSelect(img) })
+        }}
         onWhole={() => {
           const t = cropTarget
+          const gen = fileGen.current
           setCropTarget(null)
           // PNG, or a smaller JPEG for a dense page — it must clear the 5 MB image limit
-          canvasToOcrFile(t.canvas, `${file.name.replace(/\.pdf$/i, '')}_page${t.page}`)
-            .then(onSelect)
-            .catch((e) => setError((e as Error).message || '提取失败'))
+          canvasToOcrFile(t.canvas, `${baseName}_page${t.page}`)
+            .then((page) => { if (gen === fileGen.current) onSelect(page) })
+            .catch((e) => { if (gen === fileGen.current) setError((e as Error).message || '提取失败') })
         }}
         onCancel={() => setCropTarget(null)}
       />
