@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "tsx scripts/test-shared.ts && tsx scripts/test-roundtrip.ts && tsx scripts/test-parser.ts && tsx scripts/test-parser-fixes.ts && tsx scripts/test-renderer-fixes.ts && tsx scripts/test-playback-fixes.ts && tsx scripts/test-ocr-fixes.ts && tsx scripts/test-audit2-parser.ts && tsx scripts/test-audit2-abc.ts && tsx scripts/test-audit2-renderer.ts && tsx scripts/test-audit2-editor.ts"
+    "test": "tsx scripts/test-shared.ts && tsx scripts/test-roundtrip.ts && tsx scripts/test-parser.ts && tsx scripts/test-parser-fixes.ts && tsx scripts/test-renderer-fixes.ts && tsx scripts/test-playback-fixes.ts && tsx scripts/test-ocr-fixes.ts && tsx scripts/test-audit2-parser.ts && tsx scripts/test-audit2-abc.ts && tsx scripts/test-audit2-renderer.ts && tsx scripts/test-audit2-editor.ts && tsx scripts/test-audit2-app.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.4",

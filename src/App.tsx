@@ -30,7 +30,7 @@ export default function App() {
   const [dragOver, setDragOver] = useState(false)
 
   const store = useScoreStore()
-  const { convert, transpose, loadSample, changePartAndRender, rerenderWithStore, loadFromText } = useFileHandler(mainContentRef)
+  const { convert, cancelLoads, transpose, loadSample, changePartAndRender, rerenderWithStore, loadFromText } = useFileHandler(mainContentRef)
   const playback = usePlayback(scoreOutputRef)
   // pause() does nothing unless something is playing
   const pausePlayback = playback.pause
@@ -145,12 +145,15 @@ export default function App() {
   }, [pausePlayback])
 
   // ── Part change ───────────────────────────────────────────────
-  const handlePartChange = useCallback(async (idx: number) => {
+  // Resolves true when the part is on screen (the selector only remembers those)
+  const handlePartChange = useCallback(async (idx: number): Promise<boolean> => {
     try {
       const svg = await changePartAndRender(idx)
       if (svg) setSvgHtml(svg)
+      return svg !== null
     } catch (err) {
       store.setErrorMsg(loadErrorMessage(err))
+      return false
     }
   }, [changePartAndRender, store])
 
@@ -167,9 +170,10 @@ export default function App() {
 
   // ── Reset ─────────────────────────────────────────────────────
   const handleReset = useCallback(() => {
+    cancelLoads()
     store.reset()
     setSvgHtml('')
-  }, [store])
+  }, [store, cancelLoads])
 
   // ── Edit Mode A: note click ───────────────────────────────────
   // `m` is the clicked element's data-m — the renderer's origIdx, NOT an index

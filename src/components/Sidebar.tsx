@@ -7,7 +7,7 @@ import OcrSection from './OcrSection'
 
 interface SidebarProps {
   onFile: (file: File) => void
-  onPartChange: (idx: number) => void
+  onPartChange: (idx: number) => Promise<boolean>
   onTranspose: (key: string) => void
   onOcrScore: (svgHtml: string) => void
   loadFromText: (text: string, opts?: { fresh?: boolean }) => string

@@ -100,7 +100,8 @@
 
 @media (min-width: 640px) {
   .lp-px { padding-left: 52px; padding-right: 52px; }
-  .lp-hero-digit { font-size: calc(var(--d) * 1px); padding: 0 6px; }
+  /* Full size from about 725px; just above 640px the seven digits would still run off the side */
+  .lp-hero-digit { font-size: min(calc(var(--d) * 1px), calc(var(--d) * 0.138vw)); padding: 0 6px; }
   .lp-what { gap: 52px; }
   .lp-pipeline { display: flex; gap: 0; }
   .lp-step { border-radius: 0; margin-right: -0.5px; }

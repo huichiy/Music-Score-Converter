@@ -5,7 +5,7 @@
 
 import JSZip from 'jszip'
 import type { Midi } from '@tonejs/midi'
-import { parseXMLToNoteObjects, keyMap, midiToJianpu, parseMetronomeTempo } from './parser'
+import { parseXMLToNoteObjects, keyMap, midiToJianpu, parseMetronomeTempo, NO_MIDI_NOTES } from './parser'
 import { parseABC } from './abcParser'
 import { matchPartIndex, loadMyPart } from './partMatch'
 import { cleanTitle } from './textHeader'
@@ -313,11 +313,11 @@ async function loadMidiScore(file: File, readMidi: MidiReader): Promise<LoadedSc
   let result: ReturnType<typeof midiToJianpu>
   try {
     result = midiToJianpu(midi)
-  } catch {
-    // midiToJianpu throws when no pitched track has notes (only drums, or empty)
-    throw new ScoreFileError('MIDI 文件里没有可以转换的音符')
+  } catch (err) {
+    // Anything but "no notes" is a file it could not follow; don't call that an empty one
+    throw new ScoreFileError((err as Error).message === NO_MIDI_NOTES ? NO_MIDI_NOTES : 'MIDI 文件无法读取')
   }
-  if (result.measures.length === 0) throw new ScoreFileError('MIDI 文件里没有可以转换的音符')
+  if (result.measures.length === 0) throw new ScoreFileError(NO_MIDI_NOTES)
   return {
     file,
     measures: result.measures,

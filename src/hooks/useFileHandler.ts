@@ -84,6 +84,9 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // A reset while a file is still being read must not be undone by that file landing later
+  const cancelLoads = useCallback(() => { loadRun.current++ }, [])
+
   // ──────────────────────────────────────────────────────────
   // Transpose re-render
   // ──────────────────────────────────────────────────────────
@@ -183,5 +186,5 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return { convert, transpose, loadSample, changePartAndRender, rerenderWithStore, loadFromText }
+  return { convert, cancelLoads, transpose, loadSample, changePartAndRender, rerenderWithStore, loadFromText }
 }

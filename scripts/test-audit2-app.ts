@@ -62,7 +62,7 @@ const SINGLE = partwise(
 )
 
 const NOT_XML = '不是有效的 MusicXML（XML 解析出错），请重新导出'
-const NO_NOTES_MIDI = 'MIDI 文件里没有可以转换的音符'
+const NO_NOTES_MIDI = '这个 MIDI 里没有可转换的音符（打击乐轨不算）'
 
 // ───────────────────────────────────────────────────────────────
 

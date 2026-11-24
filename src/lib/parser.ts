@@ -817,6 +817,9 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
   return jianpuMeasures
 }
 
+/** Thrown when a MIDI file has no pitched track with notes (only drums, or empty) */
+export const NO_MIDI_NOTES = '这个 MIDI 里没有可转换的音符（打击乐轨不算）'
+
 /**
  * A MIDI file → Jianpu measures. Takes the pitched track with the most notes,
  * snaps onsets to a grid, and writes each note from its onset to the next one,
@@ -840,7 +843,7 @@ export function midiToJianpu(midi: Midi): {
     if (track.instrument.percussion || track.channel === 9) continue
     if (track.notes.length > maxNotes) { maxNotes = track.notes.length; bestTrack = track }
   }
-  if (!bestTrack) throw new Error('这个 MIDI 里没有可转换的音符（打击乐轨不算）')
+  if (!bestTrack) throw new Error(NO_MIDI_NOTES)
 
   // Chords keep their highest pitch per tick
   const TICK_SNAP = Math.max(2, Math.round(ppq / 120))
