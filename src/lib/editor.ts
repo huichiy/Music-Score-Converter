@@ -1,5 +1,10 @@
 import type { Articulation, ChordNote, GraceNote, Measure, MeasureArray, NoteObject } from '@/types/score'
-import { isCollapsibleRest, isWholeRestMeasure, restRunStart } from './renderer'
+import { isUnpitched } from '../types/score'
+import { isCollapsibleRest, isWholeRestMeasure, restRunStart, tupletFactor } from './renderer'
+import { classifyDirection } from './directions'
+import { barBeatsOf } from './meter'
+import { slurPairs } from './slurs'
+import { cleanTitle, parseHeaderLine } from './textHeader'
 
 // Compute renderer's origIdx for each measure index in the parsed array.
 // Mirrors collapseRestRuns + the per-measure origIdx incrementing in renderer.ts.
@@ -49,6 +54,30 @@ export function measureIdxFromOrigIdx(measures: Measure[], origIdx: number): num
   return -1
 }
 
+// One note after a popup edit. `updated` is what the popup sends (degree, octave, type,
+// dot, accidental, rest); everything else on the note has to follow from it.
+export function editedNote(old: NoteObject, updated: Partial<NoteObject>): NoteObject {
+  const note: NoteObject = { ...old, ...updated }
+  if (note.rest) {
+    // A rest has no pitch to tie, double-stop, ornament or slur: left behind they drew
+    // "-" or a chord digit under the 0
+    note.degree = 0
+    note.octave = 0
+    note.accidental = ''
+    note.tie = false
+    note.slurStart = false
+    note.slurStop = false
+    delete note.chordNotes
+    delete note.graceNote
+    delete note.articulation
+  } else if (old.tie && (note.degree !== old.degree || note.octave !== old.octave || note.accidental !== old.accidental)) {
+    // A tie continuation is drawn as "-" and takes its pitch from the note before, so a
+    // new pitch on it showed nothing at all; it is a note of its own now
+    note.tie = false
+  }
+  return note
+}
+
 // Copy of `measures` with one note patched. The edited measure keeps EVERY own
 // property of the old one (_volta, _timeSig, _key, and any `_` field added
 // later) — a hand-picked list silently dropped the newer ones.
@@ -66,7 +95,7 @@ export function withNoteEdited(
     for (const key of Object.keys(old)) {
       if (!/^\d+$/.test(key)) (arr as unknown as Record<string, unknown>)[key] = (old as unknown as Record<string, unknown>)[key]
     }
-    arr[noteIdx] = { ...old[noteIdx], ...updated }
+    arr[noteIdx] = editedNote(old[noteIdx], updated)
     return arr
   })
 }
@@ -126,13 +155,16 @@ function serializeNote(note: NoteObject): string {
   // (parse rebuilds the tie note from the dash count at measure start)
   if (note.tie) return '-'.repeat(Math.max(1, Math.round(durationBeats(note.type, note.dot))))
 
+  // A percussion hit has a length and nothing else: X, no octave / accidental / chord.
+  // It used to be written 0 and came back as a rest
+  const unpitched = isUnpitched(note)
   let tok = ''
-  if (!note.rest) {
+  if (!note.rest && !unpitched) {
     if (note.accidental === '#') tok += '#'
     else if (note.accidental === 'b') tok += 'b'
   }
-  tok += note.rest ? '0' : note.degree.toString()
-  if (!note.rest) {
+  tok += note.rest ? '0' : unpitched ? 'X' : note.degree.toString()
+  if (!note.rest && !unpitched) {
     tok += octaveSuffix(note.octave)
     // Chord notes (double stops): 5:3, 6:#4,:1 — duration suffix applies to the whole chord
     if (note.chordNotes) {
@@ -158,12 +190,16 @@ function serializeNote(note: NoteObject): string {
   return tok
 }
 
+// Only the directions Route B has a tag for; Coda / "To Coda" / free text have none.
+// Goes through the shared classifier so "Da Capo al Fine" is written, not dropped.
 function directionToTag(dir: string): string {
-  const d = dir.trim().toLowerCase()
-  if (d === 'fine') return '&fine'
-  if (d.startsWith('d.c.') || d === 'da capo') return '&dc'
-  if (d.startsWith('d.s.') || d === 'dal segno') return '&ds'
-  return ''
+  switch (classifyDirection(dir)) {
+    case 'fine': return '&fine'
+    case 'dc': return '&dc'
+    case 'ds': return '&ds'
+    case 'segno': return '&segno'
+    default: return ''
+  }
 }
 
 export function serializeToText(
@@ -173,11 +209,16 @@ export function serializeToText(
   tempoStr: string,
   titleStr: string = '',
 ): string {
-  const titleLine = titleStr ? `Title: ${titleStr}\n` : ''
+  // One line: a line break in a title ("望春風\n胡阮" from MusicXML) would end the
+  // header there and read "Time: 4/4" as notes
+  const title = cleanTitle(titleStr)
+  const titleLine = title ? `Title: ${title}\n` : ''
   const header = `${titleLine}Key: ${keyStr}   Time: ${timeStr}${tempoStr ? '   Tempo: ' + tempoStr : ''}`
   let body = ''
   let prevWedge: 'cresc' | 'dim' | null = null
-  let inSlur = false
+  // Only slurs that close are written: an open start with no end would swallow the next one
+  const pairs = slurPairs(measures)
+  const slurEnds = new Set(pairs.values())
 
   for (let mi = 0; mi < measures.length; mi++) {
     const measure = measures[mi]
@@ -229,17 +270,25 @@ export function serializeToText(
     }
     prevWedge = currentWedge
 
-    // Tuplet groups: runs of notes sharing tuplet === N are emitted N per group,
-    // each group prefixed with ~N
+    // Tuplet groups: a run of notes sharing tuplet === N is written as groups, each
+    // prefixed with ~N (or ~N:K when the group is K notes, not N)
     let tupletN = 0
     let tupletRemaining = 0
 
-    for (const note of m) {
+    for (let ni = 0; ni < m.length; ni++) {
+      const note = m[ni]
       if (note.tuplet) {
         if (tupletRemaining === 0 || note.tuplet !== tupletN) {
           tupletN = note.tuplet
-          tupletRemaining = note.tuplet
-          body += `~${tupletN} `
+          // A group never runs past the notes that share its tuplet
+          let run = 0
+          while (ni + run < m.length && m[ni + run].tuplet === tupletN) run++
+          const size = Math.min(note.tupletLen ?? tupletN, run)
+          tupletRemaining = size
+          // A short run that the barline closes needs no :K — ~N reads back the same
+          // without inventing a tupletLen. A note after it would be swallowed, so :K there
+          const explicit = size !== tupletN && (note.tupletLen !== undefined || ni + run < m.length)
+          body += explicit ? `~${tupletN}:${size} ` : `~${tupletN} `
         }
         tupletRemaining--
       } else {
@@ -247,24 +296,20 @@ export function serializeToText(
         tupletRemaining = 0
       }
 
-      // Stop is handled before start (as in the renderer): a note that ends one
-      // slur and opens the next is written `( 2 )` with the earlier `(` already
-      // open, which parses back to slurStart + slurStop on that same note.
-      const closesSlur: boolean = note.slurStop && inSlur
-      const opensSlur: boolean = note.slurStart && !note.rest && (!inSlur || closesSlur)
-      if (opensSlur) body += '( '
+      // A slur is written from its pair: start before the note, end after it. A note
+      // that ends one slur and opens the next gets both: `( 2 )` inside `( 1 ... 3 )`
+      if (pairs.has(note)) body += '( '
 
       body += serializeNote(note) + ' '
 
-      if (closesSlur) body += ') '
-      inSlur = opensSlur || (inSlur && !closesSlur)
+      if (slurEnds.has(note)) body += ') '
     }
 
     const tag = m._direction ? directionToTag(m._direction) : ''
     const isLast = mi === measures.length - 1
 
     if (m._repeatEnd) {
-      body += ':| '
+      body += tag ? `:|${tag} ` : ':| '
     } else if (tag) {
       body += `||${tag} `
     } else if (isLast) {
@@ -354,6 +399,46 @@ function parseGraceNoteText(s: string): GraceNote | null {
 
 type TokenWithPos = { tok: string; start: number; end: number }
 
+// `[N]` is capped: the renderer draws a block as N measures' worth of rests
+const MAX_MULTI_REST = 999
+
+// What may follow a note: dashes | . | ./ .// .///  | / // ///. A suffix never starts with a
+// digit, which is what lets `1234` and `1/2/` be cut into notes without backtracking.
+const NOTE_SUFFIX = '(?:-+|\\.(?:/{1,3})?|/{1,3})?'
+const NOTE_OCTAVE = "(?:'+|,+)"
+const NOTE_SRC = `(?:[#b]?[0-7]${NOTE_OCTAVE}?(?::[#b]?[1-7]${NOTE_OCTAVE}?)*|[Xx])${NOTE_SUFFIX}`
+const NOTE_AT = new RegExp(NOTE_SRC, 'y')
+const X_NOTE = new RegExp(`^[Xx](${NOTE_SUFFIX})$`)
+const VOLTA_AT = /\{\d+\}/y
+
+/**
+ * A chunk that is ENTIRELY notes written without spaces (`1234`, `1/2/`, `#1b2'`), cut into
+ * those notes with their offsets in the chunk. Null when any part of it is not a note: such
+ * a chunk keeps its old reading (first note only, or ignored), so `4/4` stays a single 4.
+ */
+function splitGluedNotes(chunk: string): { text: string; start: number; end: number }[] | null {
+  const out: { text: string; start: number; end: number }[] = []
+  let p = 0
+  while (p < chunk.length) {
+    NOTE_AT.lastIndex = p
+    const m = NOTE_AT.exec(chunk)
+    if (!m) return null
+    out.push({ text: m[0], start: p, end: p + m[0].length })
+    p += m[0].length
+  }
+  return out.length > 0 ? out : null
+}
+
+// Where the number after `~` (or `~N:`) ends. Digits followed by a space, ':' or the end are
+// the whole number (`~10`); glued to what follows (`~31/`) only the first digit counts and
+// the rest is notes.
+function tupletNumberEnd(text: string, from: number): number {
+  let j = from
+  while (j < text.length && /\d/.test(text[j])) j++
+  if (j === from) return from
+  return j >= text.length || /[\s:]/.test(text[j]) ? j : from + 1
+}
+
 function tokenize(text: string, offset: number = 0): TokenWithPos[] {
   const tokens: TokenWithPos[] = []
   const push = (tok: string, start: number, end: number) => tokens.push({ tok, start: start + offset, end: end + offset })
@@ -384,8 +469,14 @@ function tokenize(text: string, offset: number = 0): TokenWithPos[] {
       continue
     }
     if (ch === ':' && text[i + 1] === '|') {
-      push(':|', i, i + 2)
-      i += 2
+      // `:|&fine`: a repeat end that also carries a direction is one token
+      let j = i + 2
+      if (text[j] === '&') {
+        j++
+        while (j < text.length && /[a-zA-Z]/.test(text[j])) j++
+      }
+      push(text.slice(i, j), i, j)
+      i = j
       continue
     }
 
@@ -396,6 +487,28 @@ function tokenize(text: string, offset: number = 0): TokenWithPos[] {
       push(text.slice(i, end + 1), i, end + 1)
       i = end + 1
       continue
+    }
+
+    // Volta {N} is a token of its own even when notes are glued to it: `{1}5 6 7 1`
+    if (ch === '{') {
+      VOLTA_AT.lastIndex = i
+      const vm = VOLTA_AT.exec(text)
+      if (vm) {
+        push(vm[0], i, i + vm[0].length)
+        i += vm[0].length
+        continue
+      }
+    }
+
+    // Tuplet ~N, and ~N:K for a group of K notes
+    if (ch === '~') {
+      let j = tupletNumberEnd(text, i + 1)
+      if (j > i + 1) {
+        if (text[j] === ':' && /\d/.test(text[j + 1] || '')) j = tupletNumberEnd(text, j + 1)
+        push(text.slice(i, j), i, j)
+        i = j
+        continue
+      }
     }
 
     // Slur parens / hairpins / hairpin end
@@ -458,6 +571,22 @@ function freshMeasure(): MeasureArray {
   return arr
 }
 
+function wholeRestMeasure(): MeasureArray {
+  const m = freshMeasure()
+  m.push(emptyNote(0, 0, '', 'whole', false, true))
+  return m
+}
+
+// What a closing barline token adds to the measure it ends
+type Close = { repeat?: boolean; direction?: string }
+
+function applyClose(m: MeasureArray, close?: Close) {
+  if (close?.repeat) m._repeatEnd = true
+  if (close?.direction) m._direction = close.direction
+}
+
+const DIRECTION_OF_TAG: Record<string, string> = { fine: 'Fine', dc: 'D.C.', ds: 'D.S.', segno: 'Segno' }
+
 export function parseFromText(
   text: string,
   fallbackKeyStr = 'C',
@@ -472,28 +601,21 @@ export function parseFromText(
   let tempoStr = fallbackTempoStr
   let titleStr = fallbackTitleStr
 
-  // Header lines = consecutive lines at top matching Title:/Key:/Time:/Tempo: (max 4)
+  // Header lines = the first lines parseHeaderLine accepts (Title:/Key:/Time:/Tempo:, any
+  // case, `1=G`, ♭B…), max 4; blank lines between them are skipped and not counted. It is
+  // the reader OCR merging uses too, so a header-looking line is never read as notes.
   let headerEndIdx = 0
-  for (let i = 0; i < Math.min(4, lines.length); i++) {
-    const ln = lines[i]
-    const field = ln.match(/^(Title|Key|Time|Tempo)\s*:/)
-    if (field) {
+  let headerLines = 0
+  for (let i = 0; i < lines.length && headerLines < 4; i++) {
+    const fields = parseHeaderLine(lines[i])
+    if (fields) {
       headerEndIdx = i + 1
-      if (field[1] === 'Title') {
-        // The whole rest of a Title line is the title — never scanned for
-        // Key/Time/Tempo (`Title: Tempo: 60 Key: G study` is just a title)
-        const tlm = ln.match(/^Title:\s*(.+?)\s*$/)
-        if (tlm) titleStr = tlm[1]
-      } else {
-        // Key/Time/Tempo may share one line (`Key: C   Time: 4/4   Tempo: 120`)
-        const km = ln.match(/\bKey:\s*([A-G][b#]?)/)
-        const tm = ln.match(/\bTime:\s*(\d+\/\d+)/)
-        const pm = ln.match(/\bTempo:\s*(\d+)/)
-        if (km) keyStr = km[1]
-        if (tm) timeStr = tm[1]
-        if (pm) tempoStr = pm[1]
-      }
-    } else if (ln.trim() === '') {
+      headerLines++
+      if (fields.title) titleStr = fields.title
+      if (fields.key) keyStr = fields.key
+      if (fields.time) timeStr = fields.time
+      if (fields.tempo) tempoStr = fields.tempo
+    } else if (lines[i].trim() === '') {
       continue
     } else {
       break
@@ -517,27 +639,41 @@ export function parseFromText(
   // (flushMeasure resets lastNote, but a tie needs the previous measure's pitch)
   let lastRealNote: NoteObject | null = null
   let lastNotePos: { measureIdx: number; noteIdx: number } | null = null
-  let pendingRepeatStart = false
   let pendingDynamic = ''
   let activeWedge: 'cresc' | 'dim' | null = null
   let pendingSlurStart = false
-  // Tuplet marker ~N: the following N notes (rests included) get tuplet = N
+  // Tuplet marker ~N (or ~N:K): the following K notes (N when there is no :K; rests
+  // included) get tuplet = N, and the first of them tupletLen = K when K isn't N
   let pendingTupletN = 0
   let pendingTupletRemaining = 0
+  let pendingTupletLen = 0
+  let pendingTupletFirst = false
 
-  const flushMeasure = (closeKind?: 'repeat' | 'fine' | 'dc' | 'ds' | 'final') => {
+  // A closing mark with no notes in front of it ends the measure BEFORE it: `1 2 3 4 | :|`
+  // used to lose the repeat. Right after a `[N]` block (afterRestBlock) the last rest is
+  // split off the block to carry it: `[4] :|` = a block of 3, then a rest that closes the repeat.
+  const closeLast = (close: Close, afterRestBlock: boolean) => {
+    const last = measures[measures.length - 1]
+    if (!last) return
+    if (Array.isArray(last)) { applyClose(last, close); return }
+    if (!afterRestBlock) return
+    const n = last._multiRest
+    measures.pop()
+    if (n - 1 >= 2) measures.push({ _multiRest: n - 1 })
+    else if (n - 1 === 1) measures.push(wholeRestMeasure())
+    const tail = wholeRestMeasure()
+    applyClose(tail, close)
+    measures.push(tail)
+  }
+
+  const flushMeasure = (close?: Close, afterRestBlock = false) => {
     if (current && current.length > 0) {
-      if (closeKind === 'repeat') current._repeatEnd = true
-      if (closeKind === 'fine') current._direction = 'Fine'
-      if (closeKind === 'dc') current._direction = 'D.C.'
-      if (closeKind === 'ds') current._direction = 'D.S.'
+      applyClose(current, close)
       measures.push(current)
+    } else if (close) {
+      closeLast(close, afterRestBlock)
     }
     current = freshMeasure()
-    if (pendingRepeatStart) {
-      current._repeatStart = true
-      pendingRepeatStart = false
-    }
     if (pendingDynamic) {
       current._dynamic = pendingDynamic
       pendingDynamic = ''
@@ -548,10 +684,96 @@ export function parseFromText(
     // Tuplet groups don't cross barlines
     pendingTupletN = 0
     pendingTupletRemaining = 0
+    pendingTupletLen = 0
+    pendingTupletFirst = false
   }
+
+  // A tuplet slot and a pending `(` belong to the next note, however it is written
+  const takePendings = (note: NoteObject, isRest: boolean) => {
+    if (pendingTupletRemaining > 0) {
+      note.tuplet = pendingTupletN
+      if (pendingTupletFirst) {
+        if (pendingTupletLen) note.tupletLen = pendingTupletLen
+        pendingTupletFirst = false
+      }
+      pendingTupletRemaining--
+    }
+    if (pendingSlurStart && !isRest) {
+      note.slurStart = true
+      pendingSlurStart = false
+    }
+  }
+
+  // One note token: [#/b]?digit(octave)?(duration)?, a chord (':'-joined, duration at the
+  // end: 5:3, 6:#4,:1-) or X (unpitched). Glued chunks are cut before they get here.
+  const addNote = (tok: string, start: number, end: number) => {
+    if (!current) current = freshMeasure()
+    let acc: '#' | 'b' | '' = ''
+    let deg = -1
+    let oct = 0
+    let suffix = ''
+    let chordNotes: ChordNote[] | undefined
+    const xm = tok.match(X_NOTE)
+
+    if (xm) {
+      deg = 0
+      suffix = xm[1]
+    } else if (tok.includes(':')) {
+      const mainM = tok.split(':')[0].match(/^([#b])?([1-7])('+|,+)?$/)
+      const parts = tok.split(':')
+      if (mainM) {
+        const cns: ChordNote[] = []
+        let ok = true
+        for (let pi = 1; pi < parts.length; pi++) {
+          const isLast = pi === parts.length - 1
+          const cm = parts[pi].match(/^([#b])?([1-7])('+|,+)?(.*)$/)
+          if (!cm || (!isLast && cm[4])) { ok = false; break }
+          cns.push({ accidental: (cm[1] as '#' | 'b') || '', degree: parseInt(cm[2]), octave: octaveFromMarks(cm[3]) })
+          if (isLast) suffix = cm[4] || ''
+        }
+        if (ok) {
+          acc = (mainM[1] as '#' | 'b') || ''
+          deg = parseInt(mainM[2])
+          oct = octaveFromMarks(mainM[3])
+          chordNotes = cns
+        }
+      }
+      if (deg === -1) return // malformed chord token → ignore
+    } else {
+      const noteMatch = tok.match(/^([#b])?([0-7])('+|,+)?(.*)$/)
+      if (!noteMatch) return
+      acc = (noteMatch[1] as '#' | 'b') || ''
+      deg = parseInt(noteMatch[2])
+      oct = octaveFromMarks(noteMatch[3])
+      suffix = noteMatch[4] || ''
+    }
+
+    // X is degree 0 without being a rest: an unpitched hit
+    const isRest = deg === 0 && !xm
+    const { type, dot } = parseDurationSuffix(suffix)
+
+    const note = emptyNote(deg, oct, acc, type, dot, isRest)
+    if (chordNotes && chordNotes.length > 0) note.chordNotes = chordNotes
+    takePendings(note, isRest)
+    // measureIdx here is the ORIGINAL array index of current (which is what
+    // measures.length will be when current gets flushed). Remapped to renderer's
+    // origIdx in the post-processing step below.
+    const measureIdx = measures.length
+    const noteIdx = current.length
+    current.push(note)
+    lastNote = note
+    if (!isRest) lastRealNote = note
+    lastNotePos = { measureIdx, noteIdx }
+    positions.push({ measureIdx, noteIdx, start, end })
+  }
+
+  // True when the token before this one was a `[N]` rest block
+  let afterRest = false
 
   for (let ti = 0; ti < tokens.length; ti++) {
     const { tok, start, end } = tokens[ti]
+    const prevWasRestBlock = afterRest
+    afterRest = false
 
     if (tok === '|') {
       flushMeasure()
@@ -562,20 +784,17 @@ export function parseFromText(
       if (current) current._repeatStart = true
       continue
     }
-    if (tok === ':|') {
-      flushMeasure('repeat')
+    if (tok === ':|' || tok.startsWith(':|&')) {
+      flushMeasure({ repeat: true, direction: DIRECTION_OF_TAG[tok.slice(3)] }, prevWasRestBlock)
       continue
     }
     if (tok === '||') {
-      flushMeasure('final')
+      flushMeasure()
       continue
     }
     if (tok.startsWith('||&')) {
-      const tag = tok.slice(3)
-      if (tag === 'fine') flushMeasure('fine')
-      else if (tag === 'dc') flushMeasure('dc')
-      else if (tag === 'ds') flushMeasure('ds')
-      else flushMeasure('final')
+      const direction = DIRECTION_OF_TAG[tok.slice(3)]
+      flushMeasure(direction ? { direction } : undefined, prevWasRestBlock)
       continue
     }
 
@@ -603,10 +822,44 @@ export function parseFromText(
     // Multi-rest [N] — only at measure start (no lastNote)
     const mrm = tok.match(/^\[(\d+)\]$/)
     if (mrm) {
+      // `[0]` would be a block the renderer can't draw
+      const n = Math.min(parseInt(mrm[1]), MAX_MULTI_REST)
+      if (n === 0) continue
+      // The measure being built is empty here and may already carry markings (`|: [4]`,
+      // `@3/4 [4]`, `&f [4]`, `{1} [2]`, `< [4]`). They go on real rest measures: a repeat
+      // start, meter or dynamic on the first rest, the rest of the block after it; a volta
+      // or an active hairpin on EVERY rest, because both are per measure.
+      let head: MeasureArray | null = null
       if (current && current.length > 0) measures.push(current)
-      measures.push({ _multiRest: parseInt(mrm[1]) })
+      else head = current
+      const spansEvery = !!head && (head._volta !== undefined || !!head._wedge)
+      const marksFirst = !!head && (head._repeatStart || !!head._timeSig || !!head._dynamic)
+      if (head && (spansEvery || marksFirst)) {
+        const first = wholeRestMeasure()
+        if (head._repeatStart) first._repeatStart = true
+        if (head._timeSig) first._timeSig = head._timeSig
+        if (head._dynamic) first._dynamic = head._dynamic
+        if (head._volta !== undefined) first._volta = head._volta
+        if (head._wedge) first._wedge = head._wedge
+        measures.push(first)
+        if (spansEvery) {
+          for (let k = 1; k < n; k++) {
+            const rest = wholeRestMeasure()
+            if (head._volta !== undefined) rest._volta = head._volta
+            if (head._wedge) rest._wedge = head._wedge
+            measures.push(rest)
+          }
+        } else if (n - 1 >= 2) {
+          measures.push({ _multiRest: n - 1 })
+        } else if (n - 1 === 1) {
+          measures.push(wholeRestMeasure())
+        }
+      } else {
+        measures.push({ _multiRest: n })
+      }
       current = freshMeasure()
       lastNote = null
+      afterRest = true
       continue
     }
 
@@ -655,11 +908,14 @@ export function parseFromText(
       continue
     }
 
-    // v3: tuplet marker ~N
-    const tupletM = tok.match(/^~(\d+)$/)
+    // v3: tuplet marker ~N, or ~N:K for a group of K notes (quarter + eighth triplet = ~3:2)
+    const tupletM = tok.match(/^~(\d+)(?::(\d+))?$/)
     if (tupletM) {
       pendingTupletN = parseInt(tupletM[1])
-      pendingTupletRemaining = pendingTupletN
+      const k = tupletM[2] ? parseInt(tupletM[2]) : pendingTupletN
+      pendingTupletRemaining = pendingTupletN < 1 ? 0 : k >= 1 ? k : pendingTupletN
+      pendingTupletLen = pendingTupletRemaining !== pendingTupletN ? pendingTupletRemaining : 0
+      pendingTupletFirst = true
       continue
     }
 
@@ -695,6 +951,8 @@ export function parseFromText(
         const { type, dot } = beatsToType(tok.length)
         const note = emptyNote(src?.degree ?? 1, src?.octave ?? 0, src?.accidental ?? '', type, dot, false)
         note.tie = true
+        // It is a note like any other: it fills a tuplet slot and takes a pending `(`
+        takePendings(note, false)
         const measureIdx = measures.length
         const noteIdx = current.length
         current.push(note)
@@ -706,70 +964,26 @@ export function parseFromText(
       continue
     }
 
-    // Regular note token: [#/b]?digit(octave)?(duration)?
-    // Chord variant (double stops): ':'-joined notes, duration at token end — 5:3, 6:#4,:1-
-    let acc: '#' | 'b' | '' = ''
-    let deg = -1
-    let oct = 0
-    let suffix = ''
-    let chordNotes: ChordNote[] | undefined
-
-    if (tok.includes(':')) {
-      const mainM = tok.split(':')[0].match(/^([#b])?([1-7])('+|,+)?$/)
-      const parts = tok.split(':')
-      if (mainM) {
-        const cns: ChordNote[] = []
-        let ok = true
-        for (let pi = 1; pi < parts.length; pi++) {
-          const isLast = pi === parts.length - 1
-          const cm = parts[pi].match(/^([#b])?([1-7])('+|,+)?(.*)$/)
-          if (!cm || (!isLast && cm[4])) { ok = false; break }
-          cns.push({ accidental: (cm[1] as '#' | 'b') || '', degree: parseInt(cm[2]), octave: octaveFromMarks(cm[3]) })
-          if (isLast) suffix = cm[4] || ''
-        }
-        if (ok) {
-          acc = (mainM[1] as '#' | 'b') || ''
-          deg = parseInt(mainM[2])
-          oct = octaveFromMarks(mainM[3])
-          chordNotes = cns
-        }
-      }
-      if (deg === -1) continue // malformed chord token → ignore
+    // A note, or several written without spaces (`1234`, `1/2/`), each with its own text range
+    const pieces = splitGluedNotes(tok)
+    if (pieces && pieces.length > 1) {
+      for (const piece of pieces) addNote(piece.text, start + piece.start, start + piece.end)
     } else {
-      const noteMatch = tok.match(/^([#b])?([0-7])('+|,+)?(.*)$/)
-      if (!noteMatch) continue
-      acc = (noteMatch[1] as '#' | 'b') || ''
-      deg = parseInt(noteMatch[2])
-      oct = octaveFromMarks(noteMatch[3])
-      suffix = noteMatch[4] || ''
+      addNote(tok, start, end)
     }
-
-    const isRest = deg === 0
-    const { type, dot } = parseDurationSuffix(suffix)
-
-    const note = emptyNote(deg, oct, acc, type, dot, isRest)
-    if (chordNotes && chordNotes.length > 0) note.chordNotes = chordNotes
-    if (pendingTupletRemaining > 0) {
-      note.tuplet = pendingTupletN
-      pendingTupletRemaining--
-    }
-    if (pendingSlurStart && !isRest) {
-      note.slurStart = true
-      pendingSlurStart = false
-    }
-    // measureIdx here is the ORIGINAL array index of current (which is what
-    // measures.length will be when current gets flushed). Remapped to renderer's
-    // origIdx in the post-processing step below.
-    const measureIdx = measures.length
-    const noteIdx = current.length
-    current.push(note)
-    lastNote = note
-    if (!isRest) lastRealNote = note
-    lastNotePos = { measureIdx, noteIdx }
-    positions.push({ measureIdx, noteIdx, start, end })
   }
 
   if (current && current.length > 0) measures.push(current)
+
+  // 弱起: a first measure shorter than its bar. Route B has no syntax for it, so it is read
+  // off the lengths. A whole rest, a [N] block and a lone measure are not a pickup.
+  const firstMeasure = measures[0]
+  if (measures.length > 1 && Array.isArray(firstMeasure) && !isWholeRestMeasure(firstMeasure)) {
+    let length = 0
+    for (const n of firstMeasure) length += durationBeats(n.type, n.dot) * tupletFactor(n.tuplet)
+    // Tolerance: tuplet sums are inexact (a full triplet bar can add up to 3.9999999999999996)
+    if (length > 1e-9 && length < barBeatsOf(firstMeasure._timeSig ?? timeStr) - 1e-9) firstMeasure._pickup = true
+  }
 
   // Remap position.measureIdx from "array index" to "renderer origIdx" (data-m on SVG).
   // For notes in whole-rest measures (no per-note data-m, but their <g> wrapper has
