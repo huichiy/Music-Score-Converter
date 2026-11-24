@@ -4,45 +4,43 @@
 import type { OcrMode, VisionAdapter } from '../types'
 import { DEFAULT_MODELS } from '../types'
 import { systemPromptFor, userPromptFor } from '../prompts'
-import { blobToBase64, extractGeminiText, unwrapModeError } from '../utils'
+import {
+  blobToBase64, extractGeminiText, unwrapModeError, withTimeout, httpErrorMessage, OWN_KEY_429_MSG,
+} from '../utils'
 
 export function createGeminiAdapter(apiKey: string, model = DEFAULT_MODELS.gemini): VisionAdapter {
   return {
     name: `Gemini ${model.replace(/^gemini-/, '')}`,
-    async transcribe(file: File | Blob, mode: OcrMode): Promise<string> {
-      const base64 = await blobToBase64(file)
-      const mediaType = (file as File).type || 'image/png'
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+    transcribe(file: File | Blob, mode: OcrMode, signal?: AbortSignal): Promise<string> {
+      return withTimeout(async (sig) => {
+        const base64 = await blobToBase64(file)
+        const mediaType = (file as File).type || 'image/png'
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          // Gemini doesn't have a separate "system" role; we prepend the system
-          // prompt as the first user message instead.
-          contents: [{
-            parts: [
-              { text: `${systemPromptFor(mode)}\n\n${userPromptFor(mode)}` },
-              { inline_data: { mime_type: mediaType, data: base64 } },
-            ],
-          }],
-          // 8192: Gemini 2.5 thinking tokens count against maxOutputTokens;
-          // 2048 truncated long scores after a few measures
-          generationConfig: { temperature: 0, maxOutputTokens: 8192 },
-        }),
-      })
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          signal: sig,
+          body: JSON.stringify({
+            // Gemini doesn't have a separate "system" role; we prepend the system
+            // prompt as the first user message instead.
+            contents: [{
+              parts: [
+                { text: `${systemPromptFor(mode)}\n\n${userPromptFor(mode)}` },
+                { inline_data: { mime_type: mediaType, data: base64 } },
+              ],
+            }],
+            // 32768: thinking tokens count against maxOutputTokens. 8192 truncated a
+            // dense page after 9-10 of its 40 bars; with this cap all 39 came back.
+            generationConfig: { temperature: 0, maxOutputTokens: 32768 },
+          }),
+        })
 
-      if (!res.ok) {
-        if (res.status === 429) {
-          throw new Error('你的 Gemini key 额度不足或请求太频繁（HTTP 429）——免费档没有 Pro 配额，请换 Gemini 2.5 Flash 或绑定付费账号后再试')
-        }
-        const errBody = await res.json().catch(() => ({}))
-        const msg = (errBody as { error?: { message?: string } }).error?.message || `Gemini 调用失败：HTTP ${res.status}`
-        throw new Error(msg)
-      }
+        if (!res.ok) throw new Error(await httpErrorMessage(res, 'Gemini', OWN_KEY_429_MSG))
 
-      // Joins every text part; empty / blocked / truncated replies throw a friendly error
-      return unwrapModeError(extractGeminiText(await res.json()))
+        // Joins every text part; empty / blocked / truncated replies throw a friendly error
+        return unwrapModeError(extractGeminiText(await res.json()))
+      }, { signal })
     },
   }
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useBackdropClose } from '@/hooks/useBackdropClose'
 import {
   loadOcrConfig, saveOcrConfig, clearOcrConfig,
   MODEL_OPTIONS, DEFAULT_MODELS,
@@ -12,10 +13,10 @@ interface OcrSettingsProps {
 
 const PROVIDER_LABELS: Record<OcrProvider, { name: string; desc: string }> = {
   auto:      { name: '默认 · 自动',  desc: '使用内置 Worker 代理（不需要 API key）' },
-  groq:      { name: 'Groq',        desc: 'Llama 4 Vision · 免费但准确度一般' },
-  gemini:    { name: 'Google Gemini', desc: '推荐 · 1500 次/天免费，中文好' },
+  groq:      { name: 'Groq',        desc: 'Qwen 3.8 27B 视觉 · 有免费额度，准确度一般 · 预览版' },
+  gemini:    { name: 'Google Gemini', desc: '推荐 · 有免费额度，中文好' },
   anthropic: { name: 'Anthropic Claude', desc: '中文表现极佳 · 付费' },
-  openai:    { name: 'OpenAI',      desc: 'GPT-4o 系列 · 付费' },
+  openai:    { name: 'OpenAI',      desc: 'GPT-6 系列 · 付费' },
   custom:    { name: 'Custom 端点',  desc: '任意 OpenAI 兼容 API · OpenRouter / Together / 自部署' },
 }
 
@@ -29,6 +30,10 @@ const PROVIDER_LINKS: Partial<Record<OcrProvider, { label: string; url: string }
 export default function OcrSettings({ open, onClose }: OcrSettingsProps) {
   const [config, setConfig] = useState<OcrConfig>({ provider: 'auto' })
   const [showKey, setShowKey] = useState(false)
+  // Must stay above the early return below (hook order). Closes only when the
+  // press STARTED on the backdrop: selecting the text of the API-key field and
+  // releasing outside the modal used to close it and lose the typed key.
+  const backdrop = useBackdropClose(onClose)
 
   // Re-seed from localStorage every time the modal opens
   useEffect(() => {
@@ -73,7 +78,7 @@ export default function OcrSettings({ open, onClose }: OcrSettingsProps) {
 
   return (
     <div
-      onClick={onClose}
+      {...backdrop}
       style={{
         position: 'fixed', inset: 0, zIndex: 70,
         background: 'rgba(0,0,0,0.6)',
@@ -170,7 +175,7 @@ export default function OcrSettings({ open, onClose }: OcrSettingsProps) {
                 style={inputStyle}
               />
               <div style={{ fontSize: 10, color: 'var(--color-muted)', marginTop: 6, lineHeight: 1.6 }}>
-                填服务商的模型 id，如 openai/gpt-4o-mini（OpenRouter）。留空用 {DEFAULT_MODELS.custom}。
+                填服务商的模型 id，如 openai/gpt-6-luna（OpenRouter）。留空用 {DEFAULT_MODELS.custom}。
               </div>
             </div>
           )}

@@ -8,6 +8,7 @@ import { createGeminiAdapter } from './adapters/gemini'
 import { createAnthropicAdapter } from './adapters/anthropic'
 import { createOpenAIAdapter } from './adapters/openai'
 import { createCustomAdapter } from './adapters/custom'
+import { createWorkerAdapter } from './adapters/worker'
 
 export type { OcrConfig, OcrProvider, OcrMode, VisionAdapter } from './types'
 export { DEFAULT_MODELS, MODEL_OPTIONS } from './types'
@@ -28,7 +29,7 @@ export function buildAdapter(config: OcrConfig, env: BuildEnv): VisionAdapter {
     case 'auto': {
       // Default path: hit the Worker (which carries our Gemini key)
       if (env.workerUrl) {
-        return createCustomAdapter(env.workerUrl, /* dummy key, worker ignores it */ 'auto', config.model || DEFAULT_MODELS.auto)
+        return createWorkerAdapter(env.workerUrl, config.model || DEFAULT_MODELS.auto)
       }
       // No worker deployed — fall back to dev Groq if we have a build-time key
       if (env.groqEnvKey) {

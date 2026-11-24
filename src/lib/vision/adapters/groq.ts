@@ -8,5 +8,7 @@ export function createGroqAdapter(apiKey: string, model = DEFAULT_MODELS.groq): 
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
     apiKey,
     model,
+    // Qwen 3.8 thinks by default; without this its <think> text lands in the answer
+    extraBody: { reasoning_format: 'hidden' },
   })
 }

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { computeCropRect, fitDisplaySize, scaleRect, type Rect } from '@/lib/cropTools'
 import { canvasToOcrFile } from '@/lib/pdfTools'
+import { useBackdropClose } from '@/hooks/useBackdropClose'
 
 interface ImageCropperProps {
   source: HTMLCanvasElement | File   // PDF page → canvas (rendered @2.0x); image → File
   title: string                       // sub-line, e.g. "市集.pdf · 第 1 页" or a filename
+  cropName?: string                   // base name of the cropped file when `source` is a canvas, e.g. "市集_page1" → 市集_page1_crop.png
   onCrop: (file: File) => void        // cropped PNG
   onWhole: () => void                 // "use the whole source" (skip crop)
   onCancel: () => void
@@ -17,7 +19,7 @@ const MINH = 22
 
 type DragMode = 'move' | 'tl' | 'tr' | 'bl' | 'br'
 
-export default function ImageCropper({ source, title, onCrop, onWhole, onCancel }: ImageCropperProps) {
+export default function ImageCropper({ source, title, cropName, onCrop, onWhole, onCancel }: ImageCropperProps) {
   const [previewUrl, setPreviewUrl] = useState('')
   const [srcSize, setSrcSize] = useState({ w: 0, h: 0 })
   const [dispSize, setDispSize] = useState({ w: 0, h: 0 })
@@ -27,6 +29,11 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
   const drawRef = useRef<CanvasImageSource | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const prevDisp = useRef({ w: 0, h: 0 })
+  const backdrop = useBackdropClose(onCancel)
+  // Detaches the window listeners of the drag in progress, if any
+  const endDrag = useRef<(() => void) | null>(null)
+  // The modal can close mid-drag (Esc, a new source): never leave listeners on window
+  useEffect(() => () => endDrag.current?.(), [])
 
   // Resolve source → preview URL + natural size + a drawable for cropping
   useEffect(() => {
@@ -89,6 +96,7 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
   function startDrag(e: React.PointerEvent, mode: DragMode) {
     e.preventDefault()
     e.stopPropagation()
+    endDrag.current?.()   // a second finger must not stack a second drag on the first
     const sx = e.clientX, sy = e.clientY
     const s0 = { ...sel }
     const move = (ev: PointerEvent) => {
@@ -112,9 +120,15 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
     const up = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      if (endDrag.current === up) endDrag.current = null
     }
+    endDrag.current = up
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+    // The browser takes the gesture over (a touch turns into a scroll, the page
+    // loses focus): no pointerup follows, and the drag would otherwise stick
+    window.addEventListener('pointercancel', up)
   }
 
   function doCrop() {
@@ -126,7 +140,7 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
     const ctx = out.getContext('2d')
     if (!ctx) { setError('裁剪失败'); return }
     ctx.drawImage(src, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h)
-    const base = source instanceof File ? source.name.replace(/\.[^.]+$/, '') : 'page'
+    const base = source instanceof File ? source.name.replace(/\.[^.]+$/, '') : (cropName || 'page')
     // PNG, or a smaller JPEG when the crop is huge — it must clear the 5 MB image limit
     canvasToOcrFile(out, `${base}_crop`).then(onCrop).catch(() => setError('裁剪失败'))
   }
@@ -141,7 +155,7 @@ export default function ImageCropper({ source, title, onCrop, onWhole, onCancel 
 
   return (
     <div
-      onClick={onCancel}
+      {...backdrop}
       style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
     >
       <div

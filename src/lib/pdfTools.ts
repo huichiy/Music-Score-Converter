@@ -8,13 +8,20 @@
 
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 
-let pdfjsLib: typeof import('pdfjs-dist') | null = null
+// The LEGACY build, on purpose: the modern one calls Map.prototype.getOrInsertComputed
+// (a 2026 addition), so on older iOS Safari and in-app browsers such as WeChat's
+// it failed inside the worker and the page picker showed an empty grid. The
+// legacy build polyfills what it needs and is otherwise the same library — its
+// pdf.d.mts re-exports the types of 'pdfjs-dist', so PDFDocumentProxy is shared.
+type PdfJs = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
 
-async function ensurePdfJs(): Promise<typeof import('pdfjs-dist')> {
+let pdfjsLib: PdfJs | null = null
+
+async function ensurePdfJs(): Promise<PdfJs> {
   if (pdfjsLib) return pdfjsLib
-  const mod = await import('pdfjs-dist')
+  const mod = await import('pdfjs-dist/legacy/build/pdf.mjs')
   // Point pdf.js at its worker file. Vite handles ?url to bundle the worker.
-  const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
+  const workerUrl = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default
   mod.GlobalWorkerOptions.workerSrc = workerUrl
   pdfjsLib = mod
   return mod

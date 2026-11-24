@@ -43,11 +43,12 @@ will clash with the var: `wrangler secret delete ALLOWED_ORIGINS`.
 | Rule | Behaviour |
 |---|---|
 | Origin | When `ALLOWED_ORIGINS` is set (it is, in `wrangler.toml`), any other `Origin` — or none — gets **403**. Unset or `*` means open (local `wrangler dev` only). |
-| Model | Forced to an allowlist (`gemini-2.5-flash`). Whatever the client asks for, including Pro, becomes Flash — the shared key has no Pro quota. |
-| Output size | `max_tokens` is clamped to 8192. |
+| Model | Forced to an allowlist (`gemini-3.6-flash`). Whatever the client asks for, including Pro or 3.8 Flash, becomes 3.6 Flash — the shared key has no Pro quota, and 3.8 Flash is often busy at peak. |
+| Output size | `max_tokens` is clamped to 32768. Gemini counts its thinking against this cap; 8192 cut a dense 40-bar page off after 9-10 bars, 32768 returned 39. |
 | Request size | Bodies over 15 MB get **413**. |
-| Payload | Must contain at least one PNG / JPEG / WebP / GIF image; this is not a general-purpose LLM endpoint. |
+| Payload | Must contain at least one PNG / JPEG / WebP / GIF image; this is not a general-purpose LLM endpoint. Malformed content parts (`null`, an `image_url` part with no `image_url`) are ignored, not an error. |
 | Bad answers | An empty, safety-blocked or truncated Gemini reply becomes an error with a Chinese message the app shows as-is, never a blank "result". |
+| Upstream errors | Gemini **429** → 识别额度已用完或请求太频繁… and **503 / 524** → 识别模型正忙… (upstream status kept); any other status passes the first 400 characters of Gemini's own text. |
 
 ## Add a rate-limiting rule (do this)
 
@@ -83,10 +84,10 @@ Cloudflare Workers free plan:
 - 10ms CPU per invocation (more than enough for proxying)
 
 Gemini free tier (Google AI Studio):
-- Gemini 2.5 Flash: 1500 requests/day
-- Gemini 2.5 Pro: no free quota — which is why the Worker never forwards it
+- Gemini 3.6 Flash has a free quota (Google changes the numbers, so check the usage page in AI Studio rather than trusting a figure written here). When it runs out, users get the 429 message above and can switch to their own key in the app.
+- Pro models have no free quota — which is why the Worker never forwards them
 
-If you outgrow either, change the upstream URL or `ALLOWED_MODELS` in `src/index.ts` (and redeploy).
+If you outgrow either, change the upstream URL or `ALLOWED_MODELS` in `src/index.ts` (and redeploy). The old 2.5 Flash is routed to the weaker 3.5 Flash-Lite from 2026-12-01, so do not go back to it.
 
 ## Update or rotate the key
 

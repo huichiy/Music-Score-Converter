@@ -2,6 +2,7 @@ import { useRef, useState, useCallback } from 'react'
 import { useScoreStore } from '@/store/scoreStore'
 import { useOcr } from '@/hooks/useOcr'
 import { parseFromText } from '@/lib/editor'
+import { cropSourceOf } from '@/lib/cropTools'
 import PdfPagePicker from './PdfPagePicker'
 import ImageCropper from './ImageCropper'
 import OcrSettings from './OcrSettings'
@@ -22,7 +23,7 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [cropOpen, setCropOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const { handleOcrFile, runOcr, resetOcr } = useOcr()
+  const { handleOcrFile, runOcr, cancelOcr, resetOcr } = useOcr()
 
   // Route incoming files: PDFs open the page picker; images go straight to OCR.
   const routeFile = useCallback((file: File | null | undefined) => {
@@ -41,9 +42,11 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
     handleOcrFile(file)
   }, [handleOcrFile])
 
-  const handlePdfPageSelected = useCallback((img: File) => {
-    setPendingPdf(null)  // close picker
-    handleOcrFile(img)   // image takes the normal OCR path
+  // `page` is the whole PDF page when `img` is a crop of it: it stays the crop
+  // source, so another row of the same page needs no trip back through the picker
+  const handlePdfPageSelected = useCallback((img: File, page?: File) => {
+    setPendingPdf(null)      // close picker
+    handleOcrFile(img, page) // image takes the normal OCR path
   }, [handleOcrFile])
 
   const ocrFile = useScoreStore((s) => s.ocrFile)
@@ -53,6 +56,10 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
   const ocrResult = useScoreStore((s) => s.ocrResult)
   const setOcrMode = useScoreStore((s) => s.setOcrMode)
   const setOcrResult = useScoreStore((s) => s.setOcrResult)
+  // The whole picture 框选区域 opens on. After a crop, ocrFile is only the strip;
+  // cropping that again would shrink it further instead of picking another row.
+  const cropBase = ocrFile ? cropSourceOf(ocrFile) : null
+  const isCrop = !!ocrFile && cropBase !== ocrFile
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
@@ -66,7 +73,7 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
   }
 
   const handleUseAsScore = () => {
-    if (!ocrResult) return
+    if (!ocrResult?.trim()) return
     try {
       // Guard: refuse to render an empty score when the text has no parseable measures
       const probe = parseFromText(ocrResult)
@@ -151,6 +158,9 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
             {ocrFile ? (
               <div className="text-xs space-y-0.5">
                 <div className="truncate font-medium">{ocrFile.name}</div>
+                {isCrop && cropBase && (
+                  <div className="truncate" style={{ color: 'var(--color-muted)', fontSize: '10px' }}>框选自 {cropBase.name}</div>
+                )}
                 <div style={{ color: 'var(--color-muted)' }}>{isOcrAnalyzing ? '识别中，请稍候…' : '点击更换图片'}</div>
               </div>
             ) : (
@@ -197,10 +207,23 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
             >
               {isOcrAnalyzing ? '识别中…' : '开始识别'}
             </button>
+            {/* The only way out of a request that never answers on the first run
+                (there is no result box with 重置 yet). Keeps the file and any result. */}
+            {isOcrAnalyzing && (
+              <button
+                onClick={cancelOcr}
+                className="rounded-lg py-2 px-3 text-sm font-medium transition-colors cursor-pointer shrink-0"
+                style={{ background: 'var(--color-surface-2)', color: 'var(--color-muted)', border: '1px solid var(--color-border)' }}
+              >
+                取消
+              </button>
+            )}
           </div>
 
-          {/* Result — editable so small OCR mistakes can be fixed before rendering */}
-          {ocrResult && (
+          {/* Result — editable so small OCR mistakes can be fixed before rendering.
+              Shown for any text, blank included: emptying the box to retype it must
+              not make the box (and its 重置) vanish. */}
+          {ocrResult !== null && (
             <div className="space-y-2">
               <textarea
                 value={ocrResult}
@@ -220,7 +243,8 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
               <div className="flex gap-2">
                 <button
                   onClick={handleUseAsScore}
-                  className="flex-1 rounded-lg py-1.5 text-xs font-medium cursor-pointer"
+                  disabled={!ocrResult.trim()}
+                  className="flex-1 rounded-lg py-1.5 text-xs font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{ background: 'var(--color-accent)', color: '#fff', border: 'none' }}
                 >
                   渲染为简谱
@@ -238,12 +262,14 @@ export default function OcrSection({ onOcrScore, loadFromText }: OcrSectionProps
         </div>
       )}
 
-      {cropOpen && ocrFile && (
+      {cropOpen && cropBase && (
         <ImageCropper
-          source={ocrFile}
-          title={ocrFile.name}
-          onCrop={(img) => { setCropOpen(false); handleOcrFile(img) }}
-          onWhole={() => setCropOpen(false)}
+          source={cropBase}
+          title={cropBase.name}
+          onCrop={(img) => { setCropOpen(false); handleOcrFile(img, cropBase) }}
+          // 整张: the whole picture goes back in as the file to recognise (when a crop
+          // was selected, ocrFile is only that strip)
+          onWhole={() => { setCropOpen(false); if (cropBase !== ocrFile) handleOcrFile(cropBase) }}
           onCancel={() => setCropOpen(false)}
         />
       )}
