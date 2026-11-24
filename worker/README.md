@@ -44,7 +44,7 @@ will clash with the var: `wrangler secret delete ALLOWED_ORIGINS`.
 |---|---|
 | Origin | When `ALLOWED_ORIGINS` is set (it is, in `wrangler.toml`), any other `Origin` — or none — gets **403**. Unset or `*` means open (local `wrangler dev` only). |
 | Model | Forced to an allowlist (`gemini-3.6-flash`). Whatever the client asks for, including Pro or 3.8 Flash, becomes 3.6 Flash — the shared key has no Pro quota, and 3.8 Flash is often busy at peak. |
-| Output size | `max_tokens` is clamped to 32768. Gemini counts its thinking against this cap; 8192 cut a dense 40-bar page off after 9-10 bars, 32768 returned 39. |
+| Output size | `max_tokens` is clamped to 32768. Gemini counts its thinking against this cap; 8192 cut a dense 40-bar page off after 9-10 bars; a test at 40000 returned 36-39. |
 | Request size | Bodies over 15 MB get **413**. |
 | Payload | Must contain at least one PNG / JPEG / WebP / GIF image; this is not a general-purpose LLM endpoint. Malformed content parts (`null`, an `image_url` part with no `image_url`) are ignored, not an error. |
 | Bad answers | An empty, safety-blocked or truncated Gemini reply becomes an error with a Chinese message the app shows as-is, never a blank "result". |

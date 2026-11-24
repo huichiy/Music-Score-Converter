@@ -56,7 +56,7 @@ export const DEFAULT_MODEL = 'gemini-3.6-flash'
 export const ALLOWED_MODELS = [DEFAULT_MODEL]
 /**
  * Gemini counts thinking tokens against this. 8192 truncated a dense page after
- * 9-10 of its 40 bars; with 32768 the same page came back with 39.
+ * 9-10 of its 40 bars; a test at 40000 returned 36-39 of them.
  */
 export const MAX_OUTPUT_TOKENS = 32768
 /** Request body cap. A 5 MB image is ~7 MB as base64; this leaves headroom, not a free-for-all. */

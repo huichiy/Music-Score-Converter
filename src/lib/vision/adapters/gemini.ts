@@ -31,7 +31,7 @@ export function createGeminiAdapter(apiKey: string, model = DEFAULT_MODELS.gemin
               ],
             }],
             // 32768: thinking tokens count against maxOutputTokens. 8192 truncated a
-            // dense page after 9-10 of its 40 bars; with this cap all 39 came back.
+            // dense page after 9-10 of its 40 bars; a test at 40000 returned 36-39 of them.
             generationConfig: { temperature: 0, maxOutputTokens: 32768 },
           }),
         })
