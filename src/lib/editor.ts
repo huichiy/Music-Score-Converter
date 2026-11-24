@@ -220,12 +220,18 @@ export function serializeToText(
   const pairs = slurPairs(measures)
   const slurEnds = new Set(pairs.values())
 
+  // A block of rests carries no hairpin. One still open before it is closed right here: read
+  // back inside an open hairpin, `[N]` would come out as N rests each drawn with it
+  const writeRestBlock = (n: number) => {
+    body += prevWedge ? `| ! [${n}] ` : `| [${n}] `
+    prevWedge = null
+  }
+
   for (let mi = 0; mi < measures.length; mi++) {
     const measure = measures[mi]
 
     if (!Array.isArray(measure) && (measure as { _multiRest?: number })._multiRest !== undefined) {
-      body += '| '
-      body += `[${(measure as { _multiRest: number })._multiRest}] `
+      writeRestBlock((measure as { _multiRest: number })._multiRest)
       continue
     }
 
@@ -236,7 +242,7 @@ export function serializeToText(
       while (runEnd + 1 < measures.length && isCollapsibleRest(measures[runEnd + 1])) runEnd++
       const runLen = runEnd - mi + 1
       if (runLen >= 2) {
-        body += `| [${runLen}] `
+        writeRestBlock(runLen)
         mi = runEnd
         continue
       }

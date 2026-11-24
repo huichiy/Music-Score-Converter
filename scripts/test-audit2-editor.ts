@@ -334,6 +334,16 @@ describe('Review: a block of no length takes no data-m', () => {
   assertEq('negative, NaN and 0 count as nothing, like the renderer', [0, -3, NaN, 2].map(n => computeOrigIdxMap([bar, b(n), bar]).get(2)), [1, 1, 1, 3])
 })
 
+describe('Review: a hairpin that ends before rests stays off them', () => {
+  const q = () => parseFromText('| 1 2 3 4 |').measures[0] as MeasureArray
+  const rest = () => parseFromText('| 0--- |').measures[0]
+  const loud = Object.assign(q(), { _wedge: 'cresc' as const })
+  const text = serializeToText([loud, rest(), rest(), q()], 'C', '4/4', '')
+  assertEq('the hairpin is closed before the block', text.split('\n')[1], '| < 1 2 3 4 | ! [2] | 1 2 3 4 ||')
+  const back = parseFromText(text).measures
+  assertEq('…and the block comes back as a plain block', back.map(m => Array.isArray(m) ? m._wedge ?? null : m), ['cresc', { _multiRest: 2 }, null])
+})
+
 // ============================================================================
 
 console.log(`\n${'='.repeat(50)}`)

@@ -1,6 +1,8 @@
 import type { NoteObject, MeasureArray, Measure, ChordNote, GraceNote, Articulation } from '@/types/score'
 import type { Midi } from '@tonejs/midi'
 import { classifyDirection } from './directions'
+import { durationBeats } from './editor'
+import { barBeatsOf } from './meter'
 
 export function pitchToSemitones(step: string, alter: number, octave: number): number {
   const stepMap: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
@@ -222,10 +224,6 @@ const durationOf = (el: Element): number | null => {
   return Number.isFinite(v) ? v : null
 }
 
-// Written length in quarters of a NoteObject value (before any tuplet scaling)
-const NOTE_QUARTERS: Record<NoteObject['type'], number> = { whole: 4, half: 2, quarter: 1, eighth: 0.5, '16th': 0.25, '32nd': 0.125 }
-const writtenQuarters = (n: NoteObject) => NOTE_QUARTERS[n.type] * (n.dot ? 1.5 : 1)
-
 // Two-note tremolo (start / stop): <duration> is the sounding length, the <type> and any
 // <time-modification> 2:1 only describe how it is drawn. type="single" is one note.
 const isPairedTremolo = (el: Element) =>
@@ -267,7 +265,7 @@ function markTupletLengths(notes: NoteObject[], marks: Map<NoteObject, TupletMar
       let len = 0
       let j = k
       while (j < b) {
-        len += writtenQuarters(notes[j])
+        len += durationBeats(notes[j].type, notes[j].dot)
         j++
         if (j - k >= 2 && isMultiple(len, n)) break
       }
@@ -715,8 +713,11 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
       }
     }
     flush()
-    // The kept voice stops short of what another voice (or a <forward>) reached
-    if (timed && measureNotes.length > 0 && maxPos - keptEnd >= TIMELINE_EPS) pushRests(maxPos - keptEnd)
+    // The kept voice stops short of what another voice (or a <forward>) reached. Never past
+    // the bar, though: a second voice whose rounded durations add up to 4.25 must not give
+    // a voice that already fills its 4/4 bar an extra rest
+    const reach = timeStr ? Math.min(maxPos, barBeatsOf(timeStr)) : maxPos
+    if (timed && measureNotes.length > 0 && reach - keptEnd >= TIMELINE_EPS) pushRests(reach - keptEnd)
     markTupletLengths(measureNotes, tupletMarks)
 
     measureNotes._repeatStart = repeatStart
@@ -803,6 +804,7 @@ export function parseXMLToNoteObjects(xmlDoc: Document, fallbackKeyStr = 'C'): M
         && !repeatStart && !repeatEnd && allDirections.length === 0 && !measureNotes._key && !measureNotes._timeSig
       if (leftover) continue
       measureNotes.push(restNote('whole'))
+      tieFrom = null   // a tie cannot reach over a silent bar
     }
     // 弱起: an incomplete first measure (MusicXML marks it implicit or numbers it 0)
     if (jianpuMeasures.length === 0 && (measures[i].getAttribute('implicit') === 'yes' || measures[i].getAttribute('number') === '0')) measureNotes._pickup = true

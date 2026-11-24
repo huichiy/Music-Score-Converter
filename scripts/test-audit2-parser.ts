@@ -576,6 +576,19 @@ describe('17. MIDI: a file without a melody says so in Chinese', () => {
 
 // @@SECTIONS@@
 
+describe('Review: trailing rests stop at the bar, ties stop at silence', () => {
+  const rounded = parseXml(`<measure number="1">${attrs(0, 4, 4, 4)}
+    ${noteXml('C', 5, 16, 'whole', '<voice>1</voice>')}<backup><duration>16</duration></backup>
+    ${noteXml('E', 4, 9, 'half', '<voice>2</voice>')}${noteXml('F', 4, 8, 'half', '<voice>2</voice>')}
+  </measure>`)
+  assertEq('a second voice that overshoots the bar adds no rest to a full one', fmtAll(rounded), ["1'/w"])
+
+  const gap = parseXml(`<measure number="1">${attrs()}${noteXml('C', 5, 4, 'whole', TIE_START)}</measure>
+    <measure number="2"></measure>
+    <measure number="3">${noteXml('C', 5, 4, 'whole')}</measure>`)
+  assertEq('a dangling tie does not reach over a silent bar', fmtAll(gap), ["1'/w", '0/w', "1'/w"])
+})
+
 // ============================================================================
 
 console.log(`\n${'='.repeat(50)}`)
