@@ -10,7 +10,14 @@ import { usePlayback } from '@/hooks/usePlayback'
 import EditNotePopup from '@/components/EditNotePopup'
 import EditTextOverlay from '@/components/EditTextOverlay'
 import { measureIdxFromOrigIdx, withNoteEdited } from '@/lib/editor'
+import { loadErrorMessage } from '@/lib/scoreFile'
 import type { NoteObject, MeasureArray } from '@/types/score'
+
+// Only a file drag is ours: dragging selected text around the page must not raise the drop overlay
+const hasFileDrag = (dt: DataTransfer | null) => Array.from(dt?.types ?? []).includes('Files')
+
+// Resize events arrive in bursts while a window edge is dragged; lay out once it settles
+const RELAYOUT_DEBOUNCE_MS = 150
 
 export default function App() {
   const mainContentRef = useRef<HTMLDivElement>(null)
@@ -25,63 +32,127 @@ export default function App() {
   const store = useScoreStore()
   const { convert, transpose, loadSample, changePartAndRender, rerenderWithStore, loadFromText } = useFileHandler(mainContentRef)
   const playback = usePlayback(scoreOutputRef)
+  // pause() does nothing unless something is playing
+  const pausePlayback = playback.pause
+
+  // The score is laid out for main's width at the time. While the landing page shows, the
+  // sidebar is hidden and main is wider, so a layout made then is wrong for the tool layer.
+  const relayout = useCallback(() => {
+    const svg = rerenderWithStore()   // null when nothing is converted
+    if (svg) setSvgHtml(svg)
+  }, [rerenderWithStore])
 
   // Sync isDark to document data-theme attribute + re-render SVG with new theme colors
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', store.isDark ? 'dark' : 'light')
-    const svg = rerenderWithStore()
-    if (svg) setSvgHtml(svg)
+    if (hasEnteredTool) relayout()   // from the landing page it waits for the tool layer's own pass below
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.isDark])
 
   // Re-layout when the measures-per-line setting changes
   useEffect(() => {
-    const svg = rerenderWithStore()
-    if (svg) setSvgHtml(svg)
+    relayout()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.measuresPerLine])
 
-  // ── File conversion ──────────────────────────────────────────
-  const handleFile = useCallback(async (file: File) => {
-    store.setIsConverting(true)
-    store.setErrorMsg('')
-    try {
-      const svg = await convert(file)
-      setSvgHtml(svg)
-    } catch (err) {
-      store.setErrorMsg((err as Error).message || '转换失败，请重试')
-    } finally {
-      store.setIsConverting(false)
-    }
-  }, [convert, store])
+  // Back in the tool layer (sidebar mounted, main narrower): lay the score out for this width
+  useEffect(() => {
+    if (hasEnteredTool) relayout()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasEnteredTool])
 
-  const handleLoadSample = useCallback(async () => {
-    setHasEnteredTool(true)  // sample also enters tool layer
-    store.setIsConverting(true)
-    store.setErrorMsg('')
-    try {
-      const svg = await loadSample()
-      setSvgHtml(svg)
-    } catch (err) {
-      store.setErrorMsg((err as Error).message || '示例加载失败')
-    } finally {
-      store.setIsConverting(false)
+  // Rotating the phone or resizing the window changes main's width without any state
+  // change, so watch the element itself.
+  const hasEnteredToolRef = useRef(hasEnteredTool)
+  hasEnteredToolRef.current = hasEnteredTool
+  useEffect(() => {
+    const el = mainContentRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    let lastWidth = el.clientWidth
+    let timer: number | undefined
+    const observer = new ResizeObserver(() => {
+      const width = el.clientWidth
+      if (width === lastWidth) return   // height-only change (on-screen keyboard, sidebar max-height)
+      lastWidth = width
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        if (hasEnteredToolRef.current) relayout()
+      }, RELAYOUT_DEBOUNCE_MS)
+    })
+    observer.observe(el)
+    return () => { observer.disconnect(); window.clearTimeout(timer) }
+  }, [relayout])
+
+  // Dropping a file outside a drop zone makes the browser open it and navigate away,
+  // taking the score with it. Refuse every file drag nobody claimed.
+  useEffect(() => {
+    const onDragOver = (e: DragEvent) => {
+      // A drop zone's own handler ran first (React listens below window) and has already
+      // called preventDefault; only the unclaimed ones are refused here
+      if (!hasFileDrag(e.dataTransfer) || e.defaultPrevented) return
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'
     }
-  }, [loadSample, store])
+    const onDrop = (e: DragEvent) => {
+      if (hasFileDrag(e.dataTransfer)) e.preventDefault()
+      setDragOver(false)
+    }
+    const onDragEnd = () => setDragOver(false)
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    window.addEventListener('dragend', onDragEnd)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+      window.removeEventListener('dragend', onDragEnd)
+    }
+  }, [])
+
+  // ── File conversion ──────────────────────────────────────────
+  // The overlay belongs to the last load still running: one that finishes while a newer
+  // one is in flight must not take it down.
+  const loadsInFlight = useRef(0)
+  const runLoad = useCallback(async (load: () => Promise<string | null>) => {
+    loadsInFlight.current++
+    useScoreStore.getState().setIsConverting(true)
+    useScoreStore.getState().setErrorMsg('')
+    try {
+      const svg = await load()
+      if (svg !== null) setSvgHtml(svg)   // null: superseded by a newer load
+    } catch (err) {
+      // The score on screen is untouched; say why the file was not used
+      useScoreStore.getState().setErrorMsg(loadErrorMessage(err))
+    } finally {
+      if (--loadsInFlight.current === 0) useScoreStore.getState().setIsConverting(false)
+    }
+  }, [])
+
+  const handleFile = useCallback((file: File) => runLoad(() => convert(file)), [runLoad, convert])
+
+  const handleLoadSample = useCallback(() => {
+    setHasEnteredTool(true)  // sample also enters tool layer
+    return runLoad(loadSample)
+  }, [runLoad, loadSample])
 
   const handleEnterTool = useCallback(() => {
     setHasEnteredTool(true)
   }, [])
 
   const handleBackToLanding = useCallback(() => {
+    // The transport bar goes with the tool layer; audio must not keep playing without it
+    pausePlayback()
     setHasEnteredTool(false)
-  }, [])
+  }, [pausePlayback])
 
   // ── Part change ───────────────────────────────────────────────
   const handlePartChange = useCallback(async (idx: number) => {
-    const svg = await changePartAndRender(idx)
-    if (svg) setSvgHtml(svg)
-  }, [changePartAndRender])
+    try {
+      const svg = await changePartAndRender(idx)
+      if (svg) setSvgHtml(svg)
+    } catch (err) {
+      store.setErrorMsg(loadErrorMessage(err))
+    }
+  }, [changePartAndRender, store])
 
   // ── Transpose ─────────────────────────────────────────────────
   const handleTranspose = useCallback((key: string) => {
@@ -142,8 +213,10 @@ export default function App() {
 
   // ── Edit Mode B: text editor ─────────────────────────────────
   const handleEditModeB = useCallback(() => {
+    // The full-screen editor covers the transport bar, so opening it must not leave audio playing
+    if (!store.editTextVisible) pausePlayback()
     store.setEditTextVisible(!store.editTextVisible)
-  }, [store])
+  }, [store, pausePlayback])
 
   const handleTextSave = useCallback((text: string) => {
     try {
@@ -164,24 +237,31 @@ export default function App() {
   const isConverting = store.isConverting
   const errorMsg = store.errorMsg
 
-  // Tool-layer drag-and-drop: accept a dropped file anywhere on the main canvas
-  // (works whether or not a score is already loaded).
+  // Drag-and-drop: accept a dropped file anywhere on the main canvas, whether or not a
+  // score is loaded. On the landing page a drop enters the tool layer and loads the file.
   const handleMainDragOver = useCallback((e: React.DragEvent) => {
-    if (!hasEnteredTool) return
+    if (!hasFileDrag(e.dataTransfer)) return
     e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
     setDragOver(true)
-  }, [hasEnteredTool])
-  const handleMainDragLeave = useCallback(() => setDragOver(false), [])
+  }, [])
+  const handleMainDragLeave = useCallback((e: React.DragEvent) => {
+    // Crossing into a child of main also fires dragleave on main; the drag is still over it
+    if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return
+    setDragOver(false)
+  }, [])
   const handleMainDrop = useCallback((e: React.DragEvent) => {
-    if (!hasEnteredTool) return
+    if (!hasFileDrag(e.dataTransfer)) return
     e.preventDefault()
     setDragOver(false)
     const file = e.dataTransfer.files[0]
-    if (file) handleFile(file)
-  }, [hasEnteredTool, handleFile])
+    if (!file) return
+    setHasEnteredTool(true)
+    handleFile(file)
+  }, [handleFile])
 
   return (
-    <div className="flex flex-col sm:flex-row h-screen overflow-hidden" style={{ background: 'var(--color-background)' }}>
+    <div className="flex flex-col sm:flex-row h-dvh overflow-hidden" style={{ background: 'var(--color-background)' }}>
       {hasEnteredTool && (
         <Sidebar
           onFile={handleFile}
@@ -239,7 +319,7 @@ export default function App() {
         )}
 
         {/* Drop-target overlay — appears only when user is dragging a file over the main canvas */}
-        {hasEnteredTool && dragOver && (
+        {dragOver && (
           <div
             className="absolute inset-0 flex items-center justify-center z-40 pointer-events-none"
             style={{

@@ -1,12 +1,11 @@
-import { useCallback } from 'react'
-import JSZip from 'jszip'
+import { useCallback, useRef } from 'react'
 import { Midi } from '@tonejs/midi'
 import { useScoreStore } from '@/store/scoreStore'
-import { parseXMLToNoteObjects, transposeNoteObjects, keyMap, midiToJianpu, parseMetronomeTempo } from '@/lib/parser'
+import { transposeNoteObjects } from '@/lib/parser'
 import { renderJianpuSVG } from '@/lib/renderer'
-import { parseABC } from '@/lib/abcParser'
 import { parseFromText } from '@/lib/editor'
-import { matchPartIndex, loadMyPart } from '@/lib/partMatch'
+import { loadScoreFile, parseXmlPart, ScoreFileError } from '@/lib/scoreFile'
+import type { XmlParser, MidiReader } from '@/lib/scoreFile'
 import type { Measure } from '@/types/score'
 
 const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -29,45 +28,13 @@ const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 </part>
 </score-partwise>`
 
-// Melodic parts, scored up. Chinese orchestras are not just 笛子 — plucked
-// strings (琵琶/柳琴/古筝) carry the tune as often as the winds and bowed
-// strings do, and were previously unrecognised entirely.
-// NOTE: matching is substring-based, so never add a bare '阮' here — it would
-// also match 大阮/中阮 in PENALTY_KEYWORDS below and score them twice.
-const KEYWORDS = [
-  '笛','flute','dizi','箫','xiao','唢呐','suona','管子','guanzi','笙','sheng','巴乌','bawu',
-  '二胡','erhu','高胡','gaohu','中胡','zhonghu','板胡','banhu','京胡','jinghu',
-  '琵琶','pipa','柳琴','liuqin','古筝','筝','guzheng','三弦','sanxian',
-  'violin','soprano','melody','oboe','clarinet','trumpet','horn',
-  'solo','主旋律','lead','主音','旋律',
-]
-const PENALTY_KEYWORDS = [
-  '大阮','daruan','中阮','zhongruan','革胡','gehu','大提琴','cello',
-  '低音','bass','打击','percussion','扬琴','yangqin','伴奏','acc','accompaniment',
-]
-
-function fileToArrayBuffer(file: File): Promise<ArrayBuffer> {
-  if (file.arrayBuffer) return file.arrayBuffer()
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as ArrayBuffer)
-    reader.onerror = reject
-    reader.readAsArrayBuffer(file)
-  })
-}
-
-function fileToText(file: File): Promise<string> {
-  if (file.text) return file.text()
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsText(file, 'UTF-8')
-  })
-}
+const parseXml: XmlParser = (text) => new DOMParser().parseFromString(text, 'text/xml')
+const readMidi: MidiReader = (data) => new Midi(data)
 
 export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | null>) {
-  const store = useScoreStore()
+  // Bumped by every file load and every text import. A load that finds a different number
+  // when its parse finishes was superseded: it must not commit over what is on screen now.
+  const loadRun = useRef(0)
 
   const getContainerWidth = () => mainContentRef.current?.clientWidth ?? 540
 
@@ -75,228 +42,47 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
   const renderScore = (measures: Measure[], keyStr: string, timeStr: string, titleStr: string, tempoStr: string) =>
     renderJianpuSVG(measures, keyStr, timeStr, titleStr, getContainerWidth(), tempoStr, undefined, useScoreStore.getState().measuresPerLine)
 
-  const showOutput = useCallback((
-    svgResult: string,
-    titleStr: string,
-    keyStr: string,
-    timeStr: string,
-  ) => {
-    store.setIsConverted(true)
-    store.setErrorMsg('')
-    // SVG is stored via the output ref — caller sets innerHTML directly
-    // We expose the SVG string as return value instead
-    return svgResult
+  // ──────────────────────────────────────────────────────────
+  // Load a file, in two steps. Step 1 (loadScoreFile) parses and may throw; it touches no
+  // store state, so a bad file leaves the score on screen, its part selector and its
+  // transposition exactly as they were. Step 2 sets everything at once and renders.
+  // Resolves null when a newer load superseded this one (the caller shows nothing).
+  // ──────────────────────────────────────────────────────────
+  const convert = useCallback(async (file: File): Promise<string | null> => {
+    const run = ++loadRun.current
+    let loaded
+    try {
+      loaded = await loadScoreFile(file, parseXml, readMidi)
+    } catch (err) {
+      if (run !== loadRun.current) return null   // a newer load owns the screen; this complaint is moot
+      throw err
+    }
+    if (run !== loadRun.current) return null
+
+    // Render before committing: if the renderer throws, the store is still untouched
+    const svg = renderScore(loaded.measures, loaded.keyStr, loaded.timeStr, loaded.titleStr, loaded.tempoStr)
+    useScoreStore.getState().commitScore({
+      originalMeasures: loaded.measures,
+      originalKeyStr: loaded.keyStr,
+      originalTimeStr: loaded.timeStr,
+      originalTitleStr: loaded.titleStr,
+      originalTempoStr: loaded.tempoStr,
+      currentMeasures: loaded.measures,
+      currentKeyStr: loaded.keyStr,
+      // A new file starts in its own key; the previous file's transposition must not
+      // survive into the selector or the next part change
+      transposeKey: '',
+      currentFile: loaded.file,
+      parsedXmlDoc: loaded.xmlDoc,
+      partNames: loaded.partNames,
+      selectedPartIdx: loaded.selectedPartIdx,
+      matchedMyPart: loaded.matchedMyPart,
+      showPartSelector: loaded.showPartSelector,
+      showAutoDetect: loaded.showAutoDetect,
+    })
+    return svg
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  // ──────────────────────────────────────────────────────────
-  // XML Conversion
-  // ──────────────────────────────────────────────────────────
-  const renderSelectedPart = useCallback(async (
-    xmlDoc: Document,
-    partIdx: number,
-    currentFile: File | null,
-    transposeKey: string,
-  ): Promise<string> => {
-    const partsList = xmlDoc.getElementsByTagName('part')
-    if (partsList.length <= partIdx) throw new Error('Part index out of range')
-
-    const dummyDoc = document.implementation.createDocument(null, 'score-partwise')
-    // <part-list> is only a name table; a file without one still renders
-    const partListNode = xmlDoc.getElementsByTagName('part-list')[0]
-    if (partListNode) dummyDoc.documentElement.appendChild(partListNode.cloneNode(true))
-    dummyDoc.documentElement.appendChild(partsList[partIdx].cloneNode(true))
-
-    let titleStr = 'Untitled'
-    const movementTitleNodes = xmlDoc.getElementsByTagName('movement-title')
-    const workTitleNodes = xmlDoc.getElementsByTagName('work-title')
-    if (movementTitleNodes.length > 0) titleStr = movementTitleNodes[0].textContent ?? 'Untitled'
-    else if (workTitleNodes.length > 0) titleStr = workTitleNodes[0].textContent ?? 'Untitled'
-    if (titleStr === 'Untitled' && currentFile) titleStr = currentFile.name.replace(/\.[^/.]+$/, '')
-
-    let beats = '4'; let beatType = '4'
-    const beatsNodes = dummyDoc.getElementsByTagName('beats')
-    if (beatsNodes.length > 0) beats = beatsNodes[0].textContent!
-    else { const fb = xmlDoc.getElementsByTagName('beats'); if (fb.length > 0) beats = fb[0].textContent! }
-    const beatTypeNodes = dummyDoc.getElementsByTagName('beat-type')
-    if (beatTypeNodes.length > 0) beatType = beatTypeNodes[0].textContent!
-    else { const fb = xmlDoc.getElementsByTagName('beat-type'); if (fb.length > 0) beatType = fb[0].textContent! }
-
-    let fifths = 0
-    const fifthsNodes = dummyDoc.getElementsByTagName('fifths')
-    if (fifthsNodes.length > 0) fifths = parseInt(fifthsNodes[0].textContent!)
-    else { const fb = xmlDoc.getElementsByTagName('fifths'); if (fb.length > 0) fifths = parseInt(fb[0].textContent!) }
-    const keyStr = keyMap[fifths.toString()] || 'C'
-
-    // Quarter notes per minute: "half = 60" is 120, which is what playback counts
-    const tempoStr = parseMetronomeTempo(xmlDoc)
-
-    const timeStr = `${beats}/${beatType}`
-    const svgMeasures = parseXMLToNoteObjects(dummyDoc)
-
-    store.setOriginal(svgMeasures, keyStr, timeStr, titleStr, tempoStr)
-
-    const targetKey = transposeKey || keyStr
-    const displayMeasures = transposeNoteObjects(svgMeasures, keyStr, targetKey)
-    store.setCurrent(displayMeasures, targetKey)
-
-    const svgResult = renderScore(displayMeasures, targetKey, timeStr, titleStr, tempoStr)
-    store.setIsConverted(true)
-    return svgResult
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store])
-
-  const handleXmlConversion = useCallback(async (file: File): Promise<string> => {
-    let xmlText = ''
-
-    if (file.name.toLowerCase().endsWith('.mxl')) {
-      const arrayBuffer = await fileToArrayBuffer(file)
-      const zip = await JSZip.loadAsync(arrayBuffer)
-      let targetFile = null
-      const containerFile = zip.files['META-INF/container.xml']
-      if (containerFile) {
-        const containerXmlText = await containerFile.async('text')
-        const containerDoc = new DOMParser().parseFromString(containerXmlText, 'text/xml')
-        const rootfile = containerDoc.getElementsByTagName('rootfile')[0]
-        if (rootfile) {
-          const fullPath = rootfile.getAttribute('full-path')
-          if (fullPath && zip.files[fullPath]) targetFile = zip.files[fullPath]
-        }
-      }
-      if (!targetFile) {
-        for (const filename in zip.files) {
-          const lower = filename.toLowerCase()
-          if (!lower.startsWith('meta-inf/') && (lower.endsWith('.xml') || lower.endsWith('.musicxml'))) {
-            targetFile = zip.files[filename]; break
-          }
-        }
-      }
-      if (!targetFile) throw new Error('No XML found in MXL container')
-      xmlText = await targetFile.async('text')
-    } else {
-      xmlText = await fileToText(file)
-    }
-
-    const xmlDoc = new DOMParser().parseFromString(xmlText, 'text/xml')
-    store.setParsedXmlDoc(xmlDoc)
-
-    const parts = xmlDoc.getElementsByTagName('part')
-    const names: string[] = []
-    let bestPartIndex = 0; let highestScore = -Infinity
-
-    for (let i = 0; i < parts.length; i++) {
-      const id = parts[i].getAttribute('id')
-      let partName = `Part ${i + 1}`
-      const partList = xmlDoc.getElementsByTagName('part-list')[0]
-      if (partList) {
-        for (const sp of Array.from(partList.getElementsByTagName('score-part'))) {
-          if (sp.getAttribute('id') === id) {
-            const nameNode = sp.getElementsByTagName('part-name')[0]
-            if (nameNode) partName = nameNode.textContent ?? partName
-            break
-          }
-        }
-      }
-      names.push(partName)
-
-      let score = 0
-      const nameLower = partName.toLowerCase()
-      for (const kw of KEYWORDS) { if (nameLower.includes(kw.toLowerCase())) { score += 1000; break } }
-      for (const kw of PENALTY_KEYWORDS) { if (nameLower.includes(kw.toLowerCase())) { score -= 2000; break } }
-
-      const notes = parts[i].getElementsByTagName('note')
-      let totalPitches = 0; let pitchSum = 0
-      const stepMapLocal: Record<string, number> = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 }
-      for (let j = 0; j < notes.length; j++) {
-        const pitchNode = notes[j].getElementsByTagName('pitch')[0]
-        if (pitchNode) {
-          totalPitches++
-          const stepStr = pitchNode.getElementsByTagName('step')[0].textContent!
-          const alterNode = pitchNode.getElementsByTagName('alter')[0]
-          const alter = alterNode ? parseFloat(alterNode.textContent!) : 0
-          const octave = parseInt(pitchNode.getElementsByTagName('octave')[0].textContent!)
-          pitchSum += stepMapLocal[stepStr] + alter + octave * 12
-        }
-      }
-      score += totalPitches
-      if (totalPitches > 0) score += pitchSum / totalPitches * 2
-      if (score > highestScore) { highestScore = score; bestPartIndex = i }
-    }
-
-    // The user's own instrument beats melody scoring. Scoring can only guess at
-    // one default (the melody), which is wrong for everyone playing an inner or
-    // bass voice — so once they've picked their part by hand, honour it.
-    const mine = matchPartIndex(names, loadMyPart())
-    const chosenIdx = mine !== -1 ? mine : bestPartIndex
-
-    store.setPartNames(names)
-    store.setSelectedPartIdx(chosenIdx)
-    store.setMatchedMyPart(mine !== -1)
-    store.setShowPartSelector(parts.length > 1)
-    store.setShowAutoDetect(parts.length > 1 && mine === -1)
-    // A new file starts in its own key; the previous file's transposition must not
-    // survive into the selector or the next part change
-    store.setTransposeKey('')
-
-    return renderSelectedPart(xmlDoc, chosenIdx, file, '')
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store, renderSelectedPart])
-
-  // ──────────────────────────────────────────────────────────
-  // MIDI Conversion
-  // ──────────────────────────────────────────────────────────
-  const handleMidiConversion = useCallback(async (file: File): Promise<string> => {
-    const arrayBuffer = await fileToArrayBuffer(file)
-    const midi = new Midi(arrayBuffer)
-    const { measures: jianpuMeasures, keyStr, timeStr, tempoStr, titleStr: midiTitle } = midiToJianpu(midi)
-    const titleStr = midiTitle || file.name.replace(/\.[^/.]+$/, '')
-
-    store.setOriginal(jianpuMeasures, keyStr, timeStr, titleStr, tempoStr)
-    store.setCurrent(jianpuMeasures, keyStr)
-    store.setParsedXmlDoc(null)
-    store.setTransposeKey('')
-    store.setPartNames(['自动'])
-    store.setShowPartSelector(false)
-    store.setShowAutoDetect(false)
-
-    const svgResult = renderScore(jianpuMeasures, keyStr, timeStr, titleStr, tempoStr)
-    store.setIsConverted(true)
-    return svgResult
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store])
-
-  // ──────────────────────────────────────────────────────────
-  // ABC Conversion
-  // ──────────────────────────────────────────────────────────
-  const handleAbcConversion = useCallback(async (file: File): Promise<string> => {
-    const text = await fileToText(file)
-    const { measures, keyStr, timeStr, titleStr, tempoStr } = parseABC(text, file.name)
-    if (!measures.length) throw new Error('No notes found in ABC file.')
-
-    store.setOriginal(measures, keyStr, timeStr, titleStr, tempoStr)
-    store.setCurrent(measures, keyStr)
-    store.setParsedXmlDoc(null)
-    store.setTransposeKey('')
-    store.setPartNames(['—'])
-    store.setShowPartSelector(false)
-    store.setShowAutoDetect(false)
-
-    const svgResult = renderScore(measures, keyStr, timeStr, titleStr, tempoStr)
-    store.setIsConverted(true)
-    return svgResult
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store])
-
-  // ──────────────────────────────────────────────────────────
-  // Dispatch (router)
-  // ──────────────────────────────────────────────────────────
-  const convert = useCallback(async (file: File): Promise<string> => {
-    if (file.size > 20 * 1024 * 1024) throw new Error('File is too large (max 20 MB).')
-    const nameLower = file.name.toLowerCase()
-    if (nameLower.endsWith('.mid') || nameLower.endsWith('.midi')) return handleMidiConversion(file)
-    if (nameLower.endsWith('.abc')) return handleAbcConversion(file)
-    return handleXmlConversion(file)
-  }, [handleMidiConversion, handleAbcConversion, handleXmlConversion])
 
   // ──────────────────────────────────────────────────────────
   // Transpose re-render
@@ -315,23 +101,43 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
   // ──────────────────────────────────────────────────────────
   // Sample
   // ──────────────────────────────────────────────────────────
-  const loadSample = useCallback(async (): Promise<string> => {
+  const loadSample = useCallback(async (): Promise<string | null> => {
     const blob = new Blob([SAMPLE_XML], { type: 'application/xml' })
     const file = new File([blob], 'Twinkle Twinkle Little Star.xml', { type: 'application/xml' })
-    store.setCurrentFile(file)
     return convert(file)
-  }, [store, convert])
+  }, [convert])
 
   // ──────────────────────────────────────────────────────────
-  // Part change (XML only)
+  // Part change (XML only). Throws a ScoreFileError when the part has nothing to show;
+  // nothing is committed then, so the selector falls back to the part still on screen.
   // ──────────────────────────────────────────────────────────
   const changePartAndRender = useCallback(async (partIdx: number): Promise<string | null> => {
     const { parsedXmlDoc, currentFile, transposeKey } = useScoreStore.getState()
     if (!parsedXmlDoc) return null
-    store.setSelectedPartIdx(partIdx)
-    store.setShowAutoDetect(false)
-    return renderSelectedPart(parsedXmlDoc, partIdx, currentFile, transposeKey)
-  }, [store, renderSelectedPart])
+    let part
+    try {
+      part = parseXmlPart(parsedXmlDoc, partIdx, currentFile?.name ?? '', parseXml)
+    } catch (err) {
+      throw err instanceof ScoreFileError ? err : new ScoreFileError('这个声部无法转换，请换一个声部')
+    }
+    const targetKey = transposeKey || part.keyStr
+    const displayMeasures = transposeNoteObjects(part.measures, part.keyStr, targetKey)
+    const svg = renderScore(displayMeasures, targetKey, part.timeStr, part.titleStr, part.tempoStr)
+    useScoreStore.getState().commitScore({
+      originalMeasures: part.measures,
+      originalKeyStr: part.keyStr,
+      originalTimeStr: part.timeStr,
+      originalTitleStr: part.titleStr,
+      originalTempoStr: part.tempoStr,
+      currentMeasures: displayMeasures,
+      currentKeyStr: targetKey,
+      transposeKey,
+      selectedPartIdx: partIdx,
+      showAutoDetect: false,
+    })
+    return svg
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const rerenderWithStore = useCallback((): string | null => {
     const { currentMeasures, currentKeyStr, originalTimeStr, originalTitleStr, originalTempoStr } = useScoreStore.getState()
@@ -343,7 +149,8 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
   // Two callers. The text editor edits the loaded score in place, so a header it left
   // out falls back to that score's. OCR text is a different score: it must not inherit
   // the loaded file's title / key / tempo, and the old file's parts must go, or picking
-  // a part would re-render the old file over it. `fresh: true` selects the OCR behaviour.
+  // a part would re-render the old file over it; and the upload box must stop showing
+  // the old file's name. `fresh: true` selects the OCR behaviour.
   const loadFromText = useCallback((text: string, opts?: { fresh?: boolean }): string => {
     const { originalKeyStr, originalTimeStr, originalTempoStr, originalTitleStr } = useScoreStore.getState()
     const fresh = opts?.fresh ?? false
@@ -351,22 +158,30 @@ export function useFileHandler(mainContentRef: React.RefObject<HTMLElement | nul
       ? parseFromText(text)
       : parseFromText(text, originalKeyStr, originalTimeStr, originalTempoStr, originalTitleStr)
     const title = parsed.titleStr || (fresh ? '' : originalTitleStr) || '简谱导入'
-    store.setOriginal(parsed.measures, parsed.keyStr, parsed.timeStr, title, parsed.tempoStr)
-    store.setCurrent(parsed.measures, parsed.keyStr)
-    store.setTransposeKey('')
-    if (fresh) {
-      store.setParsedXmlDoc(null)
-      store.setPartNames([])
-      store.setSelectedPartIdx(0)
-      store.setShowPartSelector(false)
-      store.setShowAutoDetect(false)
-      store.setMatchedMyPart(false)
-    }
-    store.setIsConverted(true)
-    return renderScore(parsed.measures, parsed.keyStr, parsed.timeStr, title, parsed.tempoStr)
+    const svg = renderScore(parsed.measures, parsed.keyStr, parsed.timeStr, title, parsed.tempoStr)
+    loadRun.current++   // a file still being read must not land on top of this score
+    useScoreStore.getState().commitScore({
+      originalMeasures: parsed.measures,
+      originalKeyStr: parsed.keyStr,
+      originalTimeStr: parsed.timeStr,
+      originalTitleStr: title,
+      originalTempoStr: parsed.tempoStr,
+      currentMeasures: parsed.measures,
+      currentKeyStr: parsed.keyStr,
+      transposeKey: '',
+      ...(fresh ? {
+        currentFile: null,
+        parsedXmlDoc: null,
+        partNames: [],
+        selectedPartIdx: 0,
+        showPartSelector: false,
+        showAutoDetect: false,
+        matchedMyPart: false,
+      } : {}),
+    })
+    return svg
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store])
+  }, [])
 
-  void showOutput
-  return { convert, transpose, loadSample, changePartAndRender, renderSelectedPart, rerenderWithStore, loadFromText }
+  return { convert, transpose, loadSample, changePartAndRender, rerenderWithStore, loadFromText }
 }

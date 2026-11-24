@@ -73,6 +73,42 @@
   .playback-speed input[type="range"] { width: 76px; }
 }
 
+/* Landing page — mobile-first: the base rules are the phone layout, and
+   @media (min-width: 640px) restores the desktop layout the owner approved. */
+.lp-px { padding-left: 20px; padding-right: 20px; }
+
+/* Hero digits: --d is the desktop size in px. On a phone they scale with the viewport so
+   all seven fit between the side paddings (about 0.45x at 320px, 0.55x at 390px). */
+.lp-hero-digit { font-size: calc(var(--d) * 0.14vw); padding: 0 2px; }
+
+.lp-what { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
+
+/* The three legend entries must not run into each other. Inline-blocks, not a flex row:
+   the line box keeps the paragraph's own height, so nothing below the legend moves. */
+.lp-legend-item { display: inline-block; margin-right: 18px; white-space: nowrap; }
+
+/* Scale grid: 42px cells that shrink instead of overflowing a narrow screen */
+.lp-scale { flex-shrink: 0; max-width: 100%; }
+.lp-scale-row { display: grid; grid-template-columns: repeat(7, minmax(0, 42px)); gap: 5px; }
+.lp-scale-cell { aspect-ratio: 1; }
+
+/* Pipeline: 2 x 2 separate cards on a phone, one joined strip of four from 640px */
+.lp-pipeline { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lp-step { border-radius: 8px; }
+.lp-step-detail { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+.lp-step-detail.is-open { max-height: 400px; }
+
+@media (min-width: 640px) {
+  .lp-px { padding-left: 52px; padding-right: 52px; }
+  .lp-hero-digit { font-size: calc(var(--d) * 1px); padding: 0 6px; }
+  .lp-what { gap: 52px; }
+  .lp-pipeline { display: flex; gap: 0; }
+  .lp-step { border-radius: 0; margin-right: -0.5px; }
+  .lp-step-first { border-radius: 8px 0 0 8px; }
+  .lp-step-last { border-radius: 0 8px 8px 0; margin-right: 0; }
+  .lp-step-detail.is-open { max-height: 80px; }
+}
+
 @layer utilities {
   .score-output svg {
     max-width: 100%;

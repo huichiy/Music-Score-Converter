@@ -5,7 +5,8 @@ interface FileUploadProps {
   onFile: (file: File) => void
 }
 
-const ACCEPT = '.xml,.mxl,.mid,.midi,.abc'
+// .musicxml is what MuseScore's "uncompressed MusicXML" export writes
+const ACCEPT = '.xml,.musicxml,.mxl,.mid,.midi,.abc'
 
 export default function FileUpload({ onFile }: FileUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -14,7 +15,8 @@ export default function FileUpload({ onFile }: FileUploadProps) {
 
   const handleFile = useCallback((file: File | null | undefined) => {
     if (!file) return
-    useScoreStore.getState().setCurrentFile(file)
+    // currentFile is set by the load itself once the file turned out usable; setting it here
+    // made the box show the name of a file that had just been refused
     onFile(file)
   }, [onFile])
 
@@ -59,7 +61,7 @@ export default function FileUpload({ onFile }: FileUploadProps) {
               或点击选择文件
             </div>
             <div className="text-xs mt-1" style={{ color: 'var(--color-muted)', fontSize: '10px' }}>
-              XML · MXL · MID · ABC
+              XML / MusicXML · MXL · MID · ABC
             </div>
           </div>
         )}
@@ -67,7 +69,7 @@ export default function FileUpload({ onFile }: FileUploadProps) {
       {/* A tester double-clicked the exported .xml and macOS opened it in Word */}
       {!currentFile && (
         <p className="text-xs leading-relaxed" style={{ color: 'var(--color-muted)' }}>
-          从 Noteflight / MuseScore 导出 MusicXML（.xml / .mxl）后拖进来。别双击 .xml，Mac 会用 Word 打开它。
+          从 Noteflight / MuseScore 导出 MusicXML（.xml / .musicxml / .mxl）后拖进来。别双击 .xml，Mac 会用 Word 打开它。
         </p>
       )}
       <input
